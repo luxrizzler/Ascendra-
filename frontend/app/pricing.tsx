@@ -9,13 +9,14 @@ import { useAuth } from "@/src/context/AuthContext";
 
 type Tier = {
   id: "free" | "pro" | "business";
-  name: string; price_monthly: number; blurb: string; features: string[]; highlight?: boolean;
+  name: string; price_monthly: number; price_annual: number; blurb: string; features: string[]; highlight?: boolean;
 };
 
 export default function Pricing() {
   const router = useRouter();
   const { user, refresh } = useAuth();
   const [tiers, setTiers] = useState<Tier[]>([]);
+  const [interval, setInterval] = useState<"monthly" | "annual">("annual");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -35,7 +36,7 @@ export default function Pricing() {
       const origin = Platform.OS === "web"
         ? (typeof window !== "undefined" ? window.location.origin : BACKEND_URL!)
         : BACKEND_URL!;
-      const { url } = await api.post("/billing/checkout", { tier, origin_url: origin });
+      const { url } = await api.post("/billing/checkout", { tier, interval, origin_url: origin });
       if (Platform.OS === "web") {
         window.location.href = url;
       } else {
@@ -73,12 +74,35 @@ export default function Pricing() {
         <Text style={styles.h1}>Learn AI like the top 1%.</Text>
         <Text style={styles.sub}>Cancel anytime. 7-day money-back guarantee.</Text>
 
+        {/* Monthly / Annual toggle */}
+        <View style={styles.toggleWrap}>
+          <Pressable
+            testID="pricing-interval-monthly"
+            onPress={() => setInterval("monthly")}
+            style={[styles.togglePill, interval === "monthly" && styles.togglePillActive]}
+          >
+            <Text style={[styles.toggleText, interval === "monthly" && styles.toggleTextActive]}>Monthly</Text>
+          </Pressable>
+          <Pressable
+            testID="pricing-interval-annual"
+            onPress={() => setInterval("annual")}
+            style={[styles.togglePill, interval === "annual" && styles.togglePillActive]}
+          >
+            <Text style={[styles.toggleText, interval === "annual" && styles.toggleTextActive]}>Annual</Text>
+            <View style={styles.saveBadge}><Text style={styles.saveBadgeText}>SAVE 17%</Text></View>
+          </Pressable>
+        </View>
+
         {err && <Text style={styles.error} testID="pricing-error">{err}</Text>}
 
         <View style={{ height: 24 }} />
 
         {tiers.map((t) => {
           const isCurrent = user?.tier === t.id;
+          const price = interval === "annual" ? t.price_annual : t.price_monthly;
+          const monthlyEquivalent = interval === "annual" && t.price_annual > 0
+            ? (t.price_annual / 12).toFixed(2)
+            : null;
           return (
             <View
               key={t.id}
@@ -101,9 +125,14 @@ export default function Pricing() {
               )}
               <Text style={styles.tierName}>{t.name}</Text>
               <View style={styles.priceRow}>
-                <Text style={styles.price}>${t.price_monthly}</Text>
-                {t.price_monthly > 0 && <Text style={styles.priceUnit}>/ month</Text>}
+                <Text style={styles.price}>${price}</Text>
+                {price > 0 && (
+                  <Text style={styles.priceUnit}>/ {interval === "annual" ? "year" : "month"}</Text>
+                )}
               </View>
+              {monthlyEquivalent && (
+                <Text style={styles.monthlyEq}>That&apos;s ${monthlyEquivalent}/mo — 2 months free</Text>
+              )}
               <Text style={styles.blurb}>{t.blurb}</Text>
 
               <View style={{ height: 16 }} />
@@ -130,7 +159,7 @@ export default function Pricing() {
                   ) : (
                     <>
                       <Text style={[styles.ctaText, t.highlight ? { color: "#000" } : { color: C.text }]}>
-                        Upgrade to {t.name}
+                        {interval === "annual" ? `Get ${t.name} annually` : `Upgrade to ${t.name}`}
                       </Text>
                       <Ionicons name="arrow-forward" size={16} color={t.highlight ? "#000" : C.text} />
                     </>
@@ -186,4 +215,12 @@ const styles = StyleSheet.create({
   faqBox: { marginTop: 16, padding: 18, backgroundColor: C.surface, borderRadius: RADIUS.lg, borderWidth: 1, borderColor: C.border },
   faqTitle: { color: C.text, fontWeight: "800", fontSize: 15 },
   faqText: { color: C.textDim, fontSize: 13, lineHeight: 20, marginTop: 8 },
+  toggleWrap: { flexDirection: "row", alignSelf: "flex-start", marginTop: 22, marginBottom: 24, backgroundColor: C.surface, borderRadius: RADIUS.pill, padding: 4, borderWidth: 1, borderColor: C.border, gap: 4 },
+  togglePill: { paddingHorizontal: 18, paddingVertical: 10, borderRadius: RADIUS.pill, flexDirection: "row", alignItems: "center", gap: 8 },
+  togglePillActive: { backgroundColor: C.brand },
+  toggleText: { color: C.textDim, fontWeight: "700", fontSize: 13 },
+  toggleTextActive: { color: "#000" },
+  saveBadge: { backgroundColor: "#000", paddingHorizontal: 6, paddingVertical: 2, borderRadius: RADIUS.pill },
+  saveBadgeText: { color: C.brand, fontSize: 9, fontWeight: "900", letterSpacing: 1 },
+  monthlyEq: { color: C.success, fontSize: 12, fontWeight: "700", marginTop: 4 },
 });

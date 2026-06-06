@@ -90,6 +90,8 @@ class UserOut(BaseModel):
     name: Optional[str] = None
     goal: Optional[str] = None
     tier: str = "free"
+    subscription_interval: Optional[str] = None
+    tier_expires_at: Optional[datetime] = None
     created_at: datetime
 
 class ProgressOut(BaseModel):
@@ -111,6 +113,7 @@ class ChatOut(BaseModel):
 
 class CheckoutIn(BaseModel):
     tier: Literal["pro", "business"]
+    interval: Literal["monthly", "annual"] = "monthly"
     origin_url: str  # e.g. https://...preview.emergentagent.com
 
 # ─── Auth helpers ───────────────────────────────────────────────────────────
@@ -152,8 +155,25 @@ def serialize_user(u: dict) -> dict:
         "name": u.get("name"),
         "goal": u.get("goal"),
         "tier": u.get("tier", "free"),
+        "subscription_interval": u.get("subscription_interval"),
+        "tier_expires_at": u.get("tier_expires_at"),
         "created_at": u["created_at"],
     }
+
+
+async def auto_downgrade_if_expired(user: dict) -> dict:
+    """Downgrade users whose paid subscription has lapsed."""
+    if user.get("tier", "free") == "free":
+        return user
+    exp = user.get("tier_expires_at")
+    if exp and exp < datetime.now(timezone.utc):
+        await users_col.update_one(
+            {"id": user["id"]},
+            {"$set": {"tier": "free", "subscription_interval": None}},
+        )
+        user["tier"] = "free"
+        user["subscription_interval"] = None
+    return user
 
 # ─── Progress helpers ───────────────────────────────────────────────────────
 async def get_progress(user_id: str) -> dict:
@@ -248,6 +268,7 @@ async def auth_google(body: GoogleSessionIn):
 
 @api.get("/auth/me", response_model=UserOut)
 async def me(user=Depends(current_user)):
+    user = await auto_downgrade_if_expired(user)
     return serialize_user(user)
 
 # ─── Curriculum routes ──────────────────────────────────────────────────────
@@ -413,9 +434,7 @@ async def tutor_history(session_id: str, user=Depends(current_user)):
 # ─── Pricing & Stripe ───────────────────────────────────────────────────────
 TIERS = {
     "free": {
-        "id": "free",
-        "name": "Free",
-        "price_monthly": 0,
+        "id": "free", "name": "Free", "price_monthly": 0, "price_annual": 0,
         "blurb": "Get a real taste of the future.",
         "features": [
             "AI Fundamentals path (8 lessons)",
@@ -425,9 +444,8 @@ TIERS = {
         ],
     },
     "pro": {
-        "id": "pro",
-        "name": "Pro",
-        "price_monthly": 19.99,
+        "id": "pro", "name": "Pro",
+        "price_monthly": 19.99, "price_annual": 199.00,  # 10 mo price = ~17% off
         "blurb": "For serious learners. Unlock the full curriculum.",
         "features": [
             "Everything in Free, plus:",
@@ -441,9 +459,8 @@ TIERS = {
         "highlight": True,
     },
     "business": {
-        "id": "business",
-        "name": "Business",
-        "price_monthly": 49.99,
+        "id": "business", "name": "Business",
+        "price_monthly": 49.99, "price_annual": 499.00,  # ~17% off
         "blurb": "Build a business with AI — the founder operating system.",
         "features": [
             "Everything in Pro, plus:",
@@ -466,7 +483,12 @@ async def pricing():
 async def create_checkout(body: CheckoutIn, request: Request, user=Depends(current_user)):
     if body.tier not in ("pro", "business"):
         raise HTTPException(400, "Invalid tier")
-    amount_usd = TIERS[body.tier]["price_monthly"]
+    if body.interval == "annual":
+        amount_usd = TIERS[body.tier]["price_annual"]
+        plan_name = f"{TIERS[body.tier]['name']} (Annual)"
+    else:
+        amount_usd = TIERS[body.tier]["price_monthly"]
+        plan_name = f"{TIERS[body.tier]['name']} (Monthly)"
     origin = body.origin_url.rstrip("/")
     webhook_url = f"{str(request.base_url).rstrip('/')}/api/billing/webhook"
     stripe_checkout = StripeCheckout(api_key=STRIPE_API_KEY, webhook_url=webhook_url)
@@ -477,7 +499,7 @@ async def create_checkout(body: CheckoutIn, request: Request, user=Depends(curre
                 currency="usd",
                 success_url=f"{origin}/checkout-success?session_id={{CHECKOUT_SESSION_ID}}",
                 cancel_url=f"{origin}/pricing",
-                metadata={"user_id": user["id"], "tier": body.tier},
+                metadata={"user_id": user["id"], "tier": body.tier, "interval": body.interval, "plan": plan_name},
             )
         )
     except Exception as e:
@@ -488,6 +510,7 @@ async def create_checkout(body: CheckoutIn, request: Request, user=Depends(curre
         "session_id": session.session_id,
         "user_id": user["id"],
         "tier": body.tier,
+        "interval": body.interval,
         "amount_usd": amount_usd,
         "status": "pending",
         "created_at": datetime.now(timezone.utc),
@@ -507,7 +530,16 @@ async def checkout_status(session_id: str, request: Request, user=Depends(curren
             sc = StripeCheckout(api_key=STRIPE_API_KEY, webhook_url=webhook_url)
             s = await sc.get_checkout_status(session_id)
             if s.payment_status == "paid":
-                await users_col.update_one({"id": user["id"]}, {"$set": {"tier": rec["tier"]}})
+                interval = rec.get("interval", "monthly")
+                expires_at = datetime.now(timezone.utc) + timedelta(days=365 if interval == "annual" else 30)
+                await users_col.update_one(
+                    {"id": user["id"]},
+                    {"$set": {
+                        "tier": rec["tier"],
+                        "subscription_interval": interval,
+                        "tier_expires_at": expires_at,
+                    }},
+                )
                 await sessions_col.update_one(
                     {"session_id": session_id},
                     {"$set": {"status": "paid", "paid_at": datetime.now(timezone.utc)}},
@@ -516,7 +548,7 @@ async def checkout_status(session_id: str, request: Request, user=Depends(curren
         except Exception as e:
             log.warning(f"Stripe status check failed: {e}")
 
-    return {"status": rec["status"], "tier": rec["tier"]}
+    return {"status": rec["status"], "tier": rec["tier"], "interval": rec.get("interval", "monthly")}
 
 @api.post("/billing/webhook")
 async def stripe_webhook(request: Request, stripe_signature: Optional[str] = Header(None)):
@@ -532,8 +564,17 @@ async def stripe_webhook(request: Request, stripe_signature: Optional[str] = Hea
         meta = event.metadata or {}
         uid = meta.get("user_id")
         tier = meta.get("tier")
+        interval = meta.get("interval", "monthly")
         if uid and tier:
-            await users_col.update_one({"id": uid}, {"$set": {"tier": tier}})
+            expires_at = datetime.now(timezone.utc) + timedelta(days=365 if interval == "annual" else 30)
+            await users_col.update_one(
+                {"id": uid},
+                {"$set": {
+                    "tier": tier,
+                    "subscription_interval": interval,
+                    "tier_expires_at": expires_at,
+                }},
+            )
             await sessions_col.update_one(
                 {"session_id": event.session_id},
                 {"$set": {"status": "paid", "paid_at": datetime.now(timezone.utc)}},
