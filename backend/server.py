@@ -35,6 +35,7 @@ from curriculum import (
     get_lesson,
     path_summary,
     all_lesson_ids,
+    can_access,
 )
 
 ROOT_DIR = Path(__file__).parent
@@ -285,10 +286,13 @@ async def get_path_detail(path_id: str):
     }
 
 @api.get("/lessons/{lesson_id}")
-async def fetch_lesson(lesson_id: str):
+async def fetch_lesson(lesson_id: str, user=Depends(current_user)):
     l = get_lesson(lesson_id)
     if not l:
         raise HTTPException(404, "Lesson not found")
+    p = get_path(l["path_id"])
+    if p and not can_access(user.get("tier", "free"), p.get("tier", "free")):
+        raise HTTPException(403, f"This lesson requires {p['tier'].upper()} tier. Upgrade to unlock.")
     return l
 
 @api.get("/models")
@@ -414,9 +418,9 @@ TIERS = {
         "price_monthly": 0,
         "blurb": "Get a real taste of the future.",
         "features": [
-            "AI Fundamentals path",
+            "AI Fundamentals path (8 lessons)",
             "Limited AI Tutor (5 messages/day)",
-            "Browse the AI Model Library",
+            "Browse all 22 AI models",
             "Daily streak tracking",
         ],
     },
@@ -424,13 +428,15 @@ TIERS = {
         "id": "pro",
         "name": "Pro",
         "price_monthly": 19.99,
-        "blurb": "For serious learners who want all 4 paths.",
+        "blurb": "For serious learners. Unlock the full curriculum.",
         "features": [
-            "All 4 learning paths (36+ lessons)",
+            "Everything in Free, plus:",
+            "6 additional learning paths",
+            "Pro-exclusive: Prompt Engineering Mastery",
+            "Pro-exclusive: AI Automation Stack (agents, MCP)",
+            "Pro-exclusive: Code With AI (Cursor, Claude Code)",
             "Unlimited AI Tutor chat (Claude 4.5)",
-            "Project-based assignments",
             "XP + leaderboards",
-            "New lessons every week",
         ],
         "highlight": True,
     },
@@ -438,9 +444,12 @@ TIERS = {
         "id": "business",
         "name": "Business",
         "price_monthly": 49.99,
-        "blurb": "Build a business with AI — coached step-by-step.",
+        "blurb": "Build a business with AI — the founder operating system.",
         "features": [
-            "Everything in Pro",
+            "Everything in Pro, plus:",
+            "Business-exclusive: AI-First Startup Playbook",
+            "Business-exclusive: AI Sales & Marketing Engine",
+            "Business-exclusive: Enterprise AI Strategy",
             "Real founder case studies (revenue + tactics)",
             "Quarterly AI roadmap briefings",
             "Priority AI Tutor response speed",

@@ -6,15 +6,21 @@ import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { C, RADIUS } from "@/src/theme";
 import { api } from "@/src/api";
+import { useAuth } from "@/src/context/AuthContext";
+
+const RANK: Record<string, number> = { free: 0, pro: 1, business: 2 };
 
 export default function Paths() {
   const router = useRouter();
+  const { user } = useAuth();
   const [paths, setPaths] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     api.get("/paths").then((r) => setPaths(r.paths)).finally(() => setLoading(false));
   }, []);
+
+  const userRank = RANK[user?.tier || "free"] ?? 0;
 
   if (loading) {
     return (
@@ -29,40 +35,54 @@ export default function Paths() {
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
         <Text style={styles.kicker}>LEARNING PATHS</Text>
         <Text style={styles.h1}>Pick your direction</Text>
-        <Text style={styles.sub}>Each path goes from beginner-friendly to advanced workflows.</Text>
+        <Text style={styles.sub}>10 paths total. Each one takes you from beginner to advanced.</Text>
 
         <View style={{ height: 24 }} />
 
-        {paths.map((p) => (
-          <Pressable
-            key={p.id}
-            testID={`paths-card-${p.id}`}
-            onPress={() => router.push(`/path/${p.id}`)}
-            style={styles.card}
-          >
-            <Image source={{ uri: p.image }} style={styles.cardImg} />
-            <LinearGradient
-              colors={["rgba(0,0,0,0.0)", "rgba(0,0,0,0.4)", "rgba(0,0,0,0.95)"]}
-              style={StyleSheet.absoluteFillObject}
-            />
-            <View style={styles.cardInner}>
-              <View style={[styles.levelTag, { borderColor: p.color }]}>
-                <Text style={[styles.levelText, { color: p.color }]}>{p.level.toUpperCase()}</Text>
+        {paths.map((p) => {
+          const tier: "free" | "pro" | "business" = p.tier || "free";
+          const locked = (RANK[tier] ?? 0) > userRank;
+          return (
+            <Pressable
+              key={p.id}
+              testID={`paths-card-${p.id}`}
+              onPress={() => locked ? router.push("/pricing") : router.push(`/path/${p.id}`)}
+              style={[styles.card, locked && { opacity: 0.94 }]}
+            >
+              <Image source={{ uri: p.image }} style={styles.cardImg} />
+              <LinearGradient
+                colors={["rgba(0,0,0,0.0)", "rgba(0,0,0,0.4)", "rgba(0,0,0,0.95)"]}
+                style={StyleSheet.absoluteFillObject}
+              />
+              <View style={styles.cardInner}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                  <View style={[styles.levelTag, { borderColor: p.color }]}>
+                    <Text style={[styles.levelText, { color: p.color }]}>{p.level.toUpperCase()}</Text>
+                  </View>
+                  {tier !== "free" && (
+                    <View style={[styles.tierTag, tier === "business" ? styles.tierBusiness : styles.tierPro]}>
+                      <Ionicons name={locked ? "lock-closed" : "checkmark"} size={11} color="#000" />
+                      <Text style={styles.tierTagText}>{tier.toUpperCase()}</Text>
+                    </View>
+                  )}
+                </View>
+                <Text style={styles.cardTitle}>{p.title}</Text>
+                <Text style={styles.cardSub}>{p.tagline}</Text>
+                <View style={styles.metaRow}>
+                  <Meta icon="library-outline" text={`${p.total_lessons} lessons`} />
+                  <Meta icon="time-outline" text={p.duration} />
+                  <Meta icon="trophy-outline" text={`${p.total_xp} XP`} />
+                </View>
+                <View style={[styles.openBtn, locked && { backgroundColor: C.violet }]}>
+                  <Text style={[styles.openBtnText, locked && { color: "#fff" }]}>
+                    {locked ? `Unlock with ${tier === "business" ? "Business" : "Pro"}` : "Open path"}
+                  </Text>
+                  <Ionicons name={locked ? "lock-closed" : "arrow-forward"} size={14} color={locked ? "#fff" : "#000"} />
+                </View>
               </View>
-              <Text style={styles.cardTitle}>{p.title}</Text>
-              <Text style={styles.cardSub}>{p.tagline}</Text>
-              <View style={styles.metaRow}>
-                <Meta icon="library-outline" text={`${p.total_lessons} lessons`} />
-                <Meta icon="time-outline" text={p.duration} />
-                <Meta icon="trophy-outline" text={`${p.total_xp} XP`} />
-              </View>
-              <View style={styles.openBtn}>
-                <Text style={styles.openBtnText}>Open path</Text>
-                <Ionicons name="arrow-forward" size={14} color="#000" />
-              </View>
-            </View>
-          </Pressable>
-        ))}
+            </Pressable>
+          );
+        })}
       </ScrollView>
     </SafeAreaView>
   );
@@ -101,4 +121,8 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.pill, marginTop: 14, flexDirection: "row", alignItems: "center", gap: 8,
   },
   openBtnText: { color: "#000", fontWeight: "800", fontSize: 13 },
+  tierTag: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: RADIUS.pill },
+  tierPro: { backgroundColor: C.brand },
+  tierBusiness: { backgroundColor: C.brandSoft },
+  tierTagText: { color: "#000", fontWeight: "900", fontSize: 10, letterSpacing: 1.5 },
 });

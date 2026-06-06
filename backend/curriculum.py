@@ -293,6 +293,7 @@ PATHS = [
         "color": "#FFB000",
         "level": "Beginner",
         "duration": "~4 hours",
+        "tier": "free",
         "image": "https://images.pexels.com/photos/12623752/pexels-photo-12623752.jpeg",
         "modules": [
             {
@@ -464,6 +465,7 @@ PATHS = [
         "color": "#10B981",
         "level": "Intermediate",
         "duration": "~5 hours",
+        "tier": "pro",
         "image": "https://images.pexels.com/photos/19826624/pexels-photo-19826624.jpeg",
         "modules": [
             {
@@ -597,6 +599,7 @@ PATHS = [
         "color": "#EC4899",
         "level": "Intermediate",
         "duration": "~3.5 hours",
+        "tier": "pro",
         "image": "https://images.pexels.com/photos/8672787/pexels-photo-8672787.jpeg",
         "modules": [
             {
@@ -712,6 +715,7 @@ PATHS = [
         "color": "#3B82F6",
         "level": "Beginner → Intermediate",
         "duration": "~3 hours",
+        "tier": "pro",
         "image": "https://images.pexels.com/photos/18173598/pexels-photo-18173598.jpeg",
         "modules": [
             {
@@ -798,6 +802,275 @@ PATHS = [
             },
         ],
     },
+    # ─── PRO EXCLUSIVE PATHS ────────────────────────────────────────────────
+    {
+        "id": "prompt-mastery",
+        "title": "Prompt Engineering Mastery",
+        "subtitle": "Pro Exclusive · Advanced",
+        "tagline": "Become the 1% who can make any model do exactly what they want.",
+        "color": "#A855F7",
+        "level": "Advanced",
+        "duration": "~3 hours",
+        "tier": "pro",
+        "image": "https://images.pexels.com/photos/8728285/pexels-photo-8728285.jpeg",
+        "modules": [
+            {
+                "id": "pe-advanced",
+                "title": "Beyond beginner prompts",
+                "lessons": [
+                    {
+                        "id": "pe1l1", "title": "System prompts that print money", "duration_min": 6, "xp": 80,
+                        "cards": [
+                            _card("Your system prompt is your asset", "A great system prompt is reusable IP. Lock it down once, run it forever."),
+                            _card("The 4-part scaffold", "ROLE → CONTEXT → CONSTRAINTS → OUTPUT FORMAT. Every system prompt needs all 4."),
+                            _card("Real example", "ROLE: senior copy editor. CONTEXT: B2B SaaS landing pages. CONSTRAINTS: no jargon, 8th grade level, active voice. OUTPUT: JSON with hero, sub, CTA."),
+                        ],
+                        "quiz": _q("What makes a system prompt reusable?", ["It's short", "It defines role + constraints + output format", "It uses ALL CAPS", "It's secret"], 1, "Structure is what makes it reusable IP."),
+                    },
+                    {
+                        "id": "pe1l2", "title": "Self-correcting prompts", "duration_min": 6, "xp": 80,
+                        "cards": [
+                            _card("Tell the AI to grade itself", "Add: 'After writing, score your answer 1-10. If under 8, rewrite.' Watch quality jump."),
+                            _card("The 'devil's advocate' trick", "Ask the model to critique its own output, then revise. Single-shot quality of a 5-step expert review."),
+                            _card("Why this works in 2026", "Modern models (GPT-5.2, Claude 4.5) have strong self-evaluation. They know when they're weak — you just have to ask."),
+                        ],
+                        "quiz": _q("What does self-grading do?", ["Slows the AI down", "Forces a built-in revision pass that raises quality", "Wastes tokens", "Nothing"], 1, "The model uses its own judgment to revise itself. Free quality boost."),
+                    },
+                ],
+            },
+            {
+                "id": "pe-output",
+                "title": "Structured output magic",
+                "lessons": [
+                    {
+                        "id": "pe2l1", "title": "JSON mode = production-ready", "duration_min": 5, "xp": 70,
+                        "cards": [
+                            _card("Tell the AI: return JSON only", "Strict JSON output is what turns LLMs from toys into APIs. GPT-5.2 and Claude 4.5 both support it natively."),
+                            _card("Schema-first prompting", "Define your expected schema in the prompt. The AI fills it in. Easier than parsing free text."),
+                            _card("Use case: classifier", "Input: customer review. Output: {sentiment, topics[], urgency}. Now you can pipe it into a dashboard."),
+                        ],
+                        "quiz": _q("Why force JSON output?", ["Aesthetic", "Production parseability", "Costs less", "Required by law"], 1, "Structured output = production-ready integrations."),
+                    },
+                ],
+            },
+        ],
+    },
+    {
+        "id": "automation",
+        "title": "AI Automation Stack",
+        "subtitle": "Pro Exclusive · Workflows",
+        "tagline": "Build agents and pipelines that work while you sleep.",
+        "color": "#06B6D4",
+        "level": "Intermediate → Advanced",
+        "duration": "~4 hours",
+        "tier": "pro",
+        "image": "https://images.pexels.com/photos/16021018/pexels-photo-16021018.jpeg",
+        "modules": [
+            {
+                "id": "auto-agents",
+                "title": "Agents 101",
+                "lessons": [
+                    {
+                        "id": "au1l1", "title": "What is an AI agent?", "duration_min": 6, "xp": 80,
+                        "cards": [
+                            _card("LLM + tools + loop = agent", "An agent is just an LLM that can call tools (search, code, APIs) and iterate until done."),
+                            _card("Why 2026 changed everything", "GPT-5.2 and Claude 4.5 are good enough to run 10+ step plans reliably. We're past 'maybe' into 'production'."),
+                            _card("The 3 modern agent patterns", "1) ReAct (reason + act). 2) Plan-then-execute. 3) Multi-agent (specialists handoff)."),
+                        ],
+                        "quiz": _q("An agent = LLM + ___", ["More compute", "Tools and a loop", "A bigger context window", "Multiple models"], 1, "Tools + loop. That's what makes it agentic."),
+                    },
+                    {
+                        "id": "au1l2", "title": "MCP — the agent protocol", "duration_min": 6, "xp": 80,
+                        "cards": [
+                            _card("MCP = Model Context Protocol", "Anthropic's standard for plugging tools into AI agents. Like USB-C for AI."),
+                            _card("Why it matters", "Once tools speak MCP, any agent (Claude, GPT, custom) can use them. No more custom integrations per model."),
+                            _card("Real example", "Plug your Notion + Gmail + Linear into Claude via MCP. Now Claude can read, write, and schedule across all three."),
+                        ],
+                        "quiz": _q("MCP is best described as...", ["A new model", "A standard protocol for agent tools", "A payment method", "A coding language"], 1, "Protocol — the connective tissue of agents."),
+                    },
+                ],
+            },
+            {
+                "id": "auto-build",
+                "title": "Building your first stack",
+                "lessons": [
+                    {
+                        "id": "au2l1", "title": "No-code automation stack", "duration_min": 6, "xp": 80,
+                        "cards": [
+                            _card("The 2026 stack", "Make.com or n8n (workflows) + Claude/GPT (intelligence) + Airtable/Notion (memory) = full automation."),
+                            _card("Start with one painful loop", "Pick the most boring 30-min task you do daily. Automate that first. Compound from there."),
+                            _card("Sample: inbox to CRM", "New email → Claude classifies → if 'lead' → push to Airtable → notify Slack. 15 minutes to build."),
+                        ],
+                        "quiz": _q("Where should you start automating?", ["The most exciting task", "The most painful repeated task", "The biggest task", "Anywhere"], 1, "Painful + repeated = highest leverage."),
+                    },
+                ],
+            },
+        ],
+    },
+    {
+        "id": "code-with-ai",
+        "title": "Code With AI",
+        "subtitle": "Pro Exclusive · Vibe Coding",
+        "tagline": "Ship full apps in days — even if you've never written a line of code.",
+        "color": "#22C55E",
+        "level": "Beginner → Advanced",
+        "duration": "~4 hours",
+        "tier": "pro",
+        "image": "https://images.pexels.com/photos/4974915/pexels-photo-4974915.jpeg",
+        "modules": [
+            {
+                "id": "code-start",
+                "title": "Vibe coding fundamentals",
+                "lessons": [
+                    {
+                        "id": "co1l1", "title": "Cursor vs Copilot vs Claude Code", "duration_min": 5, "xp": 70,
+                        "cards": [
+                            _card("Cursor", "Best AI-native IDE. Multi-file edits, agent mode, deep codebase understanding."),
+                            _card("GitHub Copilot", "Old guard. Fast inline completion. Lives in every editor. Best as a sidekick, not lead."),
+                            _card("Claude Code", "Anthropic's terminal agent. Best for autonomous, multi-step refactors and bug hunts."),
+                        ],
+                        "quiz": _q("Best tool for autonomous multi-step coding?", ["Cursor", "Copilot autocomplete", "Claude Code", "VS Code"], 2, "Claude Code is the terminal agent."),
+                    },
+                    {
+                        "id": "co1l2", "title": "Prompt → working app in 1 hour", "duration_min": 7, "xp": 90,
+                        "cards": [
+                            _card("Step 1: describe the user", "Don't describe features. Describe who the app is for and what pain it solves. AI fills in the rest."),
+                            _card("Step 2: iterate the UI before the logic", "Ship a clickable shell first. See it. Then wire it up. Avoids huge rebuilds."),
+                            _card("Step 3: ship, share, fix", "Push to the cloud the same day. Hand it to a friend. Their first 'huh?' tells you what to fix."),
+                        ],
+                        "quiz": _q("First step in vibe coding a real app?", ["Pick a framework", "Describe the user and their pain", "Set up auth", "Buy a domain"], 1, "User first. Tech second."),
+                    },
+                ],
+            },
+        ],
+    },
+    # ─── BUSINESS EXCLUSIVE PATHS ───────────────────────────────────────────
+    {
+        "id": "startup-playbook",
+        "title": "AI-First Startup Playbook",
+        "subtitle": "Business Exclusive · Founder",
+        "tagline": "How to start, fund, and scale a venture in the age of AI.",
+        "color": "#F59E0B",
+        "level": "Advanced",
+        "duration": "~5 hours",
+        "tier": "business",
+        "image": "https://images.pexels.com/photos/8867434/pexels-photo-8867434.jpeg",
+        "modules": [
+            {
+                "id": "sp-zero",
+                "title": "From zero to first $10k",
+                "lessons": [
+                    {
+                        "id": "sp1l1", "title": "Pre-product traction with AI", "duration_min": 7, "xp": 100,
+                        "cards": [
+                            _card("Find pain before building", "Use Claude to mine Reddit + X for 'I wish there was…' posts in your niche. 30 min = 50 problem statements."),
+                            _card("Validate with a one-day landing page", "Build a fake-door landing in an hour. Drive 100 visitors with $50 of ads. If 5+ sign up — keep going."),
+                            _card("Pre-sell before you build", "Sell the problem, not the product. If 3 people send money before launch — you have a business."),
+                        ],
+                        "quiz": _q("Best signal for product-market fit?", ["10k waitlist", "3 people paying before launch", "A great deck", "VC interest"], 1, "Money speaks louder than waitlists."),
+                    },
+                    {
+                        "id": "sp1l2", "title": "The solo-founder org chart", "duration_min": 6, "xp": 90,
+                        "cards": [
+                            _card("You + 5 agents > you + 5 hires", "One founder + AI agents for sales, support, content, ops, and dev. 1 person, $1M ARR in 2026."),
+                            _card("Pick your 'human edge'", "Be the human in the loop on the ONE function that compounds your moat. Outsource the rest to AI."),
+                            _card("Hiring rule", "Don't hire until an AI agent can't do it. Even then, hire for taste, judgment, or relationships — never speed."),
+                        ],
+                        "quiz": _q("When do you make your first hire?", ["When you have $10k MRR", "When an AI agent literally can't do it", "When you're tired", "Never"], 1, "Replace AI only with humans who add taste, judgment, or relationships."),
+                    },
+                ],
+            },
+            {
+                "id": "sp-fund",
+                "title": "Fundraising in the AI era",
+                "lessons": [
+                    {
+                        "id": "sp2l1", "title": "The new pitch deck", "duration_min": 6, "xp": 90,
+                        "cards": [
+                            _card("Investors changed in 2026", "VCs no longer ask 'team size?' — they ask 'agent-to-human ratio?' Higher is better."),
+                            _card("Lead with the loop", "Show the AI-enabled feedback loop that compounds. Data → model → product → users → more data."),
+                            _card("Defend your moat", "Saying 'we use AI' is not a moat. Saying 'we have proprietary data flowing into a private model' is."),
+                        ],
+                        "quiz": _q("Strongest 2026 startup moat?", ["Using GPT-5.2", "Proprietary data + private model fine-tunes", "Big team", "Slack channel"], 1, "Data flywheels eat features for breakfast."),
+                    },
+                ],
+            },
+        ],
+    },
+    {
+        "id": "sales-engine",
+        "title": "AI Sales & Marketing Engine",
+        "subtitle": "Business Exclusive · Growth",
+        "tagline": "Build a revenue engine that runs 24/7 on autopilot.",
+        "color": "#EF4444",
+        "level": "Intermediate → Advanced",
+        "duration": "~4 hours",
+        "tier": "business",
+        "image": "https://images.pexels.com/photos/3184292/pexels-photo-3184292.jpeg",
+        "modules": [
+            {
+                "id": "se-pipeline",
+                "title": "The AI pipeline",
+                "lessons": [
+                    {
+                        "id": "se1l1", "title": "Outbound that doesn't feel like spam", "duration_min": 6, "xp": 90,
+                        "cards": [
+                            _card("Research before reach-out", "Have Claude read each prospect's LinkedIn + last 3 posts. Generate ONE specific hook per email."),
+                            _card("Volume + personalization = the holy grail", "AI is the first tech that gives you BOTH. Send 200 emails/day, each one researched."),
+                            _card("Measure replies, not opens", "Reply rate is the only metric that matters. Open rate is vanity. Aim for 8%+."),
+                        ],
+                        "quiz": _q("The metric that actually matters for cold outbound?", ["Open rate", "Reply rate", "Subject length", "Send volume"], 1, "Replies = real interest. Everything else is noise."),
+                    },
+                    {
+                        "id": "se1l2", "title": "Content that compounds", "duration_min": 6, "xp": 90,
+                        "cards": [
+                            _card("One idea, 10 formats", "Voice memo → Whisper transcribes → Claude reformats: tweet, LinkedIn post, blog, newsletter, video script."),
+                            _card("Compound daily, not perfect monthly", "Post 1x/day for 90 days beats 1 perfect post per month every time. AI removes the friction."),
+                            _card("The 'pattern-interrupt' formula", "Bold contrarian claim → 3 unexpected reasons → punchline. Works in any niche, on any platform."),
+                        ],
+                        "quiz": _q("Best content cadence for compounding?", ["Once a quarter", "Daily, imperfect", "Weekly polished", "When inspired"], 1, "Daily compounds. Quarterly evaporates."),
+                    },
+                ],
+            },
+        ],
+    },
+    {
+        "id": "enterprise-ai",
+        "title": "Enterprise AI Strategy",
+        "subtitle": "Business Exclusive · Operator",
+        "tagline": "Implement AI inside an existing organization — without the cargo-cult.",
+        "color": "#0EA5E9",
+        "level": "Advanced",
+        "duration": "~3.5 hours",
+        "tier": "business",
+        "image": "https://images.pexels.com/photos/3184465/pexels-photo-3184465.jpeg",
+        "modules": [
+            {
+                "id": "ent-strategy",
+                "title": "Real AI transformation",
+                "lessons": [
+                    {
+                        "id": "en1l1", "title": "Build, buy, or partner?", "duration_min": 6, "xp": 90,
+                        "cards": [
+                            _card("Most companies should buy", "Don't build foundation models. Don't even fine-tune unless your data is uniquely defensible."),
+                            _card("Build only at the edges", "Build the thin layer that combines your proprietary data with off-the-shelf models. That's where the value is."),
+                            _card("Partner pattern", "Pair a model provider (Anthropic / OpenAI / Google) with an integrator. Skip the consultants pitching their own framework."),
+                        ],
+                        "quiz": _q("Where should an enterprise BUILD vs BUY?", ["Build the model", "Build only the thin layer combining proprietary data with off-the-shelf models", "Build everything", "Buy everything"], 1, "Build at the edges. Buy at the core."),
+                    },
+                    {
+                        "id": "en1l2", "title": "Measuring AI ROI", "duration_min": 6, "xp": 90,
+                        "cards": [
+                            _card("Hours saved is a lie", "Everyone reports 'hours saved'. Almost nobody can prove revenue moved. Track $$, not minutes."),
+                            _card("The 3 real metrics", "1) Revenue per employee. 2) Time-to-value for new customers. 3) Error rate in core workflows."),
+                            _card("Pilot like a scientist", "Pick ONE business outcome. Run a 90-day A/B. If the AI-using group outperforms, scale. If not, kill it."),
+                        ],
+                        "quiz": _q("Most reliable AI ROI metric?", ["Hours saved", "Revenue per employee + error rate", "Number of AI tools used", "Slack mentions"], 1, "If you can't see it in revenue or error rate, it isn't real ROI."),
+                    },
+                ],
+            },
+        ],
+    },
 ]
 
 
@@ -839,7 +1112,15 @@ def path_summary(path):
         "level": path["level"],
         "duration": path["duration"],
         "image": path["image"],
+        "tier": path.get("tier", "free"),
         "total_lessons": total_lessons,
         "total_xp": total_xp,
         "module_count": len(path["modules"]),
     }
+
+
+TIER_RANK = {"free": 0, "pro": 1, "business": 2}
+
+
+def can_access(user_tier: str, path_tier: str) -> bool:
+    return TIER_RANK.get(user_tier, 0) >= TIER_RANK.get(path_tier, 0)
