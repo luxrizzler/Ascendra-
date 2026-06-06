@@ -9,6 +9,16 @@ export type User = {
   goal?: string;
   tier: "free" | "ascender" | "pathfinder" | "sage";
   has_used_trial?: boolean;
+  quiz_answers?: {
+    goal?: string;
+    experience?: string;
+    time_per_day?: string;
+    focus?: string;
+  } | null;
+  recommended_path_id?: string | null;
+  subscription_interval?: string | null;
+  tier_expires_at?: string | null;
+  created_at?: string;
 };
 
 type AuthCtx = {

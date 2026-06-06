@@ -57,6 +57,8 @@ users_col = db["users"]
 progress_col = db["progress"]
 chats_col = db["chats"]
 sessions_col = db["payment_sessions"]
+certs_col = db["certificates"]
+STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
 
 # ─── App ────────────────────────────────────────────────────────────────────
 app = FastAPI(title="Ascendra API")
@@ -94,15 +96,45 @@ class UserOut(BaseModel):
     subscription_interval: Optional[str] = None
     tier_expires_at: Optional[datetime] = None
     created_at: datetime
+    has_used_trial: bool = False
+    quiz_answers: Optional[dict] = None
+    recommended_path_id: Optional[str] = None
 
 class ProgressOut(BaseModel):
     completed_lesson_ids: List[str] = []
     total_xp: int = 0
     streak_days: int = 0
     last_active_date: Optional[str] = None
+    level: int = 1
+    level_progress_pct: int = 0   # 0..100 toward next level
+    xp_to_next_level: int = 0
+    completed_paths: List[str] = []
+    path_progress: dict = {}      # { path_id: {"completed": int, "total": int, "pct": int} }
 
 class CompleteLessonIn(BaseModel):
     lesson_id: str
+
+class CompleteLessonOut(BaseModel):
+    progress: ProgressOut
+    awarded_xp: int = 0
+    newly_completed_paths: List[str] = []  # paths that were just finished
+    certificates_issued: List[str] = []    # cert IDs newly issued
+
+class QuizAnswers(BaseModel):
+    goal: Optional[str] = None          # career | business | creator | productivity
+    experience: Optional[str] = None    # beginner | some | advanced
+    time_per_day: Optional[str] = None  # 5 | 15 | 30 | 60
+    focus: Optional[str] = None         # text | image | video | voice | code | agents
+
+class CertOut(BaseModel):
+    id: str
+    user_id: str
+    user_name: str
+    path_id: str
+    path_title: str
+    path_color: str
+    issued_at: datetime
+    serial: str
 
 class ChatIn(BaseModel):
     message: str
@@ -159,6 +191,9 @@ def serialize_user(u: dict) -> dict:
         "subscription_interval": u.get("subscription_interval"),
         "tier_expires_at": u.get("tier_expires_at"),
         "created_at": u["created_at"],
+        "has_used_trial": bool(u.get("has_used_trial", False)),
+        "quiz_answers": u.get("quiz_answers"),
+        "recommended_path_id": u.get("recommended_path_id"),
     }
 
 
@@ -176,7 +211,59 @@ async def auto_downgrade_if_expired(user: dict) -> dict:
         user["subscription_interval"] = None
     return user
 
-# ─── Progress helpers ───────────────────────────────────────────────────────
+# ─── Progress / Level / Certificate helpers ─────────────────────────────────
+def compute_level(total_xp: int) -> dict:
+    """XP -> Level. Quadratic curve: every level needs N*200 more XP than last.
+    L1: 0, L2: 200, L3: 600, L4: 1200, L5: 2000, L6: 3000 ...
+    Formula: cumulative xp for level n = 100 * n * (n - 1)
+    """
+    import math
+    if total_xp < 0:
+        total_xp = 0
+    # solve 100*n*(n-1) <= xp  → n = floor((1 + sqrt(1 + xp/25)) / 2)
+    n = int((1 + math.sqrt(1 + total_xp / 25)) / 2)
+    if n < 1:
+        n = 1
+    floor_xp = 100 * n * (n - 1)
+    next_xp = 100 * (n + 1) * n
+    span = next_xp - floor_xp
+    in_level = total_xp - floor_xp
+    pct = int((in_level / span) * 100) if span > 0 else 0
+    return {"level": n, "level_progress_pct": max(0, min(100, pct)), "xp_to_next_level": max(0, next_xp - total_xp)}
+
+
+def _path_lesson_index() -> dict:
+    """Return { path_id: [lesson_id,...] } from curriculum (cached per call)."""
+    idx = {}
+    for p in PATHS:
+        ids = []
+        for m in p["modules"]:
+            for lsn in m["lessons"]:
+                ids.append(lsn["id"])
+        idx[p["id"]] = ids
+    return idx
+
+
+def _path_meta() -> dict:
+    """Return { path_id: {title, color} }."""
+    return {p["id"]: {"title": p["title"], "color": p["color"]} for p in PATHS}
+
+
+def _compute_path_progress(completed_ids: list) -> tuple[dict, list]:
+    """Given completed lesson IDs, return (path_progress, completed_path_ids)."""
+    completed_set = set(completed_ids)
+    path_progress = {}
+    completed_paths = []
+    for pid, lids in _path_lesson_index().items():
+        total = len(lids)
+        done = sum(1 for x in lids if x in completed_set)
+        pct = int((done / total) * 100) if total else 0
+        path_progress[pid] = {"completed": done, "total": total, "pct": pct}
+        if total > 0 and done == total:
+            completed_paths.append(pid)
+    return path_progress, completed_paths
+
+
 async def get_progress(user_id: str) -> dict:
     p = await progress_col.find_one({"user_id": user_id}, {"_id": 0})
     if not p:
@@ -190,6 +277,75 @@ async def get_progress(user_id: str) -> dict:
         await progress_col.insert_one(dict(p))
         p.pop("_id", None)
     return p
+
+
+def _build_progress_out(p: dict) -> ProgressOut:
+    lvl = compute_level(p.get("total_xp", 0))
+    path_progress, completed_paths = _compute_path_progress(p.get("completed_lesson_ids", []))
+    return ProgressOut(
+        completed_lesson_ids=p.get("completed_lesson_ids", []),
+        total_xp=p.get("total_xp", 0),
+        streak_days=p.get("streak_days", 0),
+        last_active_date=p.get("last_active_date"),
+        level=lvl["level"],
+        level_progress_pct=lvl["level_progress_pct"],
+        xp_to_next_level=lvl["xp_to_next_level"],
+        completed_paths=completed_paths,
+        path_progress=path_progress,
+    )
+
+
+def _recommend_path(answers: dict) -> str:
+    """Pick the most fitting learning path from quiz answers."""
+    goal = (answers.get("goal") or "").lower()
+    exp = (answers.get("experience") or "").lower()
+    focus = (answers.get("focus") or "").lower()
+    # Beginners always start with fundamentals
+    if exp == "beginner":
+        return "fundamentals"
+    # Strong focus signals win first
+    focus_map = {
+        "image": "creators",
+        "video": "creators",
+        "voice": "creators",
+        "code": "code-with-ai",
+        "agents": "automation",
+        "text": "prompt-mastery",
+    }
+    if focus in focus_map:
+        return focus_map[focus]
+    # Goal-based fallback
+    goal_map = {
+        "business": "business",
+        "creator": "creators",
+        "productivity": "productivity",
+        "career": "prompt-mastery",
+    }
+    return goal_map.get(goal, "fundamentals")
+
+
+async def _issue_certificate_if_complete(user: dict, path_id: str) -> Optional[dict]:
+    """Issue a certificate for a completed path if not already issued."""
+    existing = await certs_col.find_one({"user_id": user["id"], "path_id": path_id}, {"_id": 0})
+    if existing:
+        return None
+    p = get_path(path_id)
+    if not p:
+        return None
+    # serial: e.g. ASC-FUND-AB12CD
+    serial = f"ASC-{path_id[:4].upper()}-{uuid.uuid4().hex[:6].upper()}"
+    cert = {
+        "id": str(uuid.uuid4()),
+        "user_id": user["id"],
+        "user_name": user.get("name") or user["email"].split("@")[0],
+        "path_id": path_id,
+        "path_title": p["title"],
+        "path_color": p["color"],
+        "issued_at": datetime.now(timezone.utc),
+        "serial": serial,
+    }
+    await certs_col.insert_one(dict(cert))
+    return cert
 
 # ─── Auth routes ────────────────────────────────────────────────────────────
 @api.post("/auth/signup", response_model=Token)
@@ -286,13 +442,13 @@ async def get_path_detail(path_id: str):
     modules = []
     for m in p["modules"]:
         lessons = []
-        for l in m["lessons"]:
+        for lsn in m["lessons"]:
             lessons.append({
-                "id": l["id"],
-                "title": l["title"],
-                "duration_min": l["duration_min"],
-                "xp": l["xp"],
-                "card_count": len(l["cards"]),
+                "id": lsn["id"],
+                "title": lsn["title"],
+                "duration_min": lsn["duration_min"],
+                "xp": lsn["xp"],
+                "card_count": len(lsn["cards"]),
             })
         modules.append({"id": m["id"], "title": m["title"], "lessons": lessons})
     return {
@@ -309,13 +465,13 @@ async def get_path_detail(path_id: str):
 
 @api.get("/lessons/{lesson_id}")
 async def fetch_lesson(lesson_id: str, user=Depends(current_user)):
-    l = get_lesson(lesson_id)
-    if not l:
+    lsn = get_lesson(lesson_id)
+    if not lsn:
         raise HTTPException(404, "Lesson not found")
-    p = get_path(l["path_id"])
+    p = get_path(lsn["path_id"])
     if p and not can_access(user.get("tier", "free"), p.get("tier", "free")):
         raise HTTPException(403, f"This lesson requires {p['tier'].upper()} tier. Upgrade to unlock.")
-    return l
+    return lsn
 
 @api.get("/models")
 async def list_models():
@@ -325,14 +481,9 @@ async def list_models():
 @api.get("/progress", response_model=ProgressOut)
 async def progress(user=Depends(current_user)):
     p = await get_progress(user["id"])
-    return ProgressOut(
-        completed_lesson_ids=p["completed_lesson_ids"],
-        total_xp=p["total_xp"],
-        streak_days=p["streak_days"],
-        last_active_date=p["last_active_date"],
-    )
+    return _build_progress_out(p)
 
-@api.post("/progress/complete", response_model=ProgressOut)
+@api.post("/progress/complete", response_model=CompleteLessonOut)
 async def complete_lesson(body: CompleteLessonIn, user=Depends(current_user)):
     lesson = get_lesson(body.lesson_id)
     if not lesson:
@@ -341,9 +492,13 @@ async def complete_lesson(body: CompleteLessonIn, user=Depends(current_user)):
     p = await get_progress(user["id"])
     today = datetime.now(timezone.utc).date().isoformat()
 
+    awarded_xp = 0
+    prev_completed_paths = set(_compute_path_progress(p["completed_lesson_ids"])[1])
+
     if body.lesson_id not in p["completed_lesson_ids"]:
         p["completed_lesson_ids"].append(body.lesson_id)
         p["total_xp"] += lesson["xp"]
+        awarded_xp = lesson["xp"]
 
     # streak logic
     last = p["last_active_date"]
@@ -364,12 +519,64 @@ async def complete_lesson(body: CompleteLessonIn, user=Depends(current_user)):
             "last_active_date": p["last_active_date"],
         }},
     )
-    return ProgressOut(
-        completed_lesson_ids=p["completed_lesson_ids"],
-        total_xp=p["total_xp"],
-        streak_days=p["streak_days"],
-        last_active_date=p["last_active_date"],
+
+    # Detect newly-completed paths & auto-issue certificates
+    new_completed_paths = set(_compute_path_progress(p["completed_lesson_ids"])[1]) - prev_completed_paths
+    issued_ids: list = []
+    for pid in new_completed_paths:
+        cert = await _issue_certificate_if_complete(user, pid)
+        if cert:
+            issued_ids.append(cert["id"])
+
+    return CompleteLessonOut(
+        progress=_build_progress_out(p),
+        awarded_xp=awarded_xp,
+        newly_completed_paths=list(new_completed_paths),
+        certificates_issued=issued_ids,
     )
+
+# ─── Quiz / Recommendation ──────────────────────────────────────────────────
+@api.put("/auth/me/quiz")
+async def save_quiz_answers(body: QuizAnswers, user=Depends(current_user)):
+    answers = body.dict(exclude_none=True)
+    if not answers:
+        raise HTTPException(400, "No answers provided")
+    recommended = _recommend_path(answers)
+    update = {
+        "quiz_answers": answers,
+        "recommended_path_id": recommended,
+    }
+    # Mirror goal onto top-level goal field for backwards-compat
+    if "goal" in answers:
+        update["goal"] = answers["goal"]
+    await users_col.update_one({"id": user["id"]}, {"$set": update})
+    return {"recommended_path_id": recommended, "quiz_answers": answers}
+
+# ─── Certificates ───────────────────────────────────────────────────────────
+def _serialize_cert(c: dict) -> dict:
+    return {
+        "id": c["id"],
+        "user_id": c["user_id"],
+        "user_name": c.get("user_name") or "Ascendra Learner",
+        "path_id": c["path_id"],
+        "path_title": c["path_title"],
+        "path_color": c.get("path_color", "#FFB000"),
+        "issued_at": c["issued_at"],
+        "serial": c["serial"],
+    }
+
+@api.get("/certificates")
+async def list_certificates(user=Depends(current_user)):
+    cursor = certs_col.find({"user_id": user["id"]}, {"_id": 0}).sort("issued_at", -1)
+    certs = await cursor.to_list(100)
+    return {"certificates": [_serialize_cert(c) for c in certs]}
+
+@api.get("/certificates/{cert_id}")
+async def get_certificate(cert_id: str, user=Depends(current_user)):
+    c = await certs_col.find_one({"id": cert_id, "user_id": user["id"]}, {"_id": 0})
+    if not c:
+        raise HTTPException(404, "Certificate not found")
+    return _serialize_cert(c)
 
 # ─── AI Tutor (Claude Sonnet 4.5) ───────────────────────────────────────────
 TUTOR_SYSTEM = (
@@ -565,6 +772,25 @@ async def checkout_status(session_id: str, request: Request, user=Depends(curren
 @api.post("/billing/webhook")
 async def stripe_webhook(request: Request, stripe_signature: Optional[str] = Header(None)):
     payload = await request.body()
+
+    # Try native Stripe parser first when a real key + webhook secret are set.
+    # This handles auto-renewing subscription events (invoice.paid,
+    # customer.subscription.updated/.deleted) once the user adds their real keys.
+    if _is_real_stripe_key() and STRIPE_WEBHOOK_SECRET and stripe_signature:
+        try:
+            import stripe as _stripe
+            _stripe.api_key = STRIPE_API_KEY
+            event = _stripe.Webhook.construct_event(
+                payload=payload,
+                sig_header=stripe_signature,
+                secret=STRIPE_WEBHOOK_SECRET,
+            )
+            await _handle_native_stripe_event(event)
+            return {"received": True, "source": "native"}
+        except Exception as e:
+            log.warning(f"Native Stripe webhook parse failed: {e}; falling back to emergent wrapper")
+
+    # Fallback: Emergent wrapper webhook (one-time checkout flow).
     try:
         webhook_url = f"{str(request.base_url).rstrip('/')}/api/billing/webhook"
         sc = StripeCheckout(api_key=STRIPE_API_KEY, webhook_url=webhook_url)
@@ -596,6 +822,83 @@ async def stripe_webhook(request: Request, stripe_signature: Optional[str] = Hea
     return {"received": True}
 
 
+async def _handle_native_stripe_event(event) -> None:
+    """Handle real Stripe subscription lifecycle events to keep MongoDB in sync."""
+    etype = event.get("type") if isinstance(event, dict) else event["type"]
+    obj = event["data"]["object"]
+
+    if etype in ("checkout.session.completed", "invoice.paid", "invoice.payment_succeeded"):
+        # Extract subscription + customer
+        sub_id = obj.get("subscription") or obj.get("id")
+        cust_id = obj.get("customer")
+        if not (sub_id and cust_id):
+            return
+        try:
+            import stripe as _stripe
+            _stripe.api_key = STRIPE_API_KEY
+            sub = _stripe.Subscription.retrieve(sub_id)
+        except Exception as e:
+            log.warning(f"Failed to retrieve subscription {sub_id}: {e}")
+            return
+        meta = sub.get("metadata", {}) or {}
+        tier = meta.get("tier")
+        interval = meta.get("interval", "monthly")
+        period_end = sub.get("current_period_end")
+        if not (tier and period_end):
+            return
+        expires_at = datetime.fromtimestamp(period_end, tz=timezone.utc)
+        user = await users_col.find_one({"stripe_customer_id": cust_id}) \
+            or await users_col.find_one({"id": meta.get("user_id")})
+        if not user:
+            return
+        update = {
+            "tier": tier,
+            "subscription_interval": interval,
+            "tier_expires_at": expires_at,
+            "stripe_subscription_id": sub_id,
+        }
+        if sub.get("trial_end") and not user.get("has_used_trial"):
+            update["has_used_trial"] = True
+        await users_col.update_one({"id": user["id"]}, {"$set": update})
+
+    elif etype in ("customer.subscription.updated",):
+        cust_id = obj.get("customer")
+        status_ = obj.get("status")
+        period_end = obj.get("current_period_end")
+        meta = obj.get("metadata", {}) or {}
+        user = await users_col.find_one({"stripe_customer_id": cust_id}) \
+            or await users_col.find_one({"id": meta.get("user_id")})
+        if not user:
+            return
+        if status_ in ("active", "trialing") and period_end:
+            await users_col.update_one(
+                {"id": user["id"]},
+                {"$set": {
+                    "tier": meta.get("tier", user.get("tier", "free")),
+                    "subscription_interval": meta.get("interval", user.get("subscription_interval")),
+                    "tier_expires_at": datetime.fromtimestamp(period_end, tz=timezone.utc),
+                    "stripe_subscription_id": obj.get("id"),
+                }},
+            )
+        elif status_ in ("canceled", "unpaid", "incomplete_expired"):
+            await users_col.update_one(
+                {"id": user["id"]},
+                {"$set": {"tier": "free", "subscription_interval": None}},
+            )
+
+    elif etype == "customer.subscription.deleted":
+        cust_id = obj.get("customer")
+        meta = obj.get("metadata", {}) or {}
+        user = await users_col.find_one({"stripe_customer_id": cust_id}) \
+            or await users_col.find_one({"id": meta.get("user_id")})
+        if not user:
+            return
+        await users_col.update_one(
+            {"id": user["id"]},
+            {"$set": {"tier": "free", "subscription_interval": None, "stripe_subscription_id": None}},
+        )
+
+
 # ─── Recurring Subscriptions (auto-renew) ───────────────────────────────────
 # Activates only when STRIPE_API_KEY is a real live/test key (sk_live_... or
 # sk_test_...) — NOT the Emergent proxy key (sk_test_emergent). When the
@@ -605,6 +908,13 @@ async def stripe_webhook(request: Request, stripe_signature: Optional[str] = Hea
 def _is_real_stripe_key() -> bool:
     k = STRIPE_API_KEY or ""
     return k.startswith("sk_live_") or (k.startswith("sk_test_") and k != "sk_test_emergent")
+
+
+@api.get("/billing/info")
+async def billing_info():
+    """Frontend uses this to know whether to call /billing/subscribe (real Stripe)
+    or /billing/checkout (one-time / Emergent proxy)."""
+    return {"uses_real_stripe": _is_real_stripe_key()}
 
 
 @api.post("/billing/subscribe")
@@ -631,6 +941,27 @@ async def create_subscription(body: CheckoutIn, request: Request, user=Depends(c
         recur_interval = "year" if body.interval == "annual" else "month"
         origin = body.origin_url.rstrip("/")
 
+        # Honor 7-day Stripe trial if requested and not yet used.
+        is_trial = (body.interval == "trial")
+        if is_trial:
+            if user.get("has_used_trial"):
+                raise HTTPException(400, "Trial already used")
+            amount_usd = TIERS["sage"]["price_monthly"]   # bills $29.99/mo after trial
+            recur_interval = "month"
+            granted_tier_name = "sage"
+        else:
+            granted_tier_name = body.tier
+
+        sub_data = {
+            "metadata": {
+                "user_id": user["id"],
+                "tier": granted_tier_name,
+                "interval": "monthly" if is_trial else body.interval,
+            }
+        }
+        if is_trial:
+            sub_data["trial_period_days"] = 7
+
         session = _stripe.checkout.Session.create(
             mode="subscription",
             customer=cust_id,
@@ -639,13 +970,15 @@ async def create_subscription(body: CheckoutIn, request: Request, user=Depends(c
                     "currency": "usd",
                     "unit_amount": int(round(amount_usd * 100)),
                     "recurring": {"interval": recur_interval},
-                    "product_data": {"name": f"Ascendra {TIERS[body.tier]['name']}"},
+                    "product_data": {"name": f"Ascendra {TIERS[granted_tier_name]['name']}"},
                 },
                 "quantity": 1,
             }],
+            subscription_data=sub_data,
             success_url=f"{origin}/checkout-success?session_id={{CHECKOUT_SESSION_ID}}",
             cancel_url=f"{origin}/pricing",
-            metadata={"user_id": user["id"], "tier": body.tier, "interval": body.interval},
+            allow_promotion_codes=True,
+            metadata={"user_id": user["id"], "tier": granted_tier_name, "interval": body.interval},
         )
         return {"url": session.url, "session_id": session.id}
     except HTTPException:

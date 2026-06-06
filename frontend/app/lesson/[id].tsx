@@ -22,6 +22,7 @@ export default function Lesson() {
   const [quizPick, setQuizPick] = useState<number | null>(null);
   const [revealed, setRevealed] = useState(false);
   const [done, setDone] = useState(false);
+  const [issuedCertId, setIssuedCertId] = useState<string | null>(null);
 
   useEffect(() => { api.get(`/lessons/${id}`).then(setLesson); }, [id]);
 
@@ -58,7 +59,10 @@ export default function Lesson() {
   };
   const onFinish = async () => {
     try {
-      await api.post("/progress/complete", { lesson_id: lesson.id });
+      const result = await api.post("/progress/complete", { lesson_id: lesson.id });
+      if (result?.certificates_issued?.length) {
+        setIssuedCertId(result.certificates_issued[0]);
+      }
     } catch {}
     setDone(true);
   };
@@ -69,15 +73,29 @@ export default function Lesson() {
         <Stack.Screen options={{ headerShown: false }} />
         <View style={styles.doneWrap}>
           <View style={[styles.doneIcon, { backgroundColor: color }]}>
-            <Ionicons name="trophy" size={48} color="#000" />
+            <Ionicons name={issuedCertId ? "ribbon" : "trophy"} size={48} color="#000" />
           </View>
-          <Text style={styles.doneTitle}>Nice work!</Text>
+          <Text style={styles.doneTitle}>{issuedCertId ? "Path mastered!" : "Nice work!"}</Text>
           <Text style={styles.doneSub}>+{lesson.xp} XP earned</Text>
-          <Text style={styles.doneNote}>You finished &quot;{lesson.title}&quot;.</Text>
+          <Text style={styles.doneNote}>
+            {issuedCertId
+              ? `You finished the entire "${lesson.path_title || ''}" path. A certificate has been added to your profile.`
+              : `You finished "${lesson.title}".`}
+          </Text>
           <View style={{ height: 40 }} />
-          <Pressable testID="lesson-back-to-path-btn" onPress={() => router.replace(`/path/${lesson.path_id}`)} style={[styles.primaryBtn, { backgroundColor: color }]}>
-            <Text style={styles.primaryBtnText}>Back to path</Text>
-            <Ionicons name="arrow-forward" size={18} color="#000" />
+          {issuedCertId && (
+            <Pressable
+              testID="lesson-view-cert-btn"
+              onPress={() => router.replace(`/certificate/${issuedCertId}`)}
+              style={[styles.primaryBtn, { backgroundColor: color, marginBottom: 12 }]}
+            >
+              <Ionicons name="ribbon" size={18} color="#000" />
+              <Text style={styles.primaryBtnText}>View my certificate</Text>
+            </Pressable>
+          )}
+          <Pressable testID="lesson-back-to-path-btn" onPress={() => router.replace(`/path/${lesson.path_id}`)} style={[styles.primaryBtn, issuedCertId ? { backgroundColor: C.surface, borderWidth: 1, borderColor: C.borderStrong } : { backgroundColor: color }]}>
+            <Text style={[styles.primaryBtnText, issuedCertId ? { color: C.text } : null]}>Back to path</Text>
+            <Ionicons name="arrow-forward" size={18} color={issuedCertId ? C.text : "#000"} />
           </Pressable>
           <Pressable testID="lesson-back-to-home-btn" onPress={() => router.replace("/(tabs)/home")} style={{ paddingVertical: 16, alignItems: "center" }}>
             <Text style={{ color: C.textDim }}>Back to home</Text>

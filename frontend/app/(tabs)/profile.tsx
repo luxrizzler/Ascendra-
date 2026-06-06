@@ -1,21 +1,51 @@
 import { useCallback, useEffect, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, Pressable, RefreshControl } from "react-native";
+import {
+  View, Text, StyleSheet, ScrollView, Pressable, RefreshControl, Platform, Linking, Alert,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { C, RADIUS } from "@/src/theme";
 import { useAuth } from "@/src/context/AuthContext";
-import { api } from "@/src/api";
+import { api, BACKEND_URL } from "@/src/api";
+
+type Cert = {
+  id: string;
+  path_id: string;
+  path_title: string;
+  path_color: string;
+  issued_at: string;
+  serial: string;
+};
+
+type Progress = {
+  total_xp: number;
+  streak_days: number;
+  completed_lesson_ids: string[];
+  level: number;
+  level_progress_pct: number;
+  xp_to_next_level: number;
+  completed_paths: string[];
+};
 
 export default function Profile() {
   const router = useRouter();
   const { user, logout, refresh } = useAuth();
-  const [progress, setProgress] = useState<any>(null);
+  const [progress, setProgress] = useState<Progress | null>(null);
+  const [certs, setCerts] = useState<Cert[]>([]);
+  const [usesRealStripe, setUsesRealStripe] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [portalLoading, setPortalLoading] = useState(false);
 
   const load = useCallback(async () => {
-    const p = await api.get("/progress");
+    const [p, c, info] = await Promise.all([
+      api.get("/progress"),
+      api.get("/certificates"),
+      api.get("/billing/info"),
+    ]);
     setProgress(p);
+    setCerts(c.certificates || []);
+    setUsesRealStripe(!!info.uses_real_stripe);
   }, []);
 
   useEffect(() => { load(); }, [load]);
@@ -31,8 +61,29 @@ export default function Profile() {
     router.replace("/onboarding");
   };
 
+  const onManageBilling = async () => {
+    setPortalLoading(true);
+    try {
+      const returnUrl = Platform.OS === "web" && typeof window !== "undefined"
+        ? window.location.origin + "/(tabs)/profile"
+        : `${BACKEND_URL}`;
+      const { url } = await api.post("/billing/portal", { return_url: returnUrl });
+      if (Platform.OS === "web" && typeof window !== "undefined") {
+        window.location.href = url;
+      } else {
+        await Linking.openURL(url);
+      }
+    } catch (e: any) {
+      Alert.alert("Billing", e.message || "Could not open billing portal.");
+    } finally {
+      setPortalLoading(false);
+    }
+  };
+
   const tierLabel = (user?.tier || "free").toUpperCase();
   const tierColor = user?.tier === "free" ? C.textMuted : C.brand;
+  const lvl = progress?.level ?? 1;
+  const lvlTitle = lvl >= 7 ? "AI Master" : lvl >= 5 ? "AI Adept" : lvl >= 3 ? "AI Apprentice" : "AI Novice";
 
   return (
     <SafeAreaView style={styles.root} edges={["top"]}>
@@ -53,15 +104,65 @@ export default function Profile() {
           </View>
         </View>
 
+        {/* Level card */}
+        <View style={styles.levelCard}>
+          <View style={styles.levelBadge}>
+            <Ionicons name="sparkles" size={18} color="#000" />
+            <Text style={styles.levelBadgeText}>LVL {lvl}</Text>
+          </View>
+          <View style={{ flex: 1, marginLeft: 14 }}>
+            <Text style={styles.levelTitle}>{lvlTitle}</Text>
+            <Text style={styles.levelSub}>{progress?.xp_to_next_level ?? 0} XP to next level</Text>
+            <View style={styles.levelTrack}>
+              <View style={[styles.levelFill, { width: `${progress?.level_progress_pct ?? 0}%` }]} />
+            </View>
+          </View>
+        </View>
+
         <View style={styles.statsGrid}>
           <Stat label="Day streak" value={progress?.streak_days ?? 0} icon="flame" color="#FF8A00" />
           <Stat label="Total XP" value={progress?.total_xp ?? 0} icon="trophy" color={C.brand} />
           <Stat label="Lessons" value={progress?.completed_lesson_ids?.length ?? 0} icon="checkmark-circle" color={C.success} />
-          <Stat label="Member since" value={new Date(user?.created_at || Date.now()).getFullYear()} icon="calendar" color={C.info} />
+          <Stat label="Certificates" value={certs.length} icon="ribbon" color={C.lavender} />
         </View>
+
+        {/* Certificates */}
+        {certs.length > 0 && (
+          <View style={{ marginTop: 24 }}>
+            <Text style={styles.sectionTitle}>CERTIFICATES</Text>
+            {certs.map((c) => (
+              <Pressable
+                key={c.id}
+                testID={`cert-row-${c.id}`}
+                onPress={() => router.push(`/certificate/${c.id}`)}
+                style={[styles.certRow, { borderColor: c.path_color }]}
+              >
+                <View style={[styles.certIcon, { backgroundColor: c.path_color + "22", borderColor: c.path_color }]}>
+                  <Ionicons name="ribbon" size={22} color={c.path_color} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.certTitle}>{c.path_title}</Text>
+                  <Text style={styles.certMeta}>
+                    Issued {new Date(c.issued_at).toLocaleDateString()} · {c.serial}
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color={C.textMuted} />
+              </Pressable>
+            ))}
+          </View>
+        )}
 
         <Section title="Account">
           <Row icon="card-outline" label="Subscription" value={tierLabel} onPress={() => router.push("/pricing")} testID="profile-subscription-row" />
+          {usesRealStripe && user?.tier !== "free" && (
+            <Row
+              icon="settings-outline"
+              label="Manage subscription"
+              value={portalLoading ? "Opening..." : "Open portal"}
+              onPress={onManageBilling}
+              testID="profile-manage-billing"
+            />
+          )}
           <Row icon="sparkles-outline" label="AI Tutor" value="Open chat" onPress={() => router.push("/(tabs)/tutor")} testID="profile-tutor-row" />
           <Row icon="planet-outline" label="Model Library" value="Browse" onPress={() => router.push("/(tabs)/models")} testID="profile-models-row" />
         </Section>
@@ -70,7 +171,7 @@ export default function Profile() {
           <View style={styles.row}>
             <Ionicons name="information-circle-outline" size={22} color={C.textDim} />
             <Text style={styles.rowLabel}>Version</Text>
-            <Text style={styles.rowValue}>1.0.0</Text>
+            <Text style={styles.rowValue}>1.1.0</Text>
           </View>
         </Section>
 
@@ -123,10 +224,27 @@ const styles = StyleSheet.create({
   email: { color: C.textMuted, fontSize: 13, marginTop: 4 },
   tierTag: { borderWidth: 1, paddingHorizontal: 12, paddingVertical: 5, borderRadius: RADIUS.pill, marginTop: 12 },
   tierText: { fontSize: 11, fontWeight: "800", letterSpacing: 2 },
-  statsGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10, marginTop: 24 },
+  levelCard: {
+    flexDirection: "row", alignItems: "center", padding: 16, marginTop: 20,
+    backgroundColor: C.surface, borderRadius: RADIUS.lg, borderWidth: 1, borderColor: C.border,
+  },
+  levelBadge: { width: 64, height: 64, borderRadius: 32, backgroundColor: C.brand, alignItems: "center", justifyContent: "center" },
+  levelBadgeText: { color: "#000", fontWeight: "900", fontSize: 11, letterSpacing: 1, marginTop: 2 },
+  levelTitle: { color: C.text, fontWeight: "800", fontSize: 17 },
+  levelSub: { color: C.textMuted, fontSize: 12, marginTop: 2 },
+  levelTrack: { height: 6, backgroundColor: C.surface2, borderRadius: 3, marginTop: 10, overflow: "hidden" },
+  levelFill: { height: 6, borderRadius: 3, backgroundColor: C.brand },
+  statsGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10, marginTop: 18 },
   statCard: { flexBasis: "48%", flexGrow: 1, padding: 14, backgroundColor: C.surface, borderRadius: RADIUS.lg, borderWidth: 1, borderColor: C.border },
   statValue: { color: C.text, fontWeight: "900", fontSize: 22, marginTop: 6 },
   statLabel: { color: C.textMuted, fontSize: 11, fontWeight: "600", marginTop: 2 },
+  certRow: {
+    flexDirection: "row", alignItems: "center", gap: 12, padding: 14,
+    backgroundColor: C.surface, borderRadius: RADIUS.lg, borderWidth: 1, marginBottom: 10,
+  },
+  certIcon: { width: 44, height: 44, borderRadius: 12, alignItems: "center", justifyContent: "center", borderWidth: 1 },
+  certTitle: { color: C.text, fontWeight: "800", fontSize: 15 },
+  certMeta: { color: C.textMuted, fontSize: 11, marginTop: 2 },
   sectionTitle: { color: C.textMuted, fontSize: 11, fontWeight: "800", letterSpacing: 2, marginBottom: 10, marginLeft: 4 },
   card: { backgroundColor: C.surface, borderRadius: RADIUS.lg, borderWidth: 1, borderColor: C.border, overflow: "hidden" },
   row: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 14, gap: 12, borderBottomWidth: 1, borderColor: C.border },

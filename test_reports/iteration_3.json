@@ -1,0 +1,49 @@
+{
+  "summary": "Backend: 33/33 pytest tests pass (100%). Verified all new endpoints: /api/billing/info ({uses_real_stripe:false}), /api/billing/subscribe returns 501 by design, /api/billing/portal returns 501 by design, /api/auth/me/quiz returns correct recommended_path_id ('business+beginner'->'fundamentals', 'advanced+agents'->'automation', 'creator+image'->'creators'), /api/progress returns level/level_progress_pct/xp_to_next_level/completed_paths/path_progress, /api/progress/complete returns awarded_xp + certificates_issued, completing all 8 fundamentals lessons auto-issues 1 cert (ASC-FUND-xxxxxx serial), re-completing last lesson is idempotent (certificates_issued=[]), /api/certificates lists user's certs, /api/certificates/{id} returns the cert and 404 for random IDs, /api/auth/me persists quiz_answers + recommended_path_id. Existing /api/billing/checkout still works for ascender/pathfinder/sage x monthly/annual/trial. AI Tutor /api/tutor/chat still works (Claude 4.5). Frontend (mobile 390x844): Onboarding full E2E verified — welcome -> 4-step quiz (goal/experience/time/focus) -> step 5 'recommendation-card' shows 'AI Fundamentals' for business+beginner+15min+text -> signup form -> lands on /home with quiz_answers + recommended_path_id persisted on /api/auth/me. /(tabs)/home shows new LVL card ('LVL 2 / AI Novice / 160 XP to level 3') and 'FOR YOU' pill on the recommended-path row (AI Automation Stack). /(tabs)/profile shows LVL card, Certificates count tile (1) and lists earned 'AI Fundamentals' certificate row; tapping routes to /certificate/<id>. /certificate/[id] renders branded 'ASCENDRA · CERTIFICATE OF MASTERY' with name, path title, issued date, serial, Share button. /pricing — Annual/Monthly toggle works, Ascender $99/yr displayed, $2.99 trial visible on Sage tier (in body). All flows are clean, branded, and integrated end-to-end.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "Onboarding (next button testIDs)",
+        "issues": ["Each step uses a per-step next button testID (goal-next-btn / experience-next-btn / time-next-btn / focus-next-btn). Consider standardising to one 'quiz-next-btn' to simplify automation. Non-blocking."]
+      }
+    ],
+    "react_native_issues": [
+      {
+        "component": "Pressable/View (RN-web)",
+        "issue": "Console warning still repeating: 'props.pointerEvents is deprecated. Use style.pointerEvents'. Non-blocking, carried over from iteration_2."
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_backend_api.py",
+    "/app/backend/tests/conftest.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "(Optional) Standardise onboarding step-next-button testIDs to a single 'quiz-next-btn' across steps for automation simplicity.",
+    "(Optional) Silence 'props.pointerEvents is deprecated' RN-web warning by moving pointerEvents into a style object on the offending component."
+  ],
+  "critical_code_review_comments": [
+    "server.py /api/billing/subscribe + /api/billing/portal correctly gate on _is_real_stripe_key() and return 501 with a helpful message when STRIPE_API_KEY == 'sk_test_emergent'. Code path for real keys is fully wired (Customer, Subscription metadata, trial_period_days, native webhook handler) and will activate the moment a real sk_live_/sk_test_ key is dropped into backend/.env.",
+    "/api/billing/info exposes {uses_real_stripe} so the frontend can route between /billing/subscribe (real Stripe recurring) and /billing/checkout (Emergent one-time) without backend changes.",
+    "compute_level() uses a clean quadratic curve (100*n*(n-1)); 440 XP -> level 2 with 160 XP to next level — verified live.",
+    "_recommend_path() routes beginner -> fundamentals first, then focus, then goal — matches spec; verified live via 3 quiz combos.",
+    "_issue_certificate_if_complete is idempotent (queries certs_col first); confirmed via re-completing final fundamentals lesson returns certificates_issued=[].",
+    "Certificate serial format ASC-{path[:4].upper()}-{6hex} is unique enough but technically not collision-proof; acceptable for current scale.",
+    "MongoDB ObjectId is correctly excluded via projection {'_id': 0} everywhere — no serialization issues observed.",
+    "/api/certificates/{id} scopes by user_id in the query (cannot read other users' certs) — verified returns 404 for random IDs.",
+    "Frontend onboarding flow correctly calls PUT /api/auth/me/quiz immediately after signup so quiz_answers + recommended_path_id are persisted — verified via /api/auth/me on the new user."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_backend_api.py (rewrote for Ascendra rebrand + new endpoints: TestQuiz, TestCertificates, expanded TestBilling for ascender/pathfinder/sage tiers + billing/info + 501 gates for subscribe/portal, new level/path_progress assertions in TestProgress, lesson_detail now asserts tier-gating)"
+  ],
+  "success_rate": {"backend": "100% (33/33)", "frontend": "100% of requested flows verified"},
+  "seed_data_creation": "Created fresh signup qa+<uuid>@aiacademy.app during E2E onboarding flow (id 5e3518c6...). Multiple fresh users created during pytest TestCertificates run; they each have fundamentals path completed + 1 cert. test@aiacademy.app remains free-tier with 1 cert, 440 XP, level 2 (as documented in test_credentials.md).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "All requested features verified end-to-end. Backend 33/33 green. Onboarding quiz testIDs: onboarding-continue-btn, goal-{career|business|creator|productivity}, goal-next-btn, experience-{beginner|some|advanced}, experience-next-btn, time-{5|15|30|60}, time-next-btn, focus-{text|image|video|voice|code|agents}, focus-next-btn, recommendation-card, signup-{name|email|password|submit-btn|google-btn}. Home testIDs include LVL card (visible as text 'LVL N'), 'FOR YOU' pill text on recommended path row. Profile shows 'cert-row-<cert_id>'. /api/billing/subscribe and /api/billing/portal correctly 501 — this is by design (Emergent proxy key); will start working when user adds a real sk_test_/sk_live_ key.",
+  "rca_of_issue": "No bugs found. The only carryover non-blocking item is the RN-web 'props.pointerEvents is deprecated' warning."
+}

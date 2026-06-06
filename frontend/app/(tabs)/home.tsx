@@ -15,7 +15,17 @@ type PathSummary = {
   level: string; duration: string; image: string; total_lessons: number; total_xp: number; module_count: number;
 };
 
-type Progress = { completed_lesson_ids: string[]; total_xp: number; streak_days: number; last_active_date: string | null };
+type Progress = {
+  completed_lesson_ids: string[];
+  total_xp: number;
+  streak_days: number;
+  last_active_date: string | null;
+  level: number;
+  level_progress_pct: number;
+  xp_to_next_level: number;
+  completed_paths: string[];
+  path_progress: Record<string, { completed: number; total: number; pct: number }>;
+};
 
 export default function Home() {
   const router = useRouter();
@@ -40,10 +50,18 @@ export default function Home() {
     try { await load(); } finally { setRefreshing(false); }
   };
 
-  // Pick "continue" path - first path with incomplete lessons, otherwise first
-  const completedSet = new Set(progress?.completed_lesson_ids || []);
+  // Pick "continue" path: prefer user's recommended path if they have one and it's not finished
+  // else first path with any in-progress lessons, else first path overall.
+  const isFinished = (pid: string) =>
+    (progress?.path_progress?.[pid]?.pct ?? 0) >= 100;
+  const recId = user?.recommended_path_id;
   const continuePath =
-    paths.find((p) => completedSet.size > 0 && completedSet.size < p.total_lessons) ||
+    (recId && paths.find((p) => p.id === recId && !isFinished(p.id))) ||
+    paths.find((p) => {
+      const pp = progress?.path_progress?.[p.id];
+      return pp && pp.completed > 0 && pp.completed < pp.total;
+    }) ||
+    paths.find((p) => !isFinished(p.id)) ||
     paths[0];
 
   if (loading) {
@@ -81,6 +99,25 @@ export default function Home() {
           <Stat icon="checkmark-circle" value={progress?.completed_lesson_ids.length || 0} label="Lessons" color={C.success} />
         </View>
 
+        {/* Level Card */}
+        <View style={styles.levelCard}>
+          <View style={styles.levelBadge}>
+            <Ionicons name="sparkles" size={16} color="#000" />
+            <Text style={styles.levelBadgeText}>LVL {progress?.level || 1}</Text>
+          </View>
+          <View style={{ flex: 1, marginLeft: 12 }}>
+            <Text style={styles.levelTitle}>
+              {(progress?.level ?? 1) >= 5 ? "AI Adept" : (progress?.level ?? 1) >= 3 ? "AI Apprentice" : "AI Novice"}
+            </Text>
+            <Text style={styles.levelSub}>
+              {progress?.xp_to_next_level ?? 0} XP to level {(progress?.level ?? 1) + 1}
+            </Text>
+            <View style={styles.levelTrack}>
+              <View style={[styles.levelFill, { width: `${progress?.level_progress_pct ?? 0}%` }]} />
+            </View>
+          </View>
+        </View>
+
         {/* Continue Card */}
         {continuePath && (
           <Pressable
@@ -116,21 +153,24 @@ export default function Home() {
         </View>
 
         {paths.map((p) => {
-          const completedHere = p.module_count > 0
-            ? (progress?.completed_lesson_ids || []).filter((id) => id.startsWith(p.id[0])).length
-            : 0;
-          const pct = p.total_lessons ? Math.min(100, Math.round((completedHere / p.total_lessons) * 100)) : 0;
+          const pp = progress?.path_progress?.[p.id];
+          const completedHere = pp?.completed ?? 0;
+          const pct = pp?.pct ?? 0;
+          const isRec = user?.recommended_path_id === p.id;
           return (
             <Pressable
               key={p.id}
               testID={`path-card-${p.id}`}
               onPress={() => router.push(`/path/${p.id}`)}
-              style={styles.pathRow}
+              style={[styles.pathRow, isRec && { borderColor: C.brand }]}
             >
               <View style={[styles.pathDot, { backgroundColor: p.color }]} />
               <View style={{ flex: 1 }}>
-                <Text style={styles.pathRowTitle}>{p.title}</Text>
-                <Text style={styles.pathRowSub}>{p.total_lessons} lessons · {p.duration}</Text>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  <Text style={styles.pathRowTitle}>{p.title}</Text>
+                  {isRec && <View style={styles.recPill}><Text style={styles.recPillText}>FOR YOU</Text></View>}
+                </View>
+                <Text style={styles.pathRowSub}>{completedHere}/{p.total_lessons} lessons · {p.duration}</Text>
                 <View style={styles.progressTrack}>
                   <View style={[styles.progressFill, { width: `${pct}%`, backgroundColor: p.color }]} />
                 </View>
@@ -234,4 +274,19 @@ const styles = StyleSheet.create({
   upgradeKicker: { fontSize: 10, fontWeight: "800", letterSpacing: 2.5, color: C.brand, marginBottom: 4 },
   upgradeTitle: { color: C.text, fontSize: 16, fontWeight: "800" },
   upgradeSub: { color: C.textMuted, fontSize: 12, marginTop: 2 },
+  levelCard: {
+    flexDirection: "row", alignItems: "center", padding: 14, marginBottom: 24,
+    backgroundColor: C.surface, borderRadius: RADIUS.lg, borderWidth: 1, borderColor: C.border,
+  },
+  levelBadge: {
+    width: 60, height: 60, borderRadius: 30, backgroundColor: C.brand,
+    alignItems: "center", justifyContent: "center", gap: 2,
+  },
+  levelBadgeText: { color: "#000", fontWeight: "900", fontSize: 11, letterSpacing: 1 },
+  levelTitle: { color: C.text, fontWeight: "800", fontSize: 16 },
+  levelSub: { color: C.textMuted, fontSize: 11, marginTop: 2 },
+  levelTrack: { height: 6, backgroundColor: C.surface2, borderRadius: 3, marginTop: 8, overflow: "hidden" },
+  levelFill: { height: 6, borderRadius: 3, backgroundColor: C.brand },
+  recPill: { backgroundColor: C.brand, paddingHorizontal: 6, paddingVertical: 2, borderRadius: RADIUS.pill },
+  recPillText: { color: "#000", fontSize: 9, fontWeight: "900", letterSpacing: 1 },
 });

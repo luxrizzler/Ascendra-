@@ -19,26 +19,32 @@ A premium mobile-first AI learning app (Coursiv-style) with a web marketing land
 - **Slogan**: LEARN. GROW. TRANSFORM. ASCEND.
 
 ## Core features
-1. **Onboarding** — goal selection (career, business, creator, productivity) + signup
-2. **Auth** — JWT email/password + Google Social Login
-3. **4 Learning Paths** — AI Fundamentals · Build a Business with AI · AI for Creators · AI for Productivity (36+ micro-lessons)
-4. **Lesson player** — swipeable cards + end-of-lesson quiz + XP reward
+1. **Onboarding quiz** — 4-question Coursiv-style quiz (goal · experience · time/day · focus area) → personalized path recommendation card before signup
+2. **Auth** — JWT email/password + Emergent-managed Google Social Login
+3. **10 Learning Paths** — Fundamentals · Business · Creators · Productivity · Prompt Mastery · Automation · Code With AI · Startup Playbook · Sales Engine · Enterprise AI (100+ micro-lessons across Ascender/Pathfinder/Sage tiers)
+4. **Lesson player** — swipeable cards + end-of-lesson quiz + XP reward + auto-celebration when path completes
 5. **AI Tutor "Ascendra"** — Claude Sonnet 4.5 chat with persistent multi-turn memory (MongoDB replay)
-6. **AI Model Library** — 22 frontier models (GPT-5.2, Claude 4.5, Gemini 3, Nano Banana, Sora 2, Veo 3, ElevenLabs, Perplexity, Midjourney, Cursor, …) with category filters & detail sheets
-7. **Progress tracking** — daily streak, XP, completed lessons, member-since
-8. **Pricing & paywall** — Free / Pro $19.99 / Business $49.99 with Stripe Checkout
-9. **Web marketing landing page** — hero, models marquee, features, testimonials, pricing, final CTA
+6. **AI Model Library** — 22 frontier models with category filters & detail sheets
+7. **Progress / Levels / Streaks** — daily streak, XP, computed level (curve: cumulative XP = 100·n·(n−1)), per-path progress bars, "FOR YOU" badge on recommended path
+8. **Certificates of Mastery** — auto-issued (idempotent) when all lessons in a path complete; beautiful Ascendra-branded cert page with share + serial ID
+9. **Pricing & paywall** — Ascender $9.99 · Pathfinder $19.99 · Sage $29.99 with annual toggle (17% off) + Stripe Checkout + $2.99 7-day trial for Sage
+10. **Real auto-renewing Stripe subscriptions** — `POST /api/billing/subscribe` (recurring) + `POST /api/billing/portal` (Customer Portal). Auto-activates when user adds real `sk_test_`/`sk_live_` Stripe key + `STRIPE_WEBHOOK_SECRET` to backend/.env. Native webhook handles `invoice.paid`, `customer.subscription.updated/.deleted`.
+11. **Web marketing landing page** — hero, models marquee, features, testimonials, pricing, final CTA
 
 ## Routes
 - `/` smart redirect (web → /landing · mobile → /onboarding or /(tabs)/home)
 - `/landing` marketing site (web-focused, responsive)
 - `/onboarding` `/login` `/auth` (Google callback) `/pricing` `/checkout-success`
 - `/(tabs)/home` `/(tabs)/paths` `/(tabs)/tutor` `/(tabs)/models` `/(tabs)/profile`
-- `/path/[id]` `/lesson/[id]`
+- `/path/[id]` `/lesson/[id]` `/certificate/[id]`
 
 ## API
-- `POST /api/auth/signup` `POST /api/auth/login` `POST /api/auth/google` `GET /api/auth/me`
+- `POST /api/auth/signup` `POST /api/auth/login` `POST /api/auth/google` `GET /api/auth/me` `PUT /api/auth/me/quiz`
 - `GET /api/paths` `GET /api/paths/{id}` `GET /api/lessons/{id}` `GET /api/models`
-- `GET /api/progress` `POST /api/progress/complete`
+- `GET /api/progress` `POST /api/progress/complete` (returns awarded_xp + certificates_issued)
+- `GET /api/certificates` `GET /api/certificates/{id}`
 - `POST /api/tutor/chat` `GET /api/tutor/history/{session_id}`
 - `GET /api/pricing` `POST /api/billing/checkout` `GET /api/billing/status/{id}` `POST /api/billing/webhook`
+- `GET /api/billing/info` (returns `uses_real_stripe`) — frontend uses to switch endpoints
+- `POST /api/billing/subscribe` (real recurring Stripe — 501 until real key added)
+- `POST /api/billing/portal` (Customer Portal — 501 until real key added)

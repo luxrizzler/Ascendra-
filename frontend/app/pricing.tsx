@@ -20,10 +20,19 @@ export default function Pricing() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [usesRealStripe, setUsesRealStripe] = useState(false);
 
   useEffect(() => {
-    api.get("/pricing").then((r) => setTiers(r.tiers)).finally(() => setLoading(false));
+    Promise.all([
+      api.get("/pricing"),
+      api.get("/billing/info").catch(() => ({ uses_real_stripe: false })),
+    ]).then(([pr, info]) => {
+      setTiers(pr.tiers);
+      setUsesRealStripe(!!info.uses_real_stripe);
+    }).finally(() => setLoading(false));
   }, []);
+
+  const checkoutPath = usesRealStripe ? "/billing/subscribe" : "/billing/checkout";
 
   const startCheckout = async (tier: "ascender" | "pathfinder" | "sage") => {
     if (!user) {
@@ -36,7 +45,7 @@ export default function Pricing() {
       const origin = Platform.OS === "web"
         ? (typeof window !== "undefined" ? window.location.origin : BACKEND_URL!)
         : BACKEND_URL!;
-      const { url } = await api.post("/billing/checkout", { tier, interval, origin_url: origin });
+      const { url } = await api.post(checkoutPath, { tier, interval, origin_url: origin });
       if (Platform.OS === "web") {
         window.location.href = url;
       } else {
@@ -174,7 +183,7 @@ export default function Pricing() {
                         setBusy("trial"); setErr(null);
                         try {
                           const origin = Platform.OS === "web" && typeof window !== "undefined" ? window.location.origin : BACKEND_URL!;
-                          const { url } = await api.post("/billing/checkout", { tier: "sage", interval: "trial", origin_url: origin });
+                          const { url } = await api.post(checkoutPath, { tier: "sage", interval: "trial", origin_url: origin });
                           if (Platform.OS === "web") window.location.href = url;
                           else await Linking.openURL(url);
                         } catch (e: any) { setErr(e.message || "Trial unavailable"); }

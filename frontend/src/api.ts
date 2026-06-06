@@ -26,6 +26,8 @@ export const api = {
   get: (p: string) => request(p),
   post: (p: string, body?: any) =>
     request(p, { method: "POST", body: body ? JSON.stringify(body) : undefined }),
+  put: (p: string, body?: any) =>
+    request(p, { method: "PUT", body: body ? JSON.stringify(body) : undefined }),
 };
 
 export const BACKEND_URL = BASE;
