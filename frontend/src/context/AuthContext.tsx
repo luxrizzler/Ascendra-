@@ -8,6 +8,7 @@ export type User = {
   name?: string;
   goal?: string;
   tier: "free" | "pro" | "business";
+  has_used_trial?: boolean;
 };
 
 type AuthCtx = {

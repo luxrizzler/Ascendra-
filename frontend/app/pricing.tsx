@@ -144,27 +144,56 @@ export default function Pricing() {
               ))}
 
               {t.id !== "free" && !isCurrent && (
-                <Pressable
-                  testID={`tier-cta-${t.id}`}
-                  onPress={() => startCheckout(t.id as "pro" | "business")}
-                  disabled={busy === t.id}
-                  style={[
-                    styles.ctaBtn,
-                    t.highlight ? { backgroundColor: C.brand } : { backgroundColor: C.surface2, borderWidth: 1, borderColor: C.borderStrong },
-                    busy === t.id && { opacity: 0.6 },
-                  ]}
-                >
-                  {busy === t.id ? (
-                    <ActivityIndicator color={t.highlight ? "#000" : C.text} />
-                  ) : (
-                    <>
-                      <Text style={[styles.ctaText, t.highlight ? { color: "#000" } : { color: C.text }]}>
-                        {interval === "annual" ? `Get ${t.name} annually` : `Upgrade to ${t.name}`}
-                      </Text>
-                      <Ionicons name="arrow-forward" size={16} color={t.highlight ? "#000" : C.text} />
-                    </>
+                <>
+                  <Pressable
+                    testID={`tier-cta-${t.id}`}
+                    onPress={() => startCheckout(t.id as "pro" | "business")}
+                    disabled={busy === t.id}
+                    style={[
+                      styles.ctaBtn,
+                      t.highlight ? { backgroundColor: C.brand } : { backgroundColor: C.surface2, borderWidth: 1, borderColor: C.borderStrong },
+                      busy === t.id && { opacity: 0.6 },
+                    ]}
+                  >
+                    {busy === t.id ? (
+                      <ActivityIndicator color={t.highlight ? "#000" : C.text} />
+                    ) : (
+                      <>
+                        <Text style={[styles.ctaText, t.highlight ? { color: "#000" } : { color: C.text }]}>
+                          {interval === "annual" ? `Get ${t.name} annually` : `Upgrade to ${t.name}`}
+                        </Text>
+                        <Ionicons name="arrow-forward" size={16} color={t.highlight ? "#000" : C.text} />
+                      </>
+                    )}
+                  </Pressable>
+                  {t.id === "pro" && !user?.has_used_trial && (
+                    <Pressable
+                      testID="tier-cta-trial"
+                      onPress={async () => {
+                        if (!user) { router.push("/login"); return; }
+                        setBusy("trial"); setErr(null);
+                        try {
+                          const origin = Platform.OS === "web" && typeof window !== "undefined" ? window.location.origin : BACKEND_URL!;
+                          const { url } = await api.post("/billing/checkout", { tier: "pro", interval: "trial", origin_url: origin });
+                          if (Platform.OS === "web") window.location.href = url;
+                          else await Linking.openURL(url);
+                        } catch (e: any) { setErr(e.message || "Trial unavailable"); }
+                        finally { setBusy(null); setTimeout(refresh, 800); }
+                      }}
+                      disabled={busy === "trial"}
+                      style={styles.trialBtn}
+                    >
+                      {busy === "trial" ? (
+                        <ActivityIndicator color={C.brand} />
+                      ) : (
+                        <>
+                          <Ionicons name="flash" size={14} color={C.brand} />
+                          <Text style={styles.trialText}>Try 7 days for just $2.99</Text>
+                        </>
+                      )}
+                    </Pressable>
                   )}
-                </Pressable>
+                </>
               )}
               {t.id === "free" && !isCurrent && (
                 <View style={[styles.ctaBtn, { backgroundColor: C.surface2 }]}>
@@ -223,4 +252,6 @@ const styles = StyleSheet.create({
   saveBadge: { backgroundColor: "#000", paddingHorizontal: 6, paddingVertical: 2, borderRadius: RADIUS.pill },
   saveBadgeText: { color: C.brand, fontSize: 9, fontWeight: "900", letterSpacing: 1 },
   monthlyEq: { color: C.success, fontSize: 12, fontWeight: "700", marginTop: 4 },
+  trialBtn: { marginTop: 10, paddingVertical: 12, borderRadius: RADIUS.md, alignItems: "center", flexDirection: "row", justifyContent: "center", gap: 6, borderWidth: 1, borderColor: C.brand, backgroundColor: "rgba(255,176,0,0.08)" },
+  trialText: { color: C.brand, fontWeight: "800", fontSize: 13 },
 });

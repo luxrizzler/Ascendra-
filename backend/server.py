@@ -113,7 +113,7 @@ class ChatOut(BaseModel):
 
 class CheckoutIn(BaseModel):
     tier: Literal["pro", "business"]
-    interval: Literal["monthly", "annual"] = "monthly"
+    interval: Literal["monthly", "annual", "trial"] = "monthly"
     origin_url: str  # e.g. https://...preview.emergentagent.com
 
 # ─── Auth helpers ───────────────────────────────────────────────────────────
@@ -483,7 +483,12 @@ async def pricing():
 async def create_checkout(body: CheckoutIn, request: Request, user=Depends(current_user)):
     if body.tier not in ("pro", "business"):
         raise HTTPException(400, "Invalid tier")
-    if body.interval == "annual":
+    if body.interval == "trial":
+        if user.get("has_used_trial"):
+            raise HTTPException(400, "Trial already used. Upgrade to a monthly or annual plan.")
+        amount_usd = 2.99
+        plan_name = f"{TIERS[body.tier]['name']} (7-day trial)"
+    elif body.interval == "annual":
         amount_usd = TIERS[body.tier]["price_annual"]
         plan_name = f"{TIERS[body.tier]['name']} (Annual)"
     else:
@@ -531,15 +536,16 @@ async def checkout_status(session_id: str, request: Request, user=Depends(curren
             s = await sc.get_checkout_status(session_id)
             if s.payment_status == "paid":
                 interval = rec.get("interval", "monthly")
-                expires_at = datetime.now(timezone.utc) + timedelta(days=365 if interval == "annual" else 30)
-                await users_col.update_one(
-                    {"id": user["id"]},
-                    {"$set": {
-                        "tier": rec["tier"],
-                        "subscription_interval": interval,
-                        "tier_expires_at": expires_at,
-                    }},
-                )
+                days = {"trial": 7, "annual": 365, "monthly": 30}.get(interval, 30)
+                expires_at = datetime.now(timezone.utc) + timedelta(days=days)
+                update = {
+                    "tier": rec["tier"],
+                    "subscription_interval": interval,
+                    "tier_expires_at": expires_at,
+                }
+                if interval == "trial":
+                    update["has_used_trial"] = True
+                await users_col.update_one({"id": user["id"]}, {"$set": update})
                 await sessions_col.update_one(
                     {"session_id": session_id},
                     {"$set": {"status": "paid", "paid_at": datetime.now(timezone.utc)}},
@@ -566,15 +572,16 @@ async def stripe_webhook(request: Request, stripe_signature: Optional[str] = Hea
         tier = meta.get("tier")
         interval = meta.get("interval", "monthly")
         if uid and tier:
-            expires_at = datetime.now(timezone.utc) + timedelta(days=365 if interval == "annual" else 30)
-            await users_col.update_one(
-                {"id": uid},
-                {"$set": {
-                    "tier": tier,
-                    "subscription_interval": interval,
-                    "tier_expires_at": expires_at,
-                }},
-            )
+            days = {"trial": 7, "annual": 365, "monthly": 30}.get(interval, 30)
+            expires_at = datetime.now(timezone.utc) + timedelta(days=days)
+            update = {
+                "tier": tier,
+                "subscription_interval": interval,
+                "tier_expires_at": expires_at,
+            }
+            if interval == "trial":
+                update["has_used_trial"] = True
+            await users_col.update_one({"id": uid}, {"$set": update})
             await sessions_col.update_one(
                 {"session_id": event.session_id},
                 {"$set": {"status": "paid", "paid_at": datetime.now(timezone.utc)}},
