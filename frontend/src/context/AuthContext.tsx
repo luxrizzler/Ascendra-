@@ -15,6 +15,7 @@ type AuthCtx = {
   loading: boolean;
   signup: (email: string, password: string, name?: string, goal?: string) => Promise<void>;
   login: (email: string, password: string) => Promise<void>;
+  loginWithGoogleToken: (session_token: string, goal?: string) => Promise<void>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
 };
@@ -54,13 +55,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await refresh();
   };
 
+  const loginWithGoogleToken = async (session_token: string, goal?: string) => {
+    const { access_token } = await api.post("/auth/google", { session_token, goal });
+    await storage.secureSet(TOKEN_KEY, access_token);
+    await refresh();
+  };
+
   const logout = async () => {
     await storage.secureRemove(TOKEN_KEY);
     setUser(null);
   };
 
   return (
-    <Ctx.Provider value={{ user, loading, signup, login, logout, refresh }}>
+    <Ctx.Provider value={{ user, loading, signup, login, loginWithGoogleToken, logout, refresh }}>
       {children}
     </Ctx.Provider>
   );

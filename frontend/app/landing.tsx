@@ -47,7 +47,7 @@ export default function Landing() {
         <View style={styles.navInner}>
           <View style={styles.brandRow}>
             <View style={styles.brandLogo}><Ionicons name="sparkles" size={16} color="#000" /></View>
-            <Text style={styles.brandText}>AI ACADEMY</Text>
+            <Text style={styles.brandText}>LUMESPARK</Text>
           </View>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 16 }}>
             {isDesktop && (
@@ -79,11 +79,11 @@ export default function Landing() {
               <Text style={styles.kicker}>NEW · 2026 CURRICULUM</Text>
             </View>
             <Text style={[styles.heroTitle, { fontSize: isDesktop ? 72 : 44 }]}>
-              Master AI.{"\n"}<Text style={{ color: C.brand }}>Build the future.</Text>
+              Spark your{"\n"}<Text style={{ color: C.brand }}>AI superpowers.</Text>
             </Text>
             <Text style={[styles.heroSub, { maxWidth: 640 }]}>
-              The first learning app built for the AI era. Beginner to advanced.
-              Hands-on lessons covering GPT-5.2, Claude 4.5, Gemini 3, Nano Banana, Sora 2, and 18 more models.
+              The daily app that turns anyone into an AI power-user. Beginner to advanced —
+              with hands-on lessons on GPT-5.2, Claude 4.5, Gemini 3, Nano Banana, Sora 2, and 18 more models.
             </Text>
             <View style={styles.heroCtaRow}>
               <Pressable testID="hero-cta-btn" onPress={onCTA} style={styles.primaryBtn}>
@@ -113,7 +113,7 @@ export default function Landing() {
         </View>
 
         {/* Features grid */}
-        <Section title="WHY AI ACADEMY" h1="A complete operating system for AI fluency." isDesktop={isDesktop}>
+        <Section title="WHY LUMESPARK" h1="A complete operating system for AI fluency." isDesktop={isDesktop}>
           <View style={[styles.grid, { gap: 16 }]}>
             {FEATURES.map((f) => (
               <View key={f.title} style={[styles.featureCard, { flexBasis: isDesktop ? "31%" : "100%" }]}>
@@ -199,9 +199,9 @@ export default function Landing() {
         <View style={styles.footer}>
           <View style={styles.brandRow}>
             <View style={styles.brandLogo}><Ionicons name="sparkles" size={14} color="#000" /></View>
-            <Text style={styles.brandText}>AI ACADEMY</Text>
+            <Text style={styles.brandText}>LUMESPARK</Text>
           </View>
-          <Text style={styles.footerText}>© 2026 AI Academy. Learn AI. Build the future.</Text>
+          <Text style={styles.footerText}>© 2026 LumeSpark. Spark your AI superpowers.</Text>
         </View>
       </ScrollView>
     </View>

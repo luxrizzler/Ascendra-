@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import List, Optional, Literal
 
 import bcrypt
+import httpx
 import jwt
 from dotenv import load_dotenv
 from fastapi import FastAPI, APIRouter, Depends, HTTPException, status, Request, Header
@@ -56,7 +57,7 @@ chats_col = db["chats"]
 sessions_col = db["payment_sessions"]
 
 # ─── App ────────────────────────────────────────────────────────────────────
-app = FastAPI(title="AI Academy API")
+app = FastAPI(title="LumeSpark API")
 api = APIRouter(prefix="/api")
 bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -73,6 +74,10 @@ class SignupIn(BaseModel):
 class LoginIn(BaseModel):
     email: EmailStr
     password: str
+
+class GoogleSessionIn(BaseModel):
+    session_token: str
+    goal: Optional[str] = None
 
 class Token(BaseModel):
     access_token: str
@@ -185,8 +190,59 @@ async def signup(body: SignupIn):
 @api.post("/auth/login", response_model=Token)
 async def login(body: LoginIn):
     user = await users_col.find_one({"email": body.email.lower()})
-    if not user or not verify_pw(body.password, user["password_hash"]):
+    if not user or "password_hash" not in user or not verify_pw(body.password, user["password_hash"]):
         raise HTTPException(401, "Invalid email or password")
+    return Token(access_token=make_token(user["id"]))
+
+@api.post("/auth/google", response_model=Token)
+async def auth_google(body: GoogleSessionIn):
+    """Exchange an Emergent-managed Google session_token for our own JWT.
+    Verifies the token by calling Emergent's session-data endpoint, then
+    upserts the user by email."""
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as http:
+            r = await http.get(
+                "https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data",
+                headers={"X-Session-ID": body.session_token},
+            )
+        if r.status_code != 200:
+            raise HTTPException(401, "Invalid Google session")
+        data = r.json()
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.exception("Google session-data fetch failed")
+        raise HTTPException(502, f"Google verify failed: {str(e)[:120]}")
+
+    email = (data.get("email") or "").lower()
+    if not email:
+        raise HTTPException(400, "Google account missing email")
+
+    user = await users_col.find_one({"email": email})
+    if not user:
+        user = {
+            "id": str(uuid.uuid4()),
+            "email": email,
+            "name": data.get("name") or email.split("@")[0],
+            "picture": data.get("picture"),
+            "google_id": data.get("id"),
+            "goal": body.goal,
+            "tier": "free",
+            "password_hash": None,
+            "created_at": datetime.now(timezone.utc),
+            "provider": "google",
+        }
+        await users_col.insert_one(dict(user))
+    else:
+        # Link Google to existing email account if not yet linked.
+        updates = {}
+        if not user.get("google_id"):
+            updates["google_id"] = data.get("id")
+        if data.get("picture") and not user.get("picture"):
+            updates["picture"] = data.get("picture")
+        if updates:
+            await users_col.update_one({"id": user["id"]}, {"$set": updates})
+
     return Token(access_token=make_token(user["id"]))
 
 @api.get("/auth/me", response_model=UserOut)
@@ -291,7 +347,7 @@ async def complete_lesson(body: CompleteLessonIn, user=Depends(current_user)):
 
 # ─── AI Tutor (Claude Sonnet 4.5) ───────────────────────────────────────────
 TUTOR_SYSTEM = (
-    "You are Aida, the AI Tutor for the AI Academy app. Your job is to teach people how "
+    "You are Aida, the AI Tutor for the LumeSpark app. Your job is to teach people how "
     "to use AI — from absolute beginner to advanced builder. Be warm, encouraging, and "
     "concrete. Default to short, punchy answers (2–5 sentences). Use lists or step-by-step "
     "when asked 'how'. Recommend specific 2026 AI models when relevant (GPT-5.2, Claude "
@@ -478,7 +534,7 @@ async def stripe_webhook(request: Request, stripe_signature: Optional[str] = Hea
 # ─── Health ─────────────────────────────────────────────────────────────────
 @api.get("/")
 async def root():
-    return {"status": "ok", "service": "ai-academy-api"}
+    return {"status": "ok", "service": "lumespark-api"}
 
 app.include_router(api)
 

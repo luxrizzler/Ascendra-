@@ -8,6 +8,8 @@ import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { C, RADIUS } from "@/src/theme";
 import { useAuth } from "@/src/context/AuthContext";
+import { startGoogleAuthMobile, startGoogleAuthWeb } from "@/src/auth/google";
+import { storage } from "@/src/utils/storage";
 
 const GOALS = [
   { id: "career",       title: "Grow my career",     blurb: "Get more done & stand out at work.", icon: "trending-up" },
@@ -18,13 +20,14 @@ const GOALS = [
 
 export default function Onboarding() {
   const router = useRouter();
-  const { signup } = useAuth();
+  const { signup, loginWithGoogleToken } = useAuth();
   const [step, setStep] = useState(0);
   const [goal, setGoal] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const onCreate = async () => {
@@ -41,6 +44,31 @@ export default function Onboarding() {
       setError(e.message || "Sign up failed");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const onGoogle = async () => {
+    setError(null);
+    setGoogleLoading(true);
+    try {
+      // Stash goal so /auth callback can pass it through after redirect
+      if (goal) await storage.setItem("lume_pending_goal", goal);
+      if (Platform.OS === "web") {
+        startGoogleAuthWeb(); // full page redirect
+        return;
+      }
+      const sid = await startGoogleAuthMobile();
+      if (!sid) {
+        setGoogleLoading(false);
+        return;
+      }
+      const { exchangeSessionIdForToken } = await import("@/src/auth/google");
+      const data = await exchangeSessionIdForToken(sid);
+      await loginWithGoogleToken(data.session_token, goal || undefined);
+      router.replace("/(tabs)/home");
+    } catch (e: any) {
+      setError(e?.message || "Google sign-in failed");
+      setGoogleLoading(false);
     }
   };
 
@@ -139,6 +167,29 @@ export default function Onboarding() {
                   <Ionicons name="arrow-forward" size={18} color="#000" />
                 </>}
               </Pressable>
+
+              <View style={styles.dividerRow}>
+                <View style={styles.dividerLine} />
+                <Text style={styles.dividerText}>OR</Text>
+                <View style={styles.dividerLine} />
+              </View>
+
+              <Pressable
+                testID="signup-google-btn"
+                onPress={onGoogle}
+                disabled={googleLoading}
+                style={[styles.googleBtn, googleLoading && { opacity: 0.6 }]}
+              >
+                {googleLoading ? (
+                  <ActivityIndicator color={C.text} />
+                ) : (
+                  <>
+                    <Ionicons name="logo-google" size={18} color={C.text} />
+                    <Text style={styles.googleBtnText}>Continue with Google</Text>
+                  </>
+                )}
+              </Pressable>
+
               <Pressable onPress={() => router.push("/login")} style={{ paddingVertical: 16, alignItems: "center" }}>
                 <Text style={styles.linkText}>I already have an account</Text>
               </Pressable>
@@ -212,4 +263,13 @@ const styles = StyleSheet.create({
   },
   error: { color: C.danger, marginBottom: 12, fontSize: 14 },
   glow: { position: "absolute", top: 0, left: 0, right: 0, height: 320, zIndex: -1 },
+  dividerRow: { flexDirection: "row", alignItems: "center", gap: 12, marginTop: 18, marginBottom: 14 },
+  dividerLine: { flex: 1, height: 1, backgroundColor: C.border },
+  dividerText: { color: C.textMuted, fontSize: 11, fontWeight: "700", letterSpacing: 2 },
+  googleBtn: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10,
+    paddingVertical: 14, borderRadius: RADIUS.lg, backgroundColor: C.surface,
+    borderWidth: 1, borderColor: C.borderStrong,
+  },
+  googleBtnText: { color: C.text, fontWeight: "700", fontSize: 15 },
 });
