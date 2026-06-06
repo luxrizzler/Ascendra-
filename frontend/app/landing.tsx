@@ -112,9 +112,6 @@ export default function Landing() {
                 <Text style={styles.secondaryBtnText}>See pricing</Text>
               </Pressable>
             </View>
-            <View style={styles.heroProofRow}>
-              <Text style={styles.heroProofText}>★★★★★  Trusted by 10,000+ rising builders</Text>
-            </View>
           </View>
         </View>
 

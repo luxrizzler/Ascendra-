@@ -16,6 +16,7 @@ from typing import List, Optional, Literal
 import bcrypt
 import httpx
 import jwt
+import stripe as _stripe_mod  # noqa: F401  (used by /billing/subscribe + /portal)
 from dotenv import load_dotenv
 from fastapi import FastAPI, APIRouter, Depends, HTTPException, status, Request, Header
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -587,6 +588,85 @@ async def stripe_webhook(request: Request, stripe_signature: Optional[str] = Hea
                 {"$set": {"status": "paid", "paid_at": datetime.now(timezone.utc)}},
             )
     return {"received": True}
+
+
+# ─── Recurring Subscriptions (auto-renew) ───────────────────────────────────
+# Activates only when STRIPE_API_KEY is a real live/test key (sk_live_... or
+# sk_test_...) — NOT the Emergent proxy key (sk_test_emergent). When the
+# customer hits Publish + drops in their live key, /api/billing/subscribe and
+# /api/billing/portal start working immediately. No code changes needed.
+
+def _is_real_stripe_key() -> bool:
+    k = STRIPE_API_KEY or ""
+    return k.startswith("sk_live_") or (k.startswith("sk_test_") and k != "sk_test_emergent")
+
+
+@api.post("/billing/subscribe")
+async def create_subscription(body: CheckoutIn, request: Request, user=Depends(current_user)):
+    """Real recurring Stripe Subscription via Checkout (mode=subscription).
+    Falls back to one-time payment if no real Stripe key is configured."""
+    if not _is_real_stripe_key():
+        raise HTTPException(
+            501,
+            "Recurring subscriptions require a real Stripe key. Add your sk_live_... to backend/.env and redeploy."
+        )
+    try:
+        import stripe as _stripe
+        _stripe.api_key = STRIPE_API_KEY
+
+        # Lazy-create Stripe Customer for this user
+        cust_id = user.get("stripe_customer_id")
+        if not cust_id:
+            cust = _stripe.Customer.create(email=user["email"], name=user.get("name") or user["email"])
+            cust_id = cust.id
+            await users_col.update_one({"id": user["id"]}, {"$set": {"stripe_customer_id": cust_id}})
+
+        amount_usd = TIERS[body.tier]["price_annual"] if body.interval == "annual" else TIERS[body.tier]["price_monthly"]
+        recur_interval = "year" if body.interval == "annual" else "month"
+        origin = body.origin_url.rstrip("/")
+
+        session = _stripe.checkout.Session.create(
+            mode="subscription",
+            customer=cust_id,
+            line_items=[{
+                "price_data": {
+                    "currency": "usd",
+                    "unit_amount": int(round(amount_usd * 100)),
+                    "recurring": {"interval": recur_interval},
+                    "product_data": {"name": f"Ascendra {TIERS[body.tier]['name']}"},
+                },
+                "quantity": 1,
+            }],
+            success_url=f"{origin}/checkout-success?session_id={{CHECKOUT_SESSION_ID}}",
+            cancel_url=f"{origin}/pricing",
+            metadata={"user_id": user["id"], "tier": body.tier, "interval": body.interval},
+        )
+        return {"url": session.url, "session_id": session.id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.exception("Subscription create failed")
+        raise HTTPException(502, f"Subscription error: {str(e)[:140]}")
+
+
+@api.post("/billing/portal")
+async def billing_portal(request: Request, user=Depends(current_user)):
+    """Stripe Customer Portal — users manage card, cancel, view invoices."""
+    if not _is_real_stripe_key():
+        raise HTTPException(501, "Customer Portal requires a real Stripe key.")
+    cust_id = user.get("stripe_customer_id")
+    if not cust_id:
+        raise HTTPException(400, "No Stripe customer on file. Subscribe first.")
+    try:
+        import stripe as _stripe
+        _stripe.api_key = STRIPE_API_KEY
+        body = await request.json()
+        return_url = (body or {}).get("return_url") or "https://ascendra.app/profile"
+        portal = _stripe.billing_portal.Session.create(customer=cust_id, return_url=return_url)
+        return {"url": portal.url}
+    except Exception as e:
+        log.exception("Portal failed")
+        raise HTTPException(502, f"Portal error: {str(e)[:140]}")
 
 # ─── Health ─────────────────────────────────────────────────────────────────
 @api.get("/")
