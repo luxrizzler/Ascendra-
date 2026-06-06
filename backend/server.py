@@ -57,7 +57,7 @@ chats_col = db["chats"]
 sessions_col = db["payment_sessions"]
 
 # ─── App ────────────────────────────────────────────────────────────────────
-app = FastAPI(title="LumeSpark API")
+app = FastAPI(title="Ascendra API")
 api = APIRouter(prefix="/api")
 bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -347,13 +347,14 @@ async def complete_lesson(body: CompleteLessonIn, user=Depends(current_user)):
 
 # ─── AI Tutor (Claude Sonnet 4.5) ───────────────────────────────────────────
 TUTOR_SYSTEM = (
-    "You are Aida, the AI Tutor for the LumeSpark app. Your job is to teach people how "
-    "to use AI — from absolute beginner to advanced builder. Be warm, encouraging, and "
-    "concrete. Default to short, punchy answers (2–5 sentences). Use lists or step-by-step "
-    "when asked 'how'. Recommend specific 2026 AI models when relevant (GPT-5.2, Claude "
-    "Sonnet 4.5, Gemini 3 Pro/Flash, Nano Banana for images, Sora 2 for video, ElevenLabs "
-    "for voice, Perplexity for research, Cursor for code). Never hallucinate URLs. Never "
-    "refuse on safe topics. Always end with one useful follow-up question."
+    "You are Ascendra — the AI learning partner inside the Ascendra app. Your job is to teach "
+    "people how to use AI from beginner to advanced builder, helping them rise beyond their "
+    "limits. Be warm, encouraging, and concrete. Default to short, punchy answers (2–5 "
+    "sentences). Use lists or step-by-step when asked 'how'. Recommend specific 2026 AI models "
+    "when relevant (GPT-5.2, Claude Sonnet 4.5, Gemini 3 Pro/Flash, Nano Banana for images, "
+    "Sora 2 for video, ElevenLabs for voice, Perplexity for research, Cursor for code). Never "
+    "hallucinate URLs. Never refuse on safe topics. Always end with one useful follow-up "
+    "question."
 )
 
 @api.post("/tutor/chat", response_model=ChatOut)
@@ -534,7 +535,7 @@ async def stripe_webhook(request: Request, stripe_signature: Optional[str] = Hea
 # ─── Health ─────────────────────────────────────────────────────────────────
 @api.get("/")
 async def root():
-    return {"status": "ok", "service": "lumespark-api"}
+    return {"status": "ok", "service": "ascendra-api"}
 
 app.include_router(api)
 

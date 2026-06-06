@@ -11,12 +11,12 @@ import { api } from "@/src/api";
 const HERO_BG = "https://images.pexels.com/photos/12623752/pexels-photo-12623752.jpeg";
 
 const FEATURES = [
-  { icon: "library", title: "4 Learning Paths", body: "Fundamentals, Business, Creators, Productivity. 36+ lessons." },
-  { icon: "sparkles", title: "AI Tutor", body: "Aida (Claude 4.5) answers anything, 24/7." },
-  { icon: "planet", title: "22 Frontier Models", body: "GPT-5.2, Claude 4.5, Gemini 3, Nano Banana, Sora 2 — all covered." },
-  { icon: "flame", title: "Streaks & XP", body: "Gamified daily learning that actually sticks." },
-  { icon: "rocket", title: "Build a Business", body: "Step-by-step path to launch an AI venture." },
-  { icon: "trophy", title: "Project-Based", body: "Every lesson ends with a real-world quiz." },
+  { icon: "sparkles",       title: "AI-Personalized",  body: "Learning paths tailored to your goals, pace, and style." },
+  { icon: "rocket",         title: "Real-World Skills",body: "Practical knowledge that drives real impact — not theory." },
+  { icon: "trending-up",    title: "Track & Grow",     body: "See your progress. Celebrate your wins. Build the streak." },
+  { icon: "people-circle",  title: "Expert Guidance",  body: "Learn from industry leaders and your AI tutor, 24/7." },
+  { icon: "planet",         title: "22 Frontier Models", body: "GPT-5.2, Claude 4.5, Gemini 3, Nano Banana, Sora 2 — all covered." },
+  { icon: "trophy",         title: "Built to Transform",  body: "Each lesson ends with a real-world quiz to lock it in." },
 ];
 
 const TESTIMONIALS = [
@@ -47,7 +47,7 @@ export default function Landing() {
         <View style={styles.navInner}>
           <View style={styles.brandRow}>
             <View style={styles.brandLogo}><Ionicons name="sparkles" size={16} color="#000" /></View>
-            <Text style={styles.brandText}>LUMESPARK</Text>
+            <Text style={styles.brandText}>ASCENDRA</Text>
           </View>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 16 }}>
             {isDesktop && (
@@ -76,14 +76,15 @@ export default function Landing() {
           <View style={[styles.heroInner, { maxWidth: 1100, paddingHorizontal: isDesktop ? 60 : 24 }]}>
             <View style={styles.kickerBox}>
               <View style={styles.kickerDot} />
-              <Text style={styles.kicker}>NEW · 2026 CURRICULUM</Text>
+              <Text style={styles.kicker}>AI-POWERED LEARNING · BOUNDLESS GROWTH</Text>
             </View>
             <Text style={[styles.heroTitle, { fontSize: isDesktop ? 72 : 44 }]}>
-              Spark your{"\n"}<Text style={{ color: C.brand }}>AI superpowers.</Text>
+              Ready to{"\n"}<Text style={{ color: C.brand }}>rise today?</Text>
             </Text>
             <Text style={[styles.heroSub, { maxWidth: 640 }]}>
-              The daily app that turns anyone into an AI power-user. Beginner to advanced —
-              with hands-on lessons on GPT-5.2, Claude 4.5, Gemini 3, Nano Banana, Sora 2, and 18 more models.
+              Ascendra is the AI learning partner that helps you ascend from beginner to builder.
+              Personalized paths covering GPT-5.2, Claude 4.5, Gemini 3, Nano Banana, Sora 2, and 18 more
+              frontier models — taught by an AI tutor who learns your style.
             </Text>
             <View style={styles.heroCtaRow}>
               <Pressable testID="hero-cta-btn" onPress={onCTA} style={styles.primaryBtn}>
@@ -113,7 +114,7 @@ export default function Landing() {
         </View>
 
         {/* Features grid */}
-        <Section title="WHY LUMESPARK" h1="A complete operating system for AI fluency." isDesktop={isDesktop}>
+        <Section title="WHY ASCENDRA" h1="Built for your rise." isDesktop={isDesktop}>
           <View style={[styles.grid, { gap: 16 }]}>
             {FEATURES.map((f) => (
               <View key={f.title} style={[styles.featureCard, { flexBasis: isDesktop ? "31%" : "100%" }]}>
@@ -186,9 +187,9 @@ export default function Landing() {
         {/* Final CTA */}
         <View style={[styles.finalCta, { padding: isDesktop ? 80 : 32 }]}>
           <Text style={[styles.finalTitle, { fontSize: isDesktop ? 56 : 36 }]}>
-            The next 12 months will{"\n"}separate the AI-fluent from{"\n"}<Text style={{ color: C.brand }}>everyone else.</Text>
+            Learn. Grow.{"\n"}Transform.{"\n"}<Text style={{ color: C.brand }}>Ascend.</Text>
           </Text>
-          <Text style={styles.finalSub}>Pick a side. Start learning today.</Text>
+          <Text style={styles.finalSub}>Your journey begins with a single rise. Start free today.</Text>
           <Pressable testID="final-cta-btn" onPress={onCTA} style={styles.primaryBtn}>
             <Text style={styles.primaryBtnText}>Start free</Text>
             <Ionicons name="arrow-forward" size={18} color="#000" />
@@ -199,9 +200,9 @@ export default function Landing() {
         <View style={styles.footer}>
           <View style={styles.brandRow}>
             <View style={styles.brandLogo}><Ionicons name="sparkles" size={14} color="#000" /></View>
-            <Text style={styles.brandText}>LUMESPARK</Text>
+            <Text style={styles.brandText}>ASCENDRA</Text>
           </View>
-          <Text style={styles.footerText}>© 2026 LumeSpark. Spark your AI superpowers.</Text>
+          <Text style={styles.footerText}>© 2026 Ascendra · AI-Powered Learning. Boundless Growth.</Text>
         </View>
       </ScrollView>
     </View>

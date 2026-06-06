@@ -10,16 +10,16 @@ import { api } from "@/src/api";
 type Msg = { role: "user" | "assistant"; content: string };
 
 const SUGGESTIONS = [
-  "Compare GPT-5.2 vs Claude Sonnet 4.5",
-  "How do I start a one-person SaaS with AI?",
-  "Best AI tool for video ads?",
-  "Write me a daily prompt routine",
+  "Explain a concept",
+  "Quiz me on today's lesson",
+  "Create a study plan for AI Business",
+  "Recommend the best model for video ads",
 ];
 
 export default function Tutor() {
   const insets = useSafeAreaInsets();
   const [messages, setMessages] = useState<Msg[]>([
-    { role: "assistant", content: "Hey, I'm Aida — your AI tutor 👋\n\nAsk me anything about AI: which model to use, how to prompt better, how to ship an AI side hustle. What's on your mind today?" },
+    { role: "assistant", content: "Hi, I'm Ascendra — your AI learning partner ✨\n\nI'm here to help you rise: ask me about any model, prompt, workflow, or strategy. How can I help you today?" },
   ]);
   const [input, setInput] = useState("");
   const [sessionId, setSessionId] = useState<string | undefined>();
@@ -53,8 +53,8 @@ export default function Tutor() {
       <View style={styles.header}>
         <View style={styles.avatar}><Ionicons name="sparkles" size={18} color="#000" /></View>
         <View style={{ flex: 1 }}>
-          <Text style={styles.headerTitle}>Aida</Text>
-          <Text style={styles.headerSub}>AI Tutor · Claude Sonnet 4.5</Text>
+          <Text style={styles.headerTitle}>Ascendra</Text>
+          <Text style={styles.headerSub}>Your AI learning partner · Claude 4.5</Text>
         </View>
         <View style={styles.online}>
           <View style={styles.onlineDot} />
@@ -113,7 +113,7 @@ export default function Tutor() {
             testID="tutor-input"
             value={input}
             onChangeText={setInput}
-            placeholder="Ask Aida anything…"
+            placeholder="Ask Ascendra anything…"
             placeholderTextColor={C.textMuted}
             style={styles.input}
             multiline

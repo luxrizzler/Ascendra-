@@ -13,7 +13,9 @@ class TestHealth:
     def test_root(self, client):
         r = client.get(f"{API_URL}/")
         assert r.status_code == 200
-        assert r.json()["status"] == "ok"
+        body = r.json()
+        assert body["status"] == "ok"
+        assert body.get("service") == "ascendra-api"
 
 
 # --- Auth ---
@@ -189,6 +191,32 @@ class TestTutor:
     def test_tutor_requires_auth(self, client):
         r = client.post(f"{API_URL}/tutor/chat", json={"message": "hi"})
         assert r.status_code in (401, 403)
+
+    def test_tutor_persona_is_ascendra(self, client, auth_headers):
+        """Tutor system prompt must introduce itself as Ascendra, NOT Aida."""
+        r = client.post(f"{API_URL}/tutor/chat",
+                        json={"message": "What is your name? Answer in one short sentence."},
+                        headers=auth_headers, timeout=60)
+        assert r.status_code == 200, r.text
+        reply = r.json()["reply"].lower()
+        assert "ascendra" in reply, f"Expected 'Ascendra' in reply, got: {reply}"
+        assert "aida" not in reply, f"Old persona 'Aida' leaked: {reply}"
+
+
+# --- Google Auth ---
+class TestGoogleAuth:
+    def test_google_invalid_session_token(self, client):
+        r = client.post(f"{API_URL}/auth/google",
+                        json={"session_token": "invalid_bogus_session_token_xyz"},
+                        timeout=15)
+        # Should reject invalid session — 401 expected; 502 acceptable if upstream throws
+        assert r.status_code in (401, 502), r.text
+        # Should NOT issue a token
+        assert "access_token" not in r.json()
+
+    def test_google_missing_session_token(self, client):
+        r = client.post(f"{API_URL}/auth/google", json={})
+        assert r.status_code in (400, 422)
 
 
 # --- Pricing & Stripe ---

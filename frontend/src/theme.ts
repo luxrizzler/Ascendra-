@@ -1,18 +1,42 @@
-// Centralized design tokens — mirror /app/design_guidelines.json
+// Ascendra design system — Celestial Phoenix palette.
+// Mirrors the brand guide: deep navy + golden dawn + celestial violet.
 export const C = {
-  bg: "#0A0A0A",
-  surface: "#141414",
-  surface2: "#1F1F1F",
+  // Backgrounds
+  bg: "#070B1F",            // Deep Navy
+  surface: "#141A38",       // Slightly elevated card
+  surface2: "#1F2649",      // Higher elevation / inputs
+  celestial: "#1A1F3D",     // Mid surface (per palette)
+
+  // Text
   text: "#FFFFFF",
-  textDim: "#A1A1AA",
-  textMuted: "#71717A",
-  brand: "#FFB000",
+  textDim: "#C8C5E6",       // Soft lavender-tinted body text
+  textMuted: "#7E84A3",
+
+  // Brand accents
+  brand: "#FFB000",         // Amber Gold (primary CTA)
+  brandSoft: "#E8C572",     // Champagne (soft gold)
   brandDim: "rgba(255, 176, 0, 0.15)",
-  success: "#10B981",
-  danger: "#EF4444",
-  info: "#3B82F6",
-  border: "rgba(255, 255, 255, 0.1)",
-  borderStrong: "rgba(255, 255, 255, 0.2)",
+  coral: "#FF6B35",         // Phoenix Coral (accent / fire)
+  lavender: "#BFB4FF",      // Lavender Mist
+  violet: "#7C3AED",        // Celestial Violet (secondary)
+  violetDim: "rgba(124, 58, 237, 0.18)",
+
+  // Semantic
+  success: "#34D399",
+  danger: "#F87171",
+  info: "#BFB4FF",
+
+  // Borders
+  border: "rgba(191, 180, 255, 0.12)",
+  borderStrong: "rgba(191, 180, 255, 0.28)",
+};
+
+// Gradient stops (use with expo-linear-gradient `colors` prop)
+export const GRAD = {
+  goldenDawn: ["#E8C572", "#FFB000", "#FF6B35"] as const,
+  celestialViolet: ["#1A1F3D", "#7C3AED", "#BFB4FF"] as const,
+  heroOverlay: ["rgba(7,11,31,0.0)", "rgba(7,11,31,0.65)", "rgba(7,11,31,0.98)"] as const,
+  cardGlow: ["rgba(124,58,237,0.18)", "transparent"] as const,
 };
 
 export const RADIUS = {

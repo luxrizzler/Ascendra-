@@ -52,7 +52,7 @@ export default function Onboarding() {
     setGoogleLoading(true);
     try {
       // Stash goal so /auth callback can pass it through after redirect
-      if (goal) await storage.setItem("lume_pending_goal", goal);
+      if (goal) await storage.setItem("ascendra_pending_goal", goal);
       if (Platform.OS === "web") {
         startGoogleAuthWeb(); // full page redirect
         return;
@@ -87,8 +87,8 @@ export default function Onboarding() {
         <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
           {step === 0 && (
             <View>
-              <Text style={styles.kicker}>AI ACADEMY</Text>
-              <Text style={styles.hero}>Master AI.{"\n"}Build a future.</Text>
+              <Text style={styles.kicker}>ASCENDRA</Text>
+              <Text style={styles.hero}>Ready to rise{"\n"}today?</Text>
               <Text style={styles.sub}>
                 Beginner to advanced. Hands-on lessons covering every model that matters in 2026 —
                 GPT-5.2, Claude 4.5, Gemini 3, Nano Banana, Sora 2 & more.

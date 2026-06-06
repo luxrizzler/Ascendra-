@@ -66,8 +66,8 @@ export default function Home() {
         {/* Header */}
         <View style={styles.header}>
           <View>
-            <Text style={styles.kicker}>WELCOME{goalLabel.toUpperCase()}</Text>
-            <Text style={styles.greeting}>Hi {user?.name?.split(" ")[0] || "there"} 👋</Text>
+            <Text style={styles.kicker}>HELLO{goalLabel.toUpperCase()}</Text>
+            <Text style={styles.greeting}>Ready to rise today, {user?.name?.split(" ")[0] || "friend"}? ✨</Text>
           </View>
           <Pressable testID="home-profile-btn" onPress={() => router.push("/(tabs)/profile")} style={styles.avatar}>
             <Text style={styles.avatarText}>{(user?.name || user?.email || "?").charAt(0).toUpperCase()}</Text>
@@ -146,7 +146,7 @@ export default function Home() {
             <Ionicons name="sparkles" size={26} color="#000" />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={styles.tutorTitle}>Ask Aida, your AI Tutor</Text>
+            <Text style={styles.tutorTitle}>Ask Ascendra, your AI partner</Text>
             <Text style={styles.tutorSub}>Powered by Claude Sonnet 4.5. Ask anything about AI.</Text>
           </View>
           <Ionicons name="arrow-forward" size={20} color={C.brand} />

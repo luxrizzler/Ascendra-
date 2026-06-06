@@ -9,7 +9,7 @@ import { useAuth } from "@/src/context/AuthContext";
 import { parseSessionId, exchangeSessionIdForToken } from "@/src/auth/google";
 import { storage } from "@/src/utils/storage";
 
-const PENDING_GOAL_KEY = "lume_pending_goal";
+const PENDING_GOAL_KEY = "ascendra_pending_goal";
 
 export default function AuthCallback() {
   const router = useRouter();
