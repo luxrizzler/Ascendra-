@@ -11,7 +11,7 @@ import { C, RADIUS } from "@/src/theme";
 import { api } from "@/src/api";
 
 const HERO_IMG =
-  "https://customer-assets.emergentagent.com/job_ai-business-academy-2/artifacts/f76qa8nk_5283CA9A-0F48-41D7-918A-E177AC8EC40A.png";
+  "https://customer-assets.emergentagent.com/job_ai-business-academy-2/artifacts/c1jkvwwp_4185C05A-6A9A-42F7-A146-9109CF6F03DD.png";
 const BRAND_BOARD_IMG =
   "https://customer-assets.emergentagent.com/job_ai-business-academy-2/artifacts/4t1z9aty_5283CA9A-0F48-41D7-918A-E177AC8EC40A.png";
 
@@ -301,18 +301,15 @@ const styles = StyleSheet.create({
   // Clipping box for the brand-board crop. We render the full board image enlarged
   // and shifted so only the angel (≈ left 30% of the board) is visible.
   heroImageClip: { width: "100%", height: "100%", overflow: "hidden" },
-  // Zoom into the angel column on the brand board. The source artwork is the
-  // full brand identity sheet — we scale it ~2.4x and shift up-left so only
-  // the cinematic angel + wings + stairs portion fills the frame.
+  // New hero artwork is a complete brand composition (wordmark + angel + tagline).
+  // Display it cleanly — no zoom hacks needed.
   heroImageCrop: {
     width: "100%",
     height: "100%",
     ...Platform.select({
       web: {
         objectFit: "cover",
-        objectPosition: "left top",
-        transform: "scale(2.9)",
-        transformOrigin: "10% 45%",
+        objectPosition: "center",
       } as any,
       default: {},
     }),
