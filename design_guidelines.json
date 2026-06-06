@@ -1,0 +1,153 @@
+{
+  "project_name": "Coursiv-Clone AI Learning App & Web",
+  "theme": "Dark",
+  "archetype": "Archetype 4 (Swiss & High-Contrast) + Archetype 5 (Luxury)",
+  "emotional_tone": "Premium, Elite, Focused, Authoritative",
+  "typography": {
+    "fonts": {
+      "headings": "Cabinet Grotesk, sans-serif",
+      "body": "Manrope, sans-serif",
+      "mono": "JetBrains Mono, monospace"
+    },
+    "scale": {
+      "h1_web": "text-5xl sm:text-6xl tracking-tighter leading-none",
+      "h2_web": "text-3xl sm:text-4xl tracking-tight",
+      "h1_mobile": "text-3xl sm:text-4xl tracking-tight leading-tight",
+      "h2_mobile": "text-2xl sm:text-3xl tracking-tight",
+      "h3": "text-xl sm:text-2xl tracking-tight",
+      "h4": "text-lg sm:text-xl",
+      "body": "text-base leading-relaxed",
+      "body_sm": "text-sm leading-relaxed",
+      "label": "text-xs uppercase tracking-[0.2em] font-bold"
+    },
+    "rules": [
+      "Headings must use tight letter spacing (tracking-tight or tracking-tighter).",
+      "Labels and overlines must be uppercase, tiny, and have wide spacing (tracking-[0.2em]).",
+      "Use varied weights to create tension (e.g., font-black for H1, font-light for subheadings)."
+    ]
+  },
+  "color_palette": {
+    "background": {
+      "base": "#0A0A0A",
+      "surface": "#141414",
+      "surface_elevated": "#1F1F1F"
+    },
+    "text": {
+      "primary": "#FFFFFF",
+      "secondary": "#A1A1AA",
+      "muted": "#71717A"
+    },
+    "primary": {
+      "brand": "#FFB000",
+      "brand_hover": "#F59E0B",
+      "brand_muted": "rgba(255, 176, 0, 0.15)"
+    },
+    "accents": {
+      "success": "#10B981",
+      "danger": "#EF4444",
+      "info": "#3B82F6"
+    },
+    "borders": {
+      "subtle": "rgba(255, 255, 255, 0.1)",
+      "strong": "rgba(255, 255, 255, 0.2)"
+    }
+  },
+  "layout_and_spacing": {
+    "spacing_scale": "Tailwind standard with a focus on generous padding: p-4, p-6, p-8 for cards; p-16, p-24, p-32 for web sections.",
+    "web_grid": {
+      "marketing_hero": "Bento Grid or Asymmetrical overlap (col-span-8 and col-span-4).",
+      "features": "Gridcols-1 md:grid-cols-3 lg:grid-cols-4 with gap-6 or gap-8."
+    },
+    "mobile_layout": {
+      "padding": "px-4 or px-6 universally for horizontal constraints.",
+      "bottom_nav_offset": "pb-24 to account for fixed bottom navigation."
+    },
+    "rules": [
+      "Use pure HTML + Tailwind for web marketing layouts to achieve asymmetry.",
+      "Card components must use internal padding p-6 or p-8 to prevent text collision."
+    ]
+  },
+  "surface_styles": {
+    "glassmorphism": {
+      "usage": ["Sticky Headers", "Web Navigation", "Floating Action Buttons", "Paywall Overlays"],
+      "classes": "bg-black/60 backdrop-blur-xl backdrop-saturate-150 border border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.12)]"
+    },
+    "cards": {
+      "usage": ["Lesson items", "Model library items", "Path options"],
+      "classes": "bg-[#141414] border border-white/10 rounded-2xl overflow-hidden hover:-translate-y-1 hover:shadow-lg transition-all duration-300"
+    },
+    "tracing_beam": {
+      "usage": ["Pro/Business Pricing Tier Cards"],
+      "description": "Dynamic border glow using framer-motion or CSS mask-image."
+    }
+  },
+  "motion_and_interaction": {
+    "hover_states": "Always elevate cards (-translate-y-1) and increase border opacity on hover.",
+    "buttons": "Active states must scale down slightly (scale-95).",
+    "page_transitions": "Smooth fade and slide up (opacity 0 to 1, translate-y 10px to 0).",
+    "lesson_swipe": "Framer Motion (React) or Reanimated (Expo) to handle tinder-like swipe left/right for micro-lessons."
+  },
+  "screens_and_components": {
+    "marketing_web_page": {
+      "hero": "Dark cinematic hero. Massive h1 text. Minimalist workspace/tech image with a dark gradient overlay (bg-gradient-to-r from-black/80 via-black/40 to-transparent).",
+      "features": "Bento grid layout showing app screenshots or mockups.",
+      "pricing": "3 cards. 'Pro' card highlighted with tracing beam/glow effect.",
+      "testimonials": "Editorial ribbon (marquee) of user reviews."
+    },
+    "mobile_onboarding": {
+      "flow": "Value-first welcome -> 2 preference questions (Goal: Career/Business/Creator/Productivity) -> Signup -> Start Path.",
+      "ui": "Progressive disclosure. High contrast typography. Large selectable cards for preferences."
+    },
+    "mobile_home_paths": {
+      "header": "User streak (flame icon + amber text) and profile avatar.",
+      "content": "Bento grid. 'Continue Learning' main large card. 'Explore Paths' horizontal scroll."
+    },
+    "mobile_lesson_player": {
+      "ui": "Immersive full-screen swiping cards. Progress bar pinned to top. Text content with animated interactive elements. Quiz at the end.",
+      "interactions": "Swipe to go to next card. Tap to reveal answers."
+    },
+    "mobile_ai_tutor": {
+      "ui": "Chat interface. Dark mode. AI messages in surface color, User messages in brand color/dark text or elevated surface.",
+      "avatar": "Professional, slightly abstract avatar for the AI."
+    },
+    "mobile_model_library": {
+      "ui": "2-column grid of cards. Each card has a subtle glow matching the model's brand color (e.g., green for ChatGPT, purple for Claude, etc.), contained within the dark theme."
+    }
+  },
+  "media": {
+    "web_hero_bg": {
+      "url": "https://images.pexels.com/photos/12623752/pexels-photo-12623752.jpeg",
+      "description": "Abstract composition showcasing modern architectural elements with dramatic lighting."
+    },
+    "path_business_thumbnail": {
+      "url": "https://images.pexels.com/photos/19826624/pexels-photo-19826624.jpeg",
+      "description": "Minimalist setup featuring a laptop and smartphone."
+    },
+    "path_creator_thumbnail": {
+      "url": "https://images.pexels.com/photos/8672787/pexels-photo-8672787.jpeg",
+      "description": "Modern architectural facade with abstract patterns."
+    },
+    "ai_tutor_avatar": {
+      "url": "https://images.pexels.com/photos/18173598/pexels-photo-18173598.jpeg",
+      "description": "Professional avatar for the AI Tutor."
+    },
+    "testimonial_avatar_1": {
+      "url": "https://images.pexels.com/photos/34114598/pexels-photo-34114598.jpeg",
+      "description": "Creative portrait of a man."
+    },
+    "testimonial_avatar_2": {
+      "url": "https://images.unsplash.com/photo-1532170579297-281918c8ae72",
+      "description": "Woman in black portrait."
+    }
+  },
+  "icons_and_assets": {
+    "library": "lucide-react (React web) and lucide-react-native (Expo mobile)",
+    "rules": "Stroke width 1.5. Clean, geometric."
+  },
+  "instructions_to_main_agent": {
+    "tech_stack": "React Expo with Expo Router for mobile app. Next.js or React Router for web marketing page route.",
+    "testing": "All interactive and key informational elements MUST include a `data-testid` attribute (kebab-case, role-based).",
+    "accessibility": "Ensure text contrast meets APCA/WCAG standards against the dark background. Use focus rings for web navigation.",
+    "ui_components": "Use custom styled components for React Native/Expo, mapping Tailwind design system variables to StyleSheet or Nativewind. For Web, use Shadcn UI highly customized to match the dark luxury theme."
+  }
+}
