@@ -303,11 +303,22 @@ TUTOR_SYSTEM = (
 @api.post("/tutor/chat", response_model=ChatOut)
 async def tutor_chat(body: ChatIn, user=Depends(current_user)):
     session_id = body.session_id or str(uuid.uuid4())
+
+    # Replay prior turns so Claude has multi-turn memory across requests.
+    prior = await chats_col.find(
+        {"user_id": user["id"], "session_id": session_id},
+        {"_id": 0, "role": 1, "content": 1, "created_at": 1},
+    ).sort("created_at", 1).to_list(200)
+    initial = [{"role": "system", "content": TUTOR_SYSTEM}] + [
+        {"role": m["role"], "content": m["content"]} for m in prior
+    ]
+
     try:
         chat = LlmChat(
             api_key=EMERGENT_LLM_KEY,
             session_id=session_id,
             system_message=TUTOR_SYSTEM,
+            initial_messages=initial,
         ).with_model("anthropic", "claude-sonnet-4-5-20250929")
         reply = await chat.send_message(UserMessage(text=body.message))
     except Exception as e:

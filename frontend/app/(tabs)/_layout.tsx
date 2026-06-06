@@ -42,6 +42,7 @@ export default function TabsLayout() {
         name="home"
         options={{
           title: "Home",
+          tabBarButtonTestID: "tab-home",
           tabBarIcon: ({ color, size }) => <Ionicons name="home" size={size - 2} color={color} />,
         }}
       />
@@ -49,6 +50,7 @@ export default function TabsLayout() {
         name="paths"
         options={{
           title: "Paths",
+          tabBarButtonTestID: "tab-paths",
           tabBarIcon: ({ color, size }) => <Ionicons name="library" size={size - 2} color={color} />,
         }}
       />
@@ -56,6 +58,7 @@ export default function TabsLayout() {
         name="tutor"
         options={{
           title: "AI Tutor",
+          tabBarButtonTestID: "tab-tutor",
           tabBarIcon: ({ color, size }) => <Ionicons name="sparkles" size={size - 2} color={color} />,
         }}
       />
@@ -63,6 +66,7 @@ export default function TabsLayout() {
         name="models"
         options={{
           title: "Models",
+          tabBarButtonTestID: "tab-models",
           tabBarIcon: ({ color, size }) => <Ionicons name="planet" size={size - 2} color={color} />,
         }}
       />
@@ -70,6 +74,7 @@ export default function TabsLayout() {
         name="profile"
         options={{
           title: "Profile",
+          tabBarButtonTestID: "tab-profile",
           tabBarIcon: ({ color, size }) => <Ionicons name="person-circle" size={size - 2} color={color} />,
         }}
       />
