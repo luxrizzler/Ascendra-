@@ -441,11 +441,10 @@ TIERS = {
         "blurb": "Build a business with AI — coached step-by-step.",
         "features": [
             "Everything in Pro",
-            "1:1 monthly strategy call",
-            "Private Slack community",
-            "Pitch & MVP reviews",
-            "Early access to new models",
-            "Team seats (up to 5)",
+            "Real founder case studies (revenue + tactics)",
+            "Quarterly AI roadmap briefings",
+            "Priority AI Tutor response speed",
+            "Lifetime price lock",
         ],
     },
 }
