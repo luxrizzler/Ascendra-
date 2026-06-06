@@ -177,11 +177,6 @@ export default function Landing() {
           </View>
         </Section>
 
-        {/* ─── BRAND BOARD IMAGE (Celestial Phoenix palette showcase) ─── */}
-        <View style={styles.boardSection}>
-          <Image source={{ uri: BRAND_BOARD_IMG }} style={styles.boardImage} resizeMode="contain" />
-        </View>
-
         {/* ─── PRICING ─── */}
         <Section title="PRICING" h1="Start free. Rise on your terms." isDesktop={isDesktop}>
           <View style={[styles.grid, { gap: 16 }]}>
