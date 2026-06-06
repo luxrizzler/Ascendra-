@@ -8,7 +8,7 @@ import { C, RADIUS } from "@/src/theme";
 import { api } from "@/src/api";
 import { useAuth } from "@/src/context/AuthContext";
 
-const RANK: Record<string, number> = { free: 0, pro: 1, business: 2 };
+const RANK: Record<string, number> = { free: 0, ascender: 1, pathfinder: 2, sage: 3 };
 
 export default function Paths() {
   const router = useRouter();
@@ -40,7 +40,7 @@ export default function Paths() {
         <View style={{ height: 24 }} />
 
         {paths.map((p) => {
-          const tier: "free" | "pro" | "business" = p.tier || "free";
+          const tier: "free" | "ascender" | "pathfinder" | "sage" = p.tier || "ascender";
           const locked = (RANK[tier] ?? 0) > userRank;
           return (
             <Pressable
@@ -60,7 +60,7 @@ export default function Paths() {
                     <Text style={[styles.levelText, { color: p.color }]}>{p.level.toUpperCase()}</Text>
                   </View>
                   {tier !== "free" && (
-                    <View style={[styles.tierTag, tier === "business" ? styles.tierBusiness : styles.tierPro]}>
+                    <View style={[styles.tierTag, tier === "sage" ? styles.tierBusiness : styles.tierPro]}>
                       <Ionicons name={locked ? "lock-closed" : "checkmark"} size={11} color="#000" />
                       <Text style={styles.tierTagText}>{tier.toUpperCase()}</Text>
                     </View>
@@ -75,7 +75,7 @@ export default function Paths() {
                 </View>
                 <View style={[styles.openBtn, locked && { backgroundColor: C.violet }]}>
                   <Text style={[styles.openBtnText, locked && { color: "#fff" }]}>
-                    {locked ? `Unlock with ${tier === "business" ? "Business" : "Pro"}` : "Open path"}
+                    {locked ? `Unlock with ${tier === "sage" ? "Sage" : "Pathfinder"}` : "Open path"}
                   </Text>
                   <Ionicons name={locked ? "lock-closed" : "arrow-forward"} size={14} color={locked ? "#fff" : "#000"} />
                 </View>

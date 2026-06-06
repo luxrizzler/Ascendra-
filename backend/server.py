@@ -113,9 +113,9 @@ class ChatOut(BaseModel):
     reply: str
 
 class CheckoutIn(BaseModel):
-    tier: Literal["pro", "business"]
+    tier: Literal["ascender", "pathfinder", "sage"]
     interval: Literal["monthly", "annual", "trial"] = "monthly"
-    origin_url: str  # e.g. https://...preview.emergentagent.com
+    origin_url: str
 
 # ─── Auth helpers ───────────────────────────────────────────────────────────
 def hash_pw(pw: str) -> str:
@@ -434,40 +434,42 @@ async def tutor_history(session_id: str, user=Depends(current_user)):
 
 # ─── Pricing & Stripe ───────────────────────────────────────────────────────
 TIERS = {
-    "free": {
-        "id": "free", "name": "Free", "price_monthly": 0, "price_annual": 0,
-        "blurb": "Get a real taste of the future.",
+    "ascender": {
+        "id": "ascender", "name": "Ascender",
+        "price_monthly": 9.99, "price_annual": 99.00,
+        "blurb": "Start your ascent. The essentials.",
         "features": [
             "AI Fundamentals path (8 lessons)",
-            "Limited AI Tutor (5 messages/day)",
+            "Unlimited AI Tutor (Claude 4.5)",
             "Browse all 22 AI models",
-            "Daily streak tracking",
+            "Daily streak + XP tracking",
         ],
     },
-    "pro": {
-        "id": "pro", "name": "Pro",
-        "price_monthly": 19.99, "price_annual": 199.00,  # 10 mo price = ~17% off
-        "blurb": "For serious learners. Unlock the full curriculum.",
+    "pathfinder": {
+        "id": "pathfinder", "name": "Pathfinder",
+        "price_monthly": 19.99, "price_annual": 199.00,
+        "blurb": "For serious learners forging the way.",
         "features": [
-            "Everything in Free, plus:",
-            "6 additional learning paths",
-            "Pro-exclusive: Prompt Engineering Mastery",
-            "Pro-exclusive: AI Automation Stack (agents, MCP)",
-            "Pro-exclusive: Code With AI (Cursor, Claude Code)",
-            "Unlimited AI Tutor chat (Claude 4.5)",
+            "Everything in Ascender, plus:",
+            "7 additional paths (Business, Creators, Productivity)",
+            "Pro: Prompt Engineering Mastery",
+            "Pro: AI Automation Stack (agents, MCP)",
+            "Pro: Code With AI (Cursor, Claude Code)",
+            "★ NEW: Building with Emergent — ship your first app",
             "XP + leaderboards",
         ],
         "highlight": True,
     },
-    "business": {
-        "id": "business", "name": "Business",
-        "price_monthly": 49.99, "price_annual": 499.00,  # ~17% off
-        "blurb": "Build a business with AI — the founder operating system.",
+    "sage": {
+        "id": "sage", "name": "Sage",
+        "price_monthly": 29.99, "price_annual": 299.00,
+        "blurb": "Master the craft. Build the business.",
         "features": [
-            "Everything in Pro, plus:",
-            "Business-exclusive: AI-First Startup Playbook",
-            "Business-exclusive: AI Sales & Marketing Engine",
-            "Business-exclusive: Enterprise AI Strategy",
+            "Everything in Pathfinder, plus:",
+            "Sage: AI-First Startup Playbook",
+            "Sage: AI Sales & Marketing Engine",
+            "Sage: Enterprise AI Strategy",
+            "★ NEW: Emergent for Business — ship & monetize on Emergent",
             "Real founder case studies (revenue + tactics)",
             "Quarterly AI roadmap briefings",
             "Priority AI Tutor response speed",
@@ -482,13 +484,14 @@ async def pricing():
 
 @api.post("/billing/checkout")
 async def create_checkout(body: CheckoutIn, request: Request, user=Depends(current_user)):
-    if body.tier not in ("pro", "business"):
+    if body.tier not in TIERS:
         raise HTTPException(400, "Invalid tier")
     if body.interval == "trial":
         if user.get("has_used_trial"):
-            raise HTTPException(400, "Trial already used. Upgrade to a monthly or annual plan.")
+            raise HTTPException(400, "Trial already used. Pick a plan to keep going.")
         amount_usd = 2.99
-        plan_name = f"{TIERS[body.tier]['name']} (7-day trial)"
+        # Trial always unlocks the top tier (Sage) for 7 days
+        plan_name = "Sage (7-day trial)"
     elif body.interval == "annual":
         amount_usd = TIERS[body.tier]["price_annual"]
         plan_name = f"{TIERS[body.tier]['name']} (Annual)"
@@ -539,8 +542,10 @@ async def checkout_status(session_id: str, request: Request, user=Depends(curren
                 interval = rec.get("interval", "monthly")
                 days = {"trial": 7, "annual": 365, "monthly": 30}.get(interval, 30)
                 expires_at = datetime.now(timezone.utc) + timedelta(days=days)
+                # Trial grants Sage; otherwise the tier they picked
+                granted_tier = "sage" if interval == "trial" else rec["tier"]
                 update = {
-                    "tier": rec["tier"],
+                    "tier": granted_tier,
                     "subscription_interval": interval,
                     "tier_expires_at": expires_at,
                 }
@@ -575,8 +580,9 @@ async def stripe_webhook(request: Request, stripe_signature: Optional[str] = Hea
         if uid and tier:
             days = {"trial": 7, "annual": 365, "monthly": 30}.get(interval, 30)
             expires_at = datetime.now(timezone.utc) + timedelta(days=days)
+            granted_tier = "sage" if interval == "trial" else tier
             update = {
-                "tier": tier,
+                "tier": granted_tier,
                 "subscription_interval": interval,
                 "tier_expires_at": expires_at,
             }

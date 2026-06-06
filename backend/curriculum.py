@@ -293,7 +293,7 @@ PATHS = [
         "color": "#FFB000",
         "level": "Beginner",
         "duration": "~4 hours",
-        "tier": "free",
+        "tier": "ascender",
         "image": "https://images.pexels.com/photos/12623752/pexels-photo-12623752.jpeg",
         "modules": [
             {
@@ -465,7 +465,7 @@ PATHS = [
         "color": "#10B981",
         "level": "Intermediate",
         "duration": "~5 hours",
-        "tier": "pro",
+        "tier": "pathfinder",
         "image": "https://images.pexels.com/photos/19826624/pexels-photo-19826624.jpeg",
         "modules": [
             {
@@ -599,7 +599,7 @@ PATHS = [
         "color": "#EC4899",
         "level": "Intermediate",
         "duration": "~3.5 hours",
-        "tier": "pro",
+        "tier": "pathfinder",
         "image": "https://images.pexels.com/photos/8672787/pexels-photo-8672787.jpeg",
         "modules": [
             {
@@ -715,7 +715,7 @@ PATHS = [
         "color": "#3B82F6",
         "level": "Beginner → Intermediate",
         "duration": "~3 hours",
-        "tier": "pro",
+        "tier": "pathfinder",
         "image": "https://images.pexels.com/photos/18173598/pexels-photo-18173598.jpeg",
         "modules": [
             {
@@ -811,7 +811,7 @@ PATHS = [
         "color": "#A855F7",
         "level": "Advanced",
         "duration": "~3 hours",
-        "tier": "pro",
+        "tier": "pathfinder",
         "image": "https://images.pexels.com/photos/8728285/pexels-photo-8728285.jpeg",
         "modules": [
             {
@@ -863,7 +863,7 @@ PATHS = [
         "color": "#06B6D4",
         "level": "Intermediate → Advanced",
         "duration": "~4 hours",
-        "tier": "pro",
+        "tier": "pathfinder",
         "image": "https://images.pexels.com/photos/16021018/pexels-photo-16021018.jpeg",
         "modules": [
             {
@@ -915,7 +915,7 @@ PATHS = [
         "color": "#22C55E",
         "level": "Beginner → Advanced",
         "duration": "~4 hours",
-        "tier": "pro",
+        "tier": "pathfinder",
         "image": "https://images.pexels.com/photos/4974915/pexels-photo-4974915.jpeg",
         "modules": [
             {
@@ -953,7 +953,7 @@ PATHS = [
         "color": "#F59E0B",
         "level": "Advanced",
         "duration": "~5 hours",
-        "tier": "business",
+        "tier": "sage",
         "image": "https://images.pexels.com/photos/8867434/pexels-photo-8867434.jpeg",
         "modules": [
             {
@@ -1005,7 +1005,7 @@ PATHS = [
         "color": "#EF4444",
         "level": "Intermediate → Advanced",
         "duration": "~4 hours",
-        "tier": "business",
+        "tier": "sage",
         "image": "https://images.pexels.com/photos/3184292/pexels-photo-3184292.jpeg",
         "modules": [
             {
@@ -1042,7 +1042,7 @@ PATHS = [
         "color": "#0EA5E9",
         "level": "Advanced",
         "duration": "~3.5 hours",
-        "tier": "business",
+        "tier": "sage",
         "image": "https://images.pexels.com/photos/3184465/pexels-photo-3184465.jpeg",
         "modules": [
             {
@@ -1119,7 +1119,7 @@ def path_summary(path):
     }
 
 
-TIER_RANK = {"free": 0, "pro": 1, "business": 2}
+TIER_RANK = {"free": 0, "ascender": 1, "pathfinder": 2, "sage": 3}
 
 
 def can_access(user_tier: str, path_tier: str) -> bool:

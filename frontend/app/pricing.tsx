@@ -8,7 +8,7 @@ import { api, BACKEND_URL } from "@/src/api";
 import { useAuth } from "@/src/context/AuthContext";
 
 type Tier = {
-  id: "free" | "pro" | "business";
+  id: "ascender" | "pathfinder" | "sage";
   name: string; price_monthly: number; price_annual: number; blurb: string; features: string[]; highlight?: boolean;
 };
 
@@ -25,7 +25,7 @@ export default function Pricing() {
     api.get("/pricing").then((r) => setTiers(r.tiers)).finally(() => setLoading(false));
   }, []);
 
-  const startCheckout = async (tier: "pro" | "business") => {
+  const startCheckout = async (tier: "ascender" | "pathfinder" | "sage") => {
     if (!user) {
       router.push("/login");
       return;
@@ -147,7 +147,7 @@ export default function Pricing() {
                 <>
                   <Pressable
                     testID={`tier-cta-${t.id}`}
-                    onPress={() => startCheckout(t.id as "pro" | "business")}
+                    onPress={() => startCheckout(t.id as "ascender" | "pathfinder" | "sage")}
                     disabled={busy === t.id}
                     style={[
                       styles.ctaBtn,
@@ -160,13 +160,13 @@ export default function Pricing() {
                     ) : (
                       <>
                         <Text style={[styles.ctaText, t.highlight ? { color: "#000" } : { color: C.text }]}>
-                          {interval === "annual" ? `Get ${t.name} annually` : `Upgrade to ${t.name}`}
+                          {interval === "annual" ? `Get ${t.name} annually` : `Choose ${t.name}`}
                         </Text>
                         <Ionicons name="arrow-forward" size={16} color={t.highlight ? "#000" : C.text} />
                       </>
                     )}
                   </Pressable>
-                  {t.id === "pro" && !user?.has_used_trial && (
+                  {t.id === "sage" && !user?.has_used_trial && (
                     <Pressable
                       testID="tier-cta-trial"
                       onPress={async () => {
@@ -174,7 +174,7 @@ export default function Pricing() {
                         setBusy("trial"); setErr(null);
                         try {
                           const origin = Platform.OS === "web" && typeof window !== "undefined" ? window.location.origin : BACKEND_URL!;
-                          const { url } = await api.post("/billing/checkout", { tier: "pro", interval: "trial", origin_url: origin });
+                          const { url } = await api.post("/billing/checkout", { tier: "sage", interval: "trial", origin_url: origin });
                           if (Platform.OS === "web") window.location.href = url;
                           else await Linking.openURL(url);
                         } catch (e: any) { setErr(e.message || "Trial unavailable"); }
@@ -188,7 +188,7 @@ export default function Pricing() {
                       ) : (
                         <>
                           <Ionicons name="flash" size={14} color={C.brand} />
-                          <Text style={styles.trialText}>Try 7 days for just $2.99</Text>
+                          <Text style={styles.trialText}>Try Sage for 7 days · just $2.99</Text>
                         </>
                       )}
                     </Pressable>

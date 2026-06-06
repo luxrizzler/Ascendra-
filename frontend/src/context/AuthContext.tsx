@@ -7,7 +7,7 @@ export type User = {
   email: string;
   name?: string;
   goal?: string;
-  tier: "free" | "pro" | "business";
+  tier: "free" | "ascender" | "pathfinder" | "sage";
   has_used_trial?: boolean;
 };
 
