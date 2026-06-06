@@ -65,28 +65,56 @@ export default function Landing() {
       </View>
 
       <ScrollView contentContainerStyle={{ paddingBottom: 60 }}>
-        {/* ─── BRAND HERO (full-bleed artwork) ─── */}
-        <View style={styles.heroWrap}>
-          <Image
-            source={{ uri: HERO_IMG }}
-            style={styles.heroImage}
-            resizeMode={isDesktop ? "cover" : "contain"}
-          />
-          {/* Bottom fade to blend into next section */}
-          <LinearGradient
-            colors={["rgba(7,11,31,0)", "rgba(7,11,31,0.6)", "rgba(7,11,31,1)"]}
-            style={styles.heroFade}
-          />
+        {/* ─── HERO — split: angel artwork left, brand copy right ─── */}
+        <View style={[styles.hero, isDesktop ? styles.heroDesktop : styles.heroMobile]}>
+          {/* LEFT: angel image (cropped from brand board) */}
+          <View style={[styles.heroLeft, isDesktop ? { width: "46%", height: "100%" } : { width: "100%", height: 420 }]}>
+            <View style={styles.heroImageClip}>
+              <Image
+                source={{ uri: HERO_IMG }}
+                style={styles.heroImageCrop}
+                resizeMode="cover"
+              />
+            </View>
+            {/* Right-edge fade so it bleeds into the dark side */}
+            <LinearGradient
+              colors={["rgba(7,11,31,0)", "rgba(7,11,31,0.0)", "rgba(7,11,31,0.95)"]}
+              start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }}
+              style={StyleSheet.absoluteFillObject}
+              pointerEvents="none"
+            />
+          </View>
 
-          {/* CTA buttons floating at the bottom of the hero */}
-          <View style={[styles.heroCtaRow, { bottom: isDesktop ? 60 : 24 }]}>
-            <Pressable testID="hero-cta-btn" onPress={onCTA} style={styles.primaryBtn}>
-              <Text style={styles.primaryBtnText}>Begin your ascent</Text>
-              <Ionicons name="arrow-forward" size={18} color="#000" />
-            </Pressable>
-            <Pressable onPress={() => router.push("/pricing")} style={styles.secondaryBtn}>
-              <Text style={styles.secondaryBtnText}>See pricing</Text>
-            </Pressable>
+          {/* RIGHT: brand copy */}
+          <View style={[styles.heroRight, isDesktop ? { width: "54%", paddingHorizontal: 60, paddingVertical: 80 } : { width: "100%", paddingHorizontal: 24, paddingVertical: 48 }]}>
+            {/* Subtle cosmic glow behind text */}
+            <LinearGradient
+              colors={["rgba(124,58,237,0.18)", "rgba(7,11,31,0)"]}
+              style={[StyleSheet.absoluteFillObject, { opacity: 0.6 }]}
+              pointerEvents="none"
+            />
+            <Text style={styles.heroBrand}>ASCENDRA</Text>
+            <View style={styles.heroDivider} />
+            <Text style={styles.heroKicker}>AI-POWERED LEARNING · BOUNDLESS GROWTH</Text>
+            <Text style={[styles.heroH1, { fontSize: isDesktop ? 64 : 44 }]}>
+              Ready to{"\n"}<Text style={styles.heroH1Gold}>rise today?</Text>
+            </Text>
+            <Text style={[styles.heroSub, { maxWidth: 520 }]}>
+              The AI learning partner that walks beside you — from your first prompt to your first launch.
+              Beginner to advanced, taught through every model that matters in 2026.
+            </Text>
+            <View style={styles.heroCtas}>
+              <Pressable testID="hero-cta-btn" onPress={onCTA} style={styles.primaryBtn}>
+                <Text style={styles.primaryBtnText}>Begin your ascent</Text>
+                <Ionicons name="arrow-forward" size={18} color="#000" />
+              </Pressable>
+              <Pressable onPress={() => router.push("/pricing")} style={styles.secondaryBtn}>
+                <Text style={styles.secondaryBtnText}>See pricing</Text>
+              </Pressable>
+            </View>
+            <View style={styles.heroProofRow}>
+              <Text style={styles.heroProofText}>★★★★★  Trusted by 10,000+ rising builders</Text>
+            </View>
           </View>
         </View>
 
@@ -265,21 +293,43 @@ const styles = StyleSheet.create({
   navCta: { backgroundColor: C.brand, paddingHorizontal: 16, paddingVertical: 10, borderRadius: RADIUS.pill },
   navCtaText: { color: "#000", fontWeight: "800", fontSize: 13 },
 
-  // Hero — full-bleed brand artwork
-  heroWrap: {
+  // Hero — split layout
+  hero: { width: "100%", backgroundColor: "#0A0413", overflow: "hidden", position: "relative" },
+  heroDesktop: { flexDirection: "row", minHeight: 720, alignItems: "stretch" },
+  heroMobile: { flexDirection: "column" },
+  heroLeft: { position: "relative", backgroundColor: "#0A0413", overflow: "hidden" },
+  // Clipping box for the brand-board crop. We render the full board image enlarged
+  // and shifted so only the angel (≈ left 30% of the board) is visible.
+  heroImageClip: { width: "100%", height: "100%", overflow: "hidden" },
+  // Zoom into the angel column on the brand board. The source artwork is the
+  // full brand identity sheet — we scale it ~2.4x and shift up-left so only
+  // the cinematic angel + wings + stairs portion fills the frame.
+  heroImageCrop: {
     width: "100%",
-    aspectRatio: Platform.select({ web: 1, default: 0.75 }),
-    maxHeight: 980,
-    backgroundColor: "#0A0413",
-    position: "relative",
-    overflow: "hidden",
+    height: "100%",
+    ...Platform.select({
+      web: {
+        objectFit: "cover",
+        objectPosition: "left top",
+        transform: "scale(2.9)",
+        transformOrigin: "10% 45%",
+      } as any,
+      default: {},
+    }),
   },
-  heroImage: { width: "100%", height: "100%" },
-  heroFade: { position: "absolute", left: 0, right: 0, bottom: 0, height: 200 },
-  heroCtaRow: {
-    position: "absolute", left: 0, right: 0,
-    flexDirection: "row", flexWrap: "wrap", gap: 12, justifyContent: "center",
+  heroRight: { position: "relative", justifyContent: "center", overflow: "hidden" },
+  heroBrand: {
+    color: C.brand, fontSize: 16, fontWeight: "900",
+    letterSpacing: 10, marginBottom: 16,
   },
+  heroDivider: { width: 40, height: 2, backgroundColor: C.brand, marginBottom: 16, opacity: 0.7 },
+  heroKicker: { color: C.lavender, fontSize: 11, fontWeight: "700", letterSpacing: 3, marginBottom: 24 },
+  heroH1: { color: C.text, fontWeight: "900", letterSpacing: -2, lineHeight: undefined as any },
+  heroH1Gold: { color: C.brand, fontStyle: "italic" },
+  heroSub: { color: C.textDim, fontSize: 17, marginTop: 24, lineHeight: 26 },
+  heroCtas: { flexDirection: "row", flexWrap: "wrap", gap: 12, marginTop: 32 },
+  heroProofRow: { marginTop: 28 },
+  heroProofText: { color: C.textMuted, fontSize: 12 },
 
   // Buttons
   primaryBtn: { backgroundColor: C.brand, paddingHorizontal: 24, paddingVertical: 16, borderRadius: RADIUS.lg, flexDirection: "row", alignItems: "center", gap: 8 },
