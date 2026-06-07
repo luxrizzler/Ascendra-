@@ -1,5 +1,5 @@
 """
-AI Academy backend.
+Ascendra Academy backend.
 - JWT auth
 - Curriculum (paths / lessons / models)
 - Progress tracking (streak, XP, completed lessons)

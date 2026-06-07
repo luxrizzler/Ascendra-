@@ -12,7 +12,7 @@ type Msg = { role: "user" | "assistant"; content: string };
 const SUGGESTIONS = [
   "Explain a concept",
   "Quiz me on today's lesson",
-  "Create a study plan for AI Business",
+  "Build me a business plan with AI",
   "Recommend the best model for video ads",
 ];
 

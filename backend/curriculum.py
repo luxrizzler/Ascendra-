@@ -1,5 +1,5 @@
 """
-AI Academy curriculum data.
+Ascendra Academy curriculum data.
 Paths -> Modules -> Lessons. Each lesson has swipeable cards + a quiz question.
 """
 
