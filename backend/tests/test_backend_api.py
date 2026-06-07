@@ -78,7 +78,7 @@ class TestCurriculum:
         assert r.status_code == 200
         p = r.json()
         # collect lesson ids
-        lids = [l["id"] for m in p["modules"] for l in m["lessons"]]
+        lids = [lsn["id"] for m in p["modules"] for lsn in m["lessons"]]
         assert set(FUNDAMENTALS_LESSONS) == set(lids)
 
     def test_path_not_found(self, client):
@@ -91,9 +91,9 @@ class TestCurriculum:
         # Free-tier user is blocked from ascender content; this proves gating works.
         assert r.status_code in (200, 403)
         if r.status_code == 200:
-            l = r.json()
-            assert l["id"] == "f1l1"
-            assert "quiz" in l
+            lsn = r.json()
+            assert lsn["id"] == "f1l1"
+            assert "quiz" in lsn
 
     def test_models_list(self, client):
         r = client.get(f"{API_URL}/models")

@@ -60,6 +60,7 @@ chats_col = db["chats"]
 sessions_col = db["payment_sessions"]
 certs_col = db["certificates"]
 pageviews_col = db["pageviews"]
+password_reset_col = db["password_resets"]
 STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
 
 # ─── App ────────────────────────────────────────────────────────────────────
@@ -106,6 +107,13 @@ class UserOut(BaseModel):
 
 class ChangePasswordIn(BaseModel):
     current_password: Optional[str] = None  # not required if must_change_password
+    new_password: str = Field(min_length=6)
+
+class ForgotPasswordIn(BaseModel):
+    email: EmailStr
+
+class ResetPasswordIn(BaseModel):
+    token: str = Field(min_length=20)
     new_password: str = Field(min_length=6)
 
 class AdminUserPatch(BaseModel):
@@ -1070,6 +1078,62 @@ async def change_password(body: ChangePasswordIn, user=Depends(current_user)):
     return {"ok": True}
 
 
+# ─── Forgot / Reset password (public, email-based) ──────────────────────────
+def _public_web_url() -> str:
+    return (os.environ.get("PUBLIC_WEB_URL") or "").rstrip("/") or "http://localhost:3000"
+
+
+@api.post("/auth/forgot-password")
+async def forgot_password(body: ForgotPasswordIn, request: Request):
+    """Public endpoint. Always returns 200 to avoid email enumeration."""
+    email = body.email.lower().strip()
+    user = await users_col.find_one({"email": email})
+    if user:
+        token = uuid.uuid4().hex + uuid.uuid4().hex   # 64-char opaque
+        expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
+        await password_reset_col.insert_one({
+            "token": token,
+            "user_id": user["id"],
+            "email": email,
+            "expires_at": expires_at,
+            "used_at": None,
+            "created_at": datetime.now(timezone.utc),
+            "ip": request.client.host if request.client else None,
+        })
+        reset_url = f"{_public_web_url()}/reset-password?token={token}"
+        try:
+            from email_service import send_password_reset
+            send_password_reset(to=email, name=user.get("name"), reset_url=reset_url, expires_minutes=60)
+        except Exception as e:
+            log.warning(f"forgot-password email send failed: {e}")
+    # Always return ok to avoid enumeration
+    return {"ok": True}
+
+
+@api.post("/auth/reset-password")
+async def reset_password(body: ResetPasswordIn):
+    rec = await password_reset_col.find_one({"token": body.token})
+    if not rec:
+        raise HTTPException(400, "Invalid or expired reset link.")
+    if rec.get("used_at"):
+        raise HTTPException(400, "This reset link was already used. Request a new one.")
+    exp = rec.get("expires_at")
+    if exp:
+        if exp.tzinfo is None:
+            exp = exp.replace(tzinfo=timezone.utc)
+        if exp < datetime.now(timezone.utc):
+            raise HTTPException(400, "This reset link expired. Request a new one.")
+    await users_col.update_one(
+        {"id": rec["user_id"]},
+        {"$set": {"password_hash": hash_pw(body.new_password), "must_change_password": False}},
+    )
+    await password_reset_col.update_one(
+        {"token": body.token},
+        {"$set": {"used_at": datetime.now(timezone.utc)}},
+    )
+    return {"ok": True}
+
+
 # ─── Anonymous page-view tracking ───────────────────────────────────────────
 @api.post("/track/pageview")
 async def track_pageview(body: PageviewIn, request: Request):
@@ -1285,6 +1349,42 @@ async def admin_delete_user(uid: str, admin=Depends(require_admin)):
     await progress_col.delete_one({"user_id": uid})
     await certs_col.delete_many({"user_id": uid})
     return {"ok": True}
+
+
+@api.post("/admin/users/{uid}/resend-invite")
+async def admin_resend_invite(uid: str, admin=Depends(require_admin)):
+    """Generate a fresh temp password and email the user a welcome/invite."""
+    u = await users_col.find_one({"id": uid})
+    if not u:
+        raise HTTPException(404, "User not found")
+    # Generate a strong-but-readable temp password (12 chars, urlsafe)
+    import secrets
+    alphabet = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789"
+    temp_pw = "".join(secrets.choice(alphabet) for _ in range(12))
+    await users_col.update_one(
+        {"id": uid},
+        {"$set": {"password_hash": hash_pw(temp_pw), "must_change_password": True}},
+    )
+    login_url = f"{_public_web_url()}/login"
+    invited_by = admin.get("name") or admin.get("email")
+    try:
+        from email_service import send_invite as _send_invite
+        result = _send_invite(
+            to=u["email"], name=u.get("name"),
+            temp_password=temp_pw, login_url=login_url,
+            invited_by=invited_by, tier=u.get("tier", "free"),
+        )
+    except Exception as e:
+        log.warning(f"invite email send failed: {e}")
+        result = {"ok": False, "error": str(e)}
+    # Admin gets the temp password back so they can copy/paste it as a fallback
+    return {
+        "ok": True,
+        "email_sent": bool(result.get("ok")),
+        "email_id": result.get("id"),
+        "temp_password": temp_pw,
+        "user_email": u["email"],
+    }
 
 
 @api.get("/admin/sales")

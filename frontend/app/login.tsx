@@ -111,6 +111,10 @@ export default function Login() {
             </>}
           </Pressable>
 
+          <Pressable testID="login-forgot-link" onPress={() => router.push("/forgot-password")} style={{ paddingVertical: 14, alignItems: "center" }}>
+            <Text style={styles.linkText}>Forgot password?</Text>
+          </Pressable>
+
           <View style={styles.dividerRow}>
             <View style={styles.dividerLine} />
             <Text style={styles.dividerText}>OR</Text>

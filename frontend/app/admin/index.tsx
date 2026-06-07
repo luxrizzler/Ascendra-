@@ -333,6 +333,39 @@ function EditUserSheet({ user, onClose, onSaved, onDeleted }: {
     } finally { setBusy(false); }
   };
 
+  const onResendInvite = async () => {
+    const ok = Platform.OS === "web"
+      ? (typeof confirm !== "undefined" && confirm(
+          `Send a fresh invite email to ${user.email}?\n\nThis will reset their password and email them new credentials.`
+        ))
+      : await new Promise<boolean>((res) => {
+          Alert.alert("Resend invite?",
+            `A new temp password will be generated and emailed to ${user.email}. Their old password will stop working.`,
+            [
+              { text: "Cancel", onPress: () => res(false), style: "cancel" },
+              { text: "Send", onPress: () => res(true) },
+            ]);
+        });
+    if (!ok) return;
+    setBusy(true);
+    try {
+      const r = await api.post(`/admin/users/${user.id}/resend-invite`);
+      const msg = r.email_sent
+        ? `Invite sent ✓\n\nA new temp password was generated and emailed to ${r.user_email}.\n\nFallback (in case the email is delayed):\nTemp password: ${r.temp_password}`
+        : `Password reset ✓ but EMAIL DID NOT SEND.\n\nResend's sandbox sender only delivers to your own verified email until you verify the domain at resend.com/domains.\n\nFor now, please copy this temp password and send it to the user manually:\n\n${r.temp_password}`;
+      if (Platform.OS === "web") {
+        // Copy temp password to clipboard for convenience
+        try { await (navigator as any).clipboard?.writeText(r.temp_password); } catch {}
+        alert(msg + (r.email_sent ? "" : "\n\n(Temp password copied to clipboard.)"));
+      } else {
+        Alert.alert(r.email_sent ? "Invite sent" : "Sent (email failed)", msg);
+      }
+      onSaved();
+    } catch (e: any) {
+      Alert.alert("Could not resend invite", e?.message || "Unknown error");
+    } finally { setBusy(false); }
+  };
+
   return (
     <View style={styles.sheetOverlay}>
       <Pressable style={StyleSheet.absoluteFillObject as any} onPress={onClose} />
@@ -365,6 +398,11 @@ function EditUserSheet({ user, onClose, onSaved, onDeleted }: {
 
           <Pressable testID="admin-edit-save" onPress={onSave} disabled={busy} style={[styles.primaryBtn, busy && { opacity: 0.6 }]}>
             {busy ? <ActivityIndicator color="#000" /> : <Text style={styles.primaryBtnText}>Save changes</Text>}
+          </Pressable>
+
+          <Pressable testID="admin-resend-invite" onPress={onResendInvite} disabled={busy} style={styles.secondaryBtn}>
+            <Ionicons name="mail" size={16} color={C.brand} />
+            <Text style={styles.secondaryBtnText}>Resend invite (new temp password)</Text>
           </Pressable>
 
           <Pressable testID="admin-edit-delete" onPress={onDelete} disabled={busy} style={styles.dangerBtn}>
@@ -513,6 +551,8 @@ const styles = StyleSheet.create({
   toggleText: { color: C.text, fontSize: 14 },
   primaryBtn: { backgroundColor: C.brand, paddingVertical: 14, borderRadius: RADIUS.lg, alignItems: "center", marginTop: 12 },
   primaryBtnText: { color: "#000", fontWeight: "900", fontSize: 15 },
+  secondaryBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 12, borderRadius: RADIUS.lg, borderWidth: 1, borderColor: C.brand, marginTop: 10 },
+  secondaryBtnText: { color: C.brand, fontWeight: "800", fontSize: 13 },
   dangerBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, padding: 14, marginTop: 6 },
   dangerBtnText: { color: C.danger, fontWeight: "700", fontSize: 13 },
 });

@@ -1084,9 +1084,9 @@ def get_path(path_id):
 def get_lesson(lesson_id):
     for p in PATHS:
         for m in p["modules"]:
-            for l in m["lessons"]:
-                if l["id"] == lesson_id:
-                    return {**l, "path_id": p["id"], "path_title": p["title"], "module_title": m["title"], "path_color": p["color"]}
+            for lsn in m["lessons"]:
+                if lsn["id"] == lesson_id:
+                    return {**lsn, "path_id": p["id"], "path_title": p["title"], "module_title": m["title"], "path_color": p["color"]}
     return None
 
 
@@ -1094,15 +1094,15 @@ def all_lesson_ids():
     ids = []
     for p in PATHS:
         for m in p["modules"]:
-            for l in m["lessons"]:
-                ids.append(l["id"])
+            for lsn in m["lessons"]:
+                ids.append(lsn["id"])
     return ids
 
 
 def path_summary(path):
     """Return path without quiz answers (for list views)."""
     total_lessons = sum(len(m["lessons"]) for m in path["modules"])
-    total_xp = sum(l["xp"] for m in path["modules"] for l in m["lessons"])
+    total_xp = sum(lsn["xp"] for m in path["modules"] for lsn in m["lessons"])
     return {
         "id": path["id"],
         "title": path["title"],

@@ -1,0 +1,47 @@
+{
+  "summary": "Password-reset email flow + admin Resend-invite button verified end-to-end. Backend: 19/19 new pytest cases in tests/test_password_reset_and_invite.py pass; full suite 72/72 (53 existing + 19 new). All requested endpoints behave per spec: POST /api/auth/forgot-password returns 200 for valid AND nonexistent emails (anti-enumeration) and persists a row to the password_resets collection ONLY for valid emails with a ~1h expiry (verified 50-70min window) and used_at=null. POST /api/auth/reset-password returns 400 for bad token, 200 + login-with-new-password works for valid token, 400 ('already used') for token reuse. POST /api/admin/users/{id}/resend-invite by non-admin -> 403, unauthenticated -> 401/403, unknown user -> 404, admin -> 200 returning {ok:true, email_sent:bool, email_id, temp_password (>=8 chars), user_email}; user.must_change_password=true in DB and user can login with the new temp_password. Resend SANDBOX restriction confirmed in backend logs ('You can only send testing emails to your own email address (luxrizzler@gmail.com)') - email_sent=false for any non-owner address, endpoint STILL returns 200 + temp_password fallback - NOT flagged as bug per main agent context. Regression: /api/auth/login, /api/auth/me, /api/progress, /api/certificates, /api/admin/stats, /api/admin/users, /api/billing/checkout, /api/tutor/chat, /api/track/pageview, /api/auth/change-password all still green. Frontend (mobile 390x844 viewport): (1) /login renders gold 'Forgot password?' link with testID=login-forgot-link below Sign-in; tap navigates to /forgot-password. (2) /forgot-password — fill fp-email + tap fp-submit -> 'CHECK YOUR INBOX / Reset link sent ✨' success view with fp-sent + fp-back-login. (3) /reset-password?token=<real> — mismatch shows 'Passwords do not match.', <6 chars shows 'Password must be at least 6 characters.', valid token + matching pw shows 'ALL SET / Password updated ✨' + rp-go-login button which routes to /login. (4) /admin -> Users tab -> tap sage1 row -> EditUserSheet renders NEW gold testID=admin-resend-invite button labeled 'Resend invite (new temp password)' positioned BETWEEN Save (y=610) and Delete (y=714) at y=665 as required; tapping it fires window.confirm() then window.alert() with the temp password fallback message (sandbox email_sent=false, temp password also copied to clipboard). Zero console errors across the full UI run.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "Pressable/View (RN-web)", "issue": "Carryover non-blocking console warning: 'props.pointerEvents is deprecated. Use style.pointerEvents'. Same one flagged in iterations 2/3/4 — still fires on /login. Reference: somewhere in frontend/app/login.tsx Pressable chain (search for pointerEvents= prop)."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_password_reset_and_invite.py",
+    "/app/backend/tests/test_backend_api.py",
+    "/app/backend/tests/test_admin_and_change_password.py",
+    "/app/test_reports/pytest/password_reset_results.xml",
+    "/app/test_reports/pytest/full_results.xml"
+  ],
+  "action_items": [
+    "(Optional, non-blocking) Silence 'props.pointerEvents is deprecated' RN-web warning by moving pointerEvents into the style prop on the offending Pressable/View. Still present after 4 iterations.",
+    "(Documentation reminder) Once the user verifies ascendraacademy.com domain in Resend, flip EMAIL_FROM_VERIFIED_ENABLED=true in backend/.env so non-owner addresses receive the actual transactional emails — at that point email_sent will become true for everyone."
+  ],
+  "critical_code_review_comments": [
+    "POST /auth/forgot-password (server.py:1086-1110) correctly returns {ok:true} unconditionally so an attacker cannot enumerate registered emails; row is created only when user exists, and the email send is wrapped in try/except so a Resend 403 (sandbox) never bubbles to the API caller.",
+    "POST /auth/reset-password (server.py:1113-1134) correctly checks: token exists -> 400, used_at set -> 400 ('already used'), expires_at in past (with tzinfo normalisation) -> 400, otherwise updates password_hash + sets must_change_password=false + marks token used. Single-use is enforced by the used_at check, not by deleting the row.",
+    "POST /admin/users/{id}/resend-invite (server.py:1354-1387) generates a 12-char alphanumeric temp password via secrets.choice from an unambiguous alphabet (no 0/O/I/l confusion), resets must_change_password=true, and returns the temp password to the admin as a fallback when Resend refuses delivery. Email send is wrapped in try/except so a Resend error never breaks the endpoint.",
+    "email_service._send (email_service.py:41-60) catches all exceptions and returns {ok:false, error:str} instead of raising — this is what enables the graceful sandbox handling in both forgot-password and resend-invite.",
+    "Frontend forgot-password.tsx + reset-password.tsx have proper testIDs (fp-email/fp-submit/fp-err/fp-sent/fp-back-login and rp-new/rp-confirm/rp-err/rp-submit/rp-done/rp-go-login). Client-side validation (mismatch / <6 chars) happens before the API call as expected.",
+    "EditUserSheet (frontend/app/admin/index.tsx:336-367) handles both web (window.confirm + window.alert + clipboard.writeText) and native (Alert.alert) confirmation paths, and clearly distinguishes between 'email_sent' success message and the sandbox fallback copy that includes the temp password for manual delivery.",
+    "Admin resend-invite button is correctly positioned between Save and Delete via JSX order (server-rendered Y=610 / 665 / 714) and uses the secondary (gold-bordered) button style, exactly per spec."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_password_reset_and_invite.py (NEW, 19 tests): TestForgotPassword (valid email creates row with 1h expiry, nonexistent email returns 200 with no row), TestResetPassword (bad token -> 400, valid token updates pw + login works, reused token -> 400), TestAdminResendInvite (non-admin -> 403, unauthed -> 401/403, unknown user -> 404, admin -> 200 with temp_password + must_change_password=true + user can login with temp), TestRegression (legacy login, me, progress, certificates, admin/stats, admin/users, billing/checkout with origin_url, track/pageview, tutor/chat, self-service change-password)."
+  ],
+  "success_rate": {
+    "backend": "100% (72/72)",
+    "frontend": "100% of requested flows verified"
+  },
+  "seed_data_creation": "Re-ran /app/backend/seed_accounts.py before AND after the test session to ensure admin/sage1..6 are back to documented credentials. The new test module signs up its own throwaway qa+<uuid>@aiacademy.app user and cleans it up at module teardown via the pymongo session fixture. Also restored test@aiacademy.app password to 'testpass123' after the live UI reset-password flow consumed it.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "All 4 password-reset / resend-invite flows are fully wired and green. Resend SANDBOX behavior is the expected (and documented) reason email_sent=false for any non-owner address — DO NOT regress this into a bug. Useful testIDs added this iteration: login-forgot-link, fp-email/fp-submit/fp-err/fp-sent/fp-back/fp-back-login, rp-new/rp-confirm/rp-err/rp-submit/rp-done/rp-go-login, admin-resend-invite. To exercise reset-password manually, pull a token from MongoDB: db.password_resets.find_one({email:..., used_at:null}, sort=[('created_at',-1)]). Remember the admin user has must_change_password=true after every re-seed, so the first login forces /change-password.",
+  "rca_of_issue": "No new bugs. Two test-script bugs surfaced on the first run (Pydantic EmailStr rejects .test TLD, and /api/billing/checkout expects origin_url not success_url/cancel_url) — both fixed in the test file in-place. Both fixes were test-script changes only; no product code was touched. Final run: 19/19 new + 72/72 total."
+}
