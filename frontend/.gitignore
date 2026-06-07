@@ -5,8 +5,8 @@ node_modules/
 
 # Expo
 .expo/
-dist/
-web-build/
+# dist/  ← Expo web export. NOT gitignored: required for production deploy (FastAPI serves this).
+# web-build/
 expo-env.d.ts
 
 # Native

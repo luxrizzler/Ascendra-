@@ -1450,6 +1450,40 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ─── Serve Expo web build (so the site has a public website at the same domain) ─
+# The Expo web export lives at /app/frontend/dist/ after `yarn expo export -p web`.
+# We mount it AFTER the API so /api/* still takes precedence; any other path falls
+# back to index.html (SPA routing for expo-router web).
+import os as _os
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, Response
+
+WEB_DIST = "/app/frontend/dist"
+INDEX_HTML = _os.path.join(WEB_DIST, "index.html")
+
+if _os.path.isdir(WEB_DIST):
+    # Serve files like /assets/..., /_expo/..., /favicon.ico directly
+    app.mount("/assets",  StaticFiles(directory=_os.path.join(WEB_DIST, "assets")),  name="assets")
+    if _os.path.isdir(_os.path.join(WEB_DIST, "_expo")):
+        app.mount("/_expo", StaticFiles(directory=_os.path.join(WEB_DIST, "_expo")), name="_expo")
+
+    @app.get("/{full_path:path}")
+    async def spa_catch_all(full_path: str):
+        # Direct file hit (favicon, robots, manifest, etc.)
+        candidate = _os.path.join(WEB_DIST, full_path)
+        if full_path and _os.path.isfile(candidate):
+            return FileResponse(candidate)
+        # Static HTML route export (expo-router can pre-render certain pages)
+        html_candidate = _os.path.join(WEB_DIST, full_path + ".html")
+        if full_path and _os.path.isfile(html_candidate):
+            return FileResponse(html_candidate)
+        # Otherwise serve the SPA shell
+        if _os.path.isfile(INDEX_HTML):
+            return FileResponse(INDEX_HTML)
+        return Response("Web build missing — run `yarn expo export -p web` from /app/frontend.", status_code=503)
+else:
+    log.warning(f"WEB_DIST not found at {WEB_DIST} — only /api routes will be served.")
+
 @app.on_event("shutdown")
 async def shutdown():
     client.close()
