@@ -1,12 +1,15 @@
 import { Stack, usePathname } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { useEffect } from "react";
+import { View, Platform } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 
 import { useIconFonts } from "@/src/hooks/use-icon-fonts";
 import { AuthProvider } from "@/src/context/AuthContext";
 import { trackPageview } from "@/src/utils/track";
+import { WebNav, BrandGlow } from "@/src/components/WebNav";
+import { WebFooter } from "@/src/components/WebFooter";
 
 // Keep the native splash visible from cold start until icon fonts register.
 // Required because @expo/vector-icons' componentDidMount fallback fires
@@ -34,13 +37,20 @@ export default function RootLayout() {
     <SafeAreaProvider>
       <AuthProvider>
         <StatusBar style="light" />
-        <Stack
-          screenOptions={{
-            headerShown: false,
-            contentStyle: { backgroundColor: "#0A0A0A" },
-            animation: "fade",
-          }}
-        />
+        <View style={{ flex: 1, backgroundColor: "#0A0413" }}>
+          {Platform.OS === "web" && <WebNav />}
+          {Platform.OS === "web" && <BrandGlow />}
+          <View style={{ flex: 1 }}>
+            <Stack
+              screenOptions={{
+                headerShown: false,
+                contentStyle: { backgroundColor: "transparent" },
+                animation: "fade",
+              }}
+            />
+          </View>
+          {Platform.OS === "web" && <WebFooter />}
+        </View>
       </AuthProvider>
     </SafeAreaProvider>
   );
