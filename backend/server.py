@@ -9,6 +9,7 @@ AI Academy backend.
 import os
 import logging
 import uuid
+import hashlib
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import List, Optional, Literal
@@ -58,6 +59,7 @@ progress_col = db["progress"]
 chats_col = db["chats"]
 sessions_col = db["payment_sessions"]
 certs_col = db["certificates"]
+pageviews_col = db["pageviews"]
 STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
 
 # ─── App ────────────────────────────────────────────────────────────────────
@@ -99,6 +101,26 @@ class UserOut(BaseModel):
     has_used_trial: bool = False
     quiz_answers: Optional[dict] = None
     recommended_path_id: Optional[str] = None
+    is_admin: bool = False
+    must_change_password: bool = False
+
+class ChangePasswordIn(BaseModel):
+    current_password: Optional[str] = None  # not required if must_change_password
+    new_password: str = Field(min_length=6)
+
+class AdminUserPatch(BaseModel):
+    name: Optional[str] = None
+    email: Optional[EmailStr] = None
+    tier: Optional[str] = None
+    subscription_interval: Optional[str] = None
+    tier_expires_at: Optional[datetime] = None
+    is_admin: Optional[bool] = None
+    must_change_password: Optional[bool] = None
+    new_password: Optional[str] = None     # admin can reset any password
+
+class PageviewIn(BaseModel):
+    path: str
+    referrer: Optional[str] = None
 
 class ProgressOut(BaseModel):
     completed_lesson_ids: List[str] = []
@@ -194,7 +216,15 @@ def serialize_user(u: dict) -> dict:
         "has_used_trial": bool(u.get("has_used_trial", False)),
         "quiz_answers": u.get("quiz_answers"),
         "recommended_path_id": u.get("recommended_path_id"),
+        "is_admin": bool(u.get("is_admin", False)),
+        "must_change_password": bool(u.get("must_change_password", False)),
     }
+
+
+async def require_admin(user=Depends(current_user)) -> dict:
+    if not user.get("is_admin"):
+        raise HTTPException(403, "Admin only")
+    return user
 
 
 async def auto_downgrade_if_expired(user: dict) -> dict:
@@ -202,13 +232,17 @@ async def auto_downgrade_if_expired(user: dict) -> dict:
     if user.get("tier", "free") == "free":
         return user
     exp = user.get("tier_expires_at")
-    if exp and exp < datetime.now(timezone.utc):
-        await users_col.update_one(
-            {"id": user["id"]},
-            {"$set": {"tier": "free", "subscription_interval": None}},
-        )
-        user["tier"] = "free"
-        user["subscription_interval"] = None
+    if exp is not None:
+        # Mongo may return naive datetimes — normalize to UTC for safe comparison
+        if exp.tzinfo is None:
+            exp = exp.replace(tzinfo=timezone.utc)
+        if exp < datetime.now(timezone.utc):
+            await users_col.update_one(
+                {"id": user["id"]},
+                {"$set": {"tier": "free", "subscription_interval": None}},
+            )
+            user["tier"] = "free"
+            user["subscription_interval"] = None
     return user
 
 # ─── Progress / Level / Certificate helpers ─────────────────────────────────
@@ -1011,6 +1045,300 @@ async def billing_portal(request: Request, user=Depends(current_user)):
 @api.get("/")
 async def root():
     return {"status": "ok", "service": "ascendra-api"}
+
+
+# ─── Change password (self-service & forced-on-first-login flow) ────────────
+@api.post("/auth/change-password")
+async def change_password(body: ChangePasswordIn, user=Depends(current_user)):
+    if len(body.new_password) < 6:
+        raise HTTPException(400, "Password must be at least 6 characters")
+    u = await users_col.find_one({"id": user["id"]})
+    if not u:
+        raise HTTPException(404, "User not found")
+    # Skip current-password check only on forced first-login flow
+    if not u.get("must_change_password"):
+        if not body.current_password:
+            raise HTTPException(400, "Current password required")
+        if not verify_pw(body.current_password, u.get("password_hash", "")):
+            raise HTTPException(401, "Current password is incorrect")
+    if body.current_password and verify_pw(body.new_password, u.get("password_hash", "")):
+        raise HTTPException(400, "New password must be different from current")
+    await users_col.update_one(
+        {"id": user["id"]},
+        {"$set": {"password_hash": hash_pw(body.new_password), "must_change_password": False}},
+    )
+    return {"ok": True}
+
+
+# ─── Anonymous page-view tracking ───────────────────────────────────────────
+@api.post("/track/pageview")
+async def track_pageview(body: PageviewIn, request: Request):
+    # Light fingerprint based on IP+UA so we can estimate uniques without cookies.
+    ua = request.headers.get("user-agent", "")[:240]
+    ip = (request.client.host if request.client else "0.0.0.0")
+    visitor_hash = hashlib.sha256(f"{ip}|{ua}".encode()).hexdigest()[:32]
+    await pageviews_col.insert_one({
+        "path": body.path[:200],
+        "referrer": (body.referrer or "")[:240],
+        "visitor": visitor_hash,
+        "ua": ua,
+        "ts": datetime.now(timezone.utc),
+    })
+    return {"ok": True}
+
+
+# ─── Admin: stats / users / sales / traffic ─────────────────────────────────
+def _serialize_user_admin(u: dict) -> dict:
+    return {
+        "id": u["id"],
+        "email": u["email"],
+        "name": u.get("name"),
+        "tier": u.get("tier", "free"),
+        "subscription_interval": u.get("subscription_interval"),
+        "tier_expires_at": u.get("tier_expires_at"),
+        "is_admin": bool(u.get("is_admin", False)),
+        "has_used_trial": bool(u.get("has_used_trial", False)),
+        "must_change_password": bool(u.get("must_change_password", False)),
+        "auth_provider": u.get("auth_provider", "email"),
+        "created_at": u.get("created_at"),
+        "last_active_date": None,  # filled below on detail endpoint
+        "total_xp": 0,
+    }
+
+
+@api.get("/admin/stats")
+async def admin_stats(_admin=Depends(require_admin)):
+    now = datetime.now(timezone.utc)
+    month_ago = now - timedelta(days=30)
+    week_ago = now - timedelta(days=7)
+    day_ago = now - timedelta(days=1)
+
+    # User counts by tier
+    user_count = await users_col.count_documents({})
+    tier_breakdown = {}
+    for tier in ["free", "ascender", "pathfinder", "sage"]:
+        tier_breakdown[tier] = await users_col.count_documents({"tier": tier})
+    paid_count = user_count - tier_breakdown.get("free", 0)
+    conversion = (paid_count / user_count * 100) if user_count else 0
+    signups_30d = await users_col.count_documents({"created_at": {"$gte": month_ago}})
+
+    # Revenue (from paid payment_sessions). Older records have `amount_usd` (float);
+    # newer records also include `amount_cents` (int). Read whichever exists.
+    paid_sessions = await sessions_col.find({"status": "paid"}, {"_id": 0}).to_list(10000)
+    def _amt_usd(s):
+        if "amount_usd" in s and s["amount_usd"] is not None:
+            return float(s["amount_usd"])
+        return float(s.get("amount_cents", 0)) / 100.0
+    revenue_total = sum(_amt_usd(s) for s in paid_sessions)
+    revenue_mtd = sum(
+        _amt_usd(s) for s in paid_sessions
+        if s.get("paid_at") and s["paid_at"] >= month_ago
+    )
+    # Naive ARR: monthly_recurring * 12 (annual sessions count once per year)
+    monthly_rev = 0.0
+    annual_rev = 0.0
+    for s in paid_sessions:
+        if s.get("paid_at") and s["paid_at"] >= month_ago:
+            amt = _amt_usd(s)
+            if s.get("interval") == "annual":
+                annual_rev += amt
+            else:
+                monthly_rev += amt
+    arr_estimate = monthly_rev * 12 + annual_rev
+
+    # Engagement
+    lessons_completed = 0
+    async for p in progress_col.find({}, {"completed_lesson_ids": 1}):
+        lessons_completed += len(p.get("completed_lesson_ids", []))
+    certs_issued = await certs_col.count_documents({})
+    dau = await progress_col.count_documents({"last_active_date": now.date().isoformat()})
+    wau = await progress_col.count_documents({
+        "last_active_date": {"$gte": (now - timedelta(days=7)).date().isoformat()}
+    })
+
+    # Traffic
+    pv_total = await pageviews_col.count_documents({})
+    pv_24h = await pageviews_col.count_documents({"ts": {"$gte": day_ago}})
+    pv_7d = await pageviews_col.count_documents({"ts": {"$gte": week_ago}})
+    uniq_pipeline = [{"$match": {"ts": {"$gte": week_ago}}},
+                     {"$group": {"_id": "$visitor"}}, {"$count": "n"}]
+    uniq_cur = pageviews_col.aggregate(uniq_pipeline)
+    uniq_7d_doc = await uniq_cur.to_list(1)
+    uniq_7d = uniq_7d_doc[0]["n"] if uniq_7d_doc else 0
+
+    return {
+        "users": {
+            "total": user_count,
+            "paid": paid_count,
+            "conversion_pct": round(conversion, 1),
+            "signups_30d": signups_30d,
+            "by_tier": tier_breakdown,
+        },
+        "revenue": {
+            "total_usd": round(revenue_total, 2),
+            "mtd_usd": round(revenue_mtd, 2),
+            "arr_estimate_usd": round(arr_estimate, 2),
+            "paid_sessions": len(paid_sessions),
+            "stripe_tax_enabled": False,  # flip when Stripe Tax wired up
+        },
+        "engagement": {
+            "lessons_completed": lessons_completed,
+            "certificates_issued": certs_issued,
+            "dau": dau,
+            "wau": wau,
+        },
+        "traffic": {
+            "pageviews_total": pv_total,
+            "pageviews_24h": pv_24h,
+            "pageviews_7d": pv_7d,
+            "unique_visitors_7d": uniq_7d,
+        },
+    }
+
+
+@api.get("/admin/users")
+async def admin_users(_admin=Depends(require_admin),
+                      q: Optional[str] = None,
+                      tier: Optional[str] = None,
+                      limit: int = 100):
+    query: dict = {}
+    if q:
+        query["$or"] = [{"email": {"$regex": q, "$options": "i"}},
+                         {"name": {"$regex": q, "$options": "i"}}]
+    if tier:
+        query["tier"] = tier
+    cur = users_col.find(query, {"_id": 0}).sort("created_at", -1).limit(min(limit, 500))
+    users = await cur.to_list(min(limit, 500))
+    out = []
+    for u in users:
+        row = _serialize_user_admin(u)
+        prog = await progress_col.find_one({"user_id": u["id"]}, {"_id": 0})
+        if prog:
+            row["last_active_date"] = prog.get("last_active_date")
+            row["total_xp"] = prog.get("total_xp", 0)
+        out.append(row)
+    return {"users": out, "total": await users_col.count_documents(query)}
+
+
+@api.get("/admin/users/{uid}")
+async def admin_user_detail(uid: str, _admin=Depends(require_admin)):
+    u = await users_col.find_one({"id": uid}, {"_id": 0, "password_hash": 0})
+    if not u:
+        raise HTTPException(404, "User not found")
+    prog = await progress_col.find_one({"user_id": uid}, {"_id": 0}) or {}
+    certs = await certs_col.find({"user_id": uid}, {"_id": 0}).to_list(50)
+    sessions = await sessions_col.find({"user_id": uid}, {"_id": 0}).sort("paid_at", -1).to_list(50)
+    return {
+        "user": _serialize_user_admin(u),
+        "progress": {
+            "completed_lesson_ids": prog.get("completed_lesson_ids", []),
+            "total_xp": prog.get("total_xp", 0),
+            "streak_days": prog.get("streak_days", 0),
+            "last_active_date": prog.get("last_active_date"),
+        },
+        "certificates": [_serialize_cert(c) for c in certs],
+        "payments": sessions,
+    }
+
+
+@api.patch("/admin/users/{uid}")
+async def admin_patch_user(uid: str, body: AdminUserPatch, admin=Depends(require_admin)):
+    update: dict = {}
+    for field in ("name", "email", "tier", "subscription_interval", "tier_expires_at",
+                   "is_admin", "must_change_password"):
+        val = getattr(body, field, None)
+        if val is not None:
+            update[field] = val
+    if body.new_password:
+        if len(body.new_password) < 6:
+            raise HTTPException(400, "Password must be at least 6 characters")
+        update["password_hash"] = hash_pw(body.new_password)
+        update["must_change_password"] = bool(body.must_change_password) if body.must_change_password is not None else True
+    if not update:
+        raise HTTPException(400, "No fields to update")
+    # Safety: prevent admin from removing the last admin
+    if update.get("is_admin") is False:
+        if uid == admin["id"]:
+            # Removing own admin — make sure another admin exists
+            others = await users_col.count_documents({"is_admin": True, "id": {"$ne": uid}})
+            if others == 0:
+                raise HTTPException(400, "Cannot remove last admin")
+    res = await users_col.update_one({"id": uid}, {"$set": update})
+    if res.matched_count == 0:
+        raise HTTPException(404, "User not found")
+    u = await users_col.find_one({"id": uid}, {"_id": 0, "password_hash": 0})
+    return {"user": _serialize_user_admin(u)}
+
+
+@api.delete("/admin/users/{uid}")
+async def admin_delete_user(uid: str, admin=Depends(require_admin)):
+    if uid == admin["id"]:
+        raise HTTPException(400, "Cannot delete yourself")
+    u = await users_col.find_one({"id": uid})
+    if not u:
+        raise HTTPException(404, "User not found")
+    if u.get("is_admin"):
+        others = await users_col.count_documents({"is_admin": True, "id": {"$ne": uid}})
+        if others == 0:
+            raise HTTPException(400, "Cannot delete last admin")
+    await users_col.delete_one({"id": uid})
+    await progress_col.delete_one({"user_id": uid})
+    await certs_col.delete_many({"user_id": uid})
+    return {"ok": True}
+
+
+@api.get("/admin/sales")
+async def admin_sales(_admin=Depends(require_admin), limit: int = 100):
+    cur = sessions_col.find({"status": "paid"}, {"_id": 0}).sort("paid_at", -1).limit(min(limit, 500))
+    sales = await cur.to_list(min(limit, 500))
+    # Enrich with email
+    enriched = []
+    for s in sales:
+        u = await users_col.find_one({"id": s.get("user_id")}, {"_id": 0, "email": 1, "name": 1})
+        enriched.append({
+            "session_id": s.get("session_id"),
+            "user_id": s.get("user_id"),
+            "user_email": (u or {}).get("email"),
+            "user_name": (u or {}).get("name"),
+            "tier": s.get("tier"),
+            "interval": s.get("interval"),
+            "amount_usd": (s.get("amount_usd") if s.get("amount_usd") is not None
+                            else (s.get("amount_cents") or 0) / 100),
+            "currency": s.get("currency", "usd"),
+            "paid_at": s.get("paid_at"),
+            "created_at": s.get("created_at"),
+        })
+    return {"sales": enriched}
+
+
+@api.get("/admin/traffic")
+async def admin_traffic(_admin=Depends(require_admin), days: int = 14):
+    now = datetime.now(timezone.utc)
+    start = now - timedelta(days=days)
+    pipeline = [
+        {"$match": {"ts": {"$gte": start}}},
+        {"$group": {
+            "_id": {"$dateToString": {"format": "%Y-%m-%d", "date": "$ts"}},
+            "views": {"$sum": 1},
+            "uniques": {"$addToSet": "$visitor"},
+        }},
+        {"$project": {"_id": 0, "date": "$_id", "views": 1, "uniques": {"$size": "$uniques"}}},
+        {"$sort": {"date": 1}},
+    ]
+    daily = await pageviews_col.aggregate(pipeline).to_list(60)
+
+    # Top paths
+    top_pipeline = [
+        {"$match": {"ts": {"$gte": start}}},
+        {"$group": {"_id": "$path", "views": {"$sum": 1}}},
+        {"$sort": {"views": -1}},
+        {"$limit": 10},
+        {"$project": {"_id": 0, "path": "$_id", "views": 1}},
+    ]
+    top_paths = await pageviews_col.aggregate(top_pipeline).to_list(20)
+
+    return {"daily": daily, "top_paths": top_paths, "days": days}
+
 
 app.include_router(api)
 

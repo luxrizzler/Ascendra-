@@ -1,0 +1,53 @@
+{
+  "summary": "Backend 53/53 pytest tests pass (existing 33 + new 20 in test_admin_and_change_password.py). Verified seed_accounts.py is idempotent and creates admin@ascendraacademy.com (is_admin=true, must_change_password=true) plus sage1..sage6@ascendraacademy.com (tier=sage, must_change_password=true, 90d expiry). /api/auth/change-password skips current-password ONLY when must_change_password=true (verified: 200 without current, then after flag is cleared 400 if missing / 401 if wrong / 200 if correct). /api/track/pageview is anonymous and persists; 422 on missing path. /api/admin/stats returns users/revenue/engagement/traffic blocks (by_tier.sage>=6, total>=7); 403 for sage1; 401/403 anonymous. /api/admin/users supports q & tier filters and includes total. /api/admin/users/{id} returns user+progress+certificates+payments. PATCH /api/admin/users/{id} edits tier (sage->pathfinder->sage verified) and admin-set new_password auto-flips must_change_password=true. Admin cannot delete self (400). /api/admin/sales returns enriched sale rows. /api/admin/traffic?days=14 returns daily aggregation + top_paths after a new pageview is inserted. Regression: /api/auth/me, /api/progress, /api/billing/info, /api/billing/checkout (ascender-monthly / pathfinder-annual / sage-trial), /api/billing/subscribe and /api/billing/portal (501 by design), /api/tutor/chat, /api/certificates all still green. Timezone bug in auto_downgrade_if_expired confirmed FIXED (server.py:230-246 normalises naive datetimes to UTC before comparison). Frontend (mobile 390x844) E2E verified end-to-end: 1) Admin login (admin@ascendraacademy.com + AscendraAdmin2026!) -> /change-password with NO current-password field -> submit -> lands on /admin. 2) All 4 admin tabs tappable (overview/sales/users/traffic). 3) Users tab search 'sage1' -> tappable row -> EditUserSheet opens with Save+Delete buttons + Name/Email/Tier-chips/Admin-toggle/New-password fields. 4) Saving an edit (renamed sage5 -> 'Sage Friend 5 (Edited)') succeeds; 'PW PENDING' pill renders. 5) Sage4 forced password change (test4 -> SageTest_2026!) -> lands on /home (not /admin). 6) /admin route correctly redirects non-admin sage user to /home. 7) /profile shows 'Change password' row for sage user, NO 'Admin console' row; admin user does see 'Admin console' row. 8) POST /api/track/pageview observed firing on every route change (4 POSTs over 4 navigations). All tested flows succeed; no crashes, no red screens.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/auth/change-password + seed_accounts.py", "issue": "Seeded sage passwords ('test1'..'test6') are 5 chars long, but POST /api/auth/change-password enforces new_password >= 6 chars. Friends are forced to choose a longer password on first login (which is the intent), but the seed script also bypasses this 6-char guard — minor inconsistency, not user-facing because seeded passwords are only ever used once."},
+      {"endpoint": "seed_accounts.py", "issue": "Admin doc is upserted with tier='free' (default) even though admin uses is_admin=True for access. Cosmetic — does not affect functionality. seed log line reads 'tier=free, admin=True'."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "Pressable/View (RN-web)", "issue": "Console warning still repeating: 'props.pointerEvents is deprecated. Use style.pointerEvents'. Non-blocking, carried over from iterations 2 & 3."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_backend_api.py",
+    "/app/backend/tests/test_admin_and_change_password.py",
+    "/app/backend/tests/conftest.py",
+    "/app/test_reports/pytest/pytest_results.xml",
+    "/app/test_reports/pytest/admin_results.xml"
+  ],
+  "action_items": [
+    "(Optional) Silence 'props.pointerEvents is deprecated' RN-web warning by moving pointerEvents into a style object on the offending Pressable/View.",
+    "(Optional cosmetic) Either bump seeded sage passwords to >=6 chars (e.g. 'test01'..'test06') for consistency with the API's 6-char min, or accept that they're one-time forced-change-only.",
+    "(Optional cosmetic) seed_accounts.py could set admin doc tier to something neutral (None) or omit tier so the admin row in the by_tier breakdown does not count against 'free' users; right now admin counts as 1 free user in /admin/stats."
+  ],
+  "critical_code_review_comments": [
+    "auto_downgrade_if_expired (server.py:230-246) correctly normalises naive MongoDB datetimes to UTC before comparing — the timezone crash from the previous report is fixed.",
+    "POST /auth/change-password (server.py:1051-1070) is well-gated: when must_change_password=true the current password is skipped, otherwise it is required and verified. Also guards against new==current via verify_pw check.",
+    "PATCH /admin/users/{id} (server.py:1244-1270) correctly forces must_change_password=true whenever new_password is set unless caller explicitly overrides — matches spec.",
+    "Admin guards (require_admin) consistently applied to all /api/admin/* routes; sage1 receives 403 as expected.",
+    "Self-deletion + last-admin guards in DELETE /admin/users/{id} (server.py:1273-1287) and PATCH demotion (1259-1265) are correctly implemented.",
+    "Anonymous pageview tracker (server.py:1074-1087) uses sha256 IP+UA fingerprint truncated to 32 chars — no PII stored, no cookies set.",
+    "MongoDB ObjectId is excluded everywhere via {'_id': 0} projections; no serialization issues found in any new endpoint.",
+    "Admin dashboard (frontend/app/admin/index.tsx) correctly redirects non-admin users to /(tabs)/home and unauthenticated users to /login; EditUserSheet renders inline name/email/tier/admin/new-password fields and uses PATCH /admin/users/{id}.",
+    "Root layout (frontend/app/_layout.tsx + src/utils/track.ts) fires POST /api/track/pageview on every Expo Router segment change — confirmed via 4 POSTs over 4 navigations in the live test."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_admin_and_change_password.py (NEW: 20 tests covering seed accounts, forced password change semantics, anonymous pageview tracking, admin stats/users/sales/traffic, admin guards, tier patch + revert, admin-set-new-password forces change, self-delete guard, legacy regression — auto-reseed at teardown via seed_accounts.py)"
+  ],
+  "success_rate": {
+    "backend": "100% (53/53)",
+    "frontend": "100% of requested flows verified"
+  },
+  "seed_data_creation": "Re-ran /app/backend/seed_accounts.py after each test session to restore admin (must_change_password=true / AscendraAdmin2026!) and sage1..6 (must_change_password=true / test1..test6) to the values published in /app/memory/test_credentials.md. No leftover mutated state. Created throwaway QA users via TestCertificates (existing test).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Seed accounts MUST be re-run before any new test session (`cd /app/backend && python seed_accounts.py`) because forced-password-change tests will set new passwords on admin/sage2/sage3/sage4/sage5. The test module already has an autouse module-level finalizer that re-seeds at teardown, but if a previous interactive E2E test mutated state without re-seeding the admin/sage logins will fail. Useful testIDs: login-{email,password,submit-btn,error}, cp-{current,new,confirm,submit,err}, admin-tab-{overview,sales,users,traffic}, admin-search, admin-user-<email>, admin-edit-save, admin-edit-delete, profile-change-password, profile-admin-row, profile-logout-btn.",
+  "rca_of_issue": "No new bugs found. The previously-reported timezone crash in auto_downgrade_if_expired (server.py:235) is confirmed fixed via the `if exp.tzinfo is None: exp = exp.replace(tzinfo=timezone.utc)` normalisation. The only carryover non-blocking item is the RN-web 'props.pointerEvents is deprecated' console warning."
+}

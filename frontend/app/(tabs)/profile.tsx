@@ -163,6 +163,10 @@ export default function Profile() {
               testID="profile-manage-billing"
             />
           )}
+          <Row icon="key-outline" label="Change password" value="Update" onPress={() => router.push("/change-password")} testID="profile-change-password" />
+          {user?.is_admin && (
+            <Row icon="shield-checkmark-outline" label="Admin console" value="Open" onPress={() => router.push("/admin")} testID="profile-admin-row" />
+          )}
           <Row icon="sparkles-outline" label="AI Tutor" value="Open chat" onPress={() => router.push("/(tabs)/tutor")} testID="profile-tutor-row" />
           <Row icon="planet-outline" label="Model Library" value="Browse" onPress={() => router.push("/(tabs)/models")} testID="profile-models-row" />
         </Section>

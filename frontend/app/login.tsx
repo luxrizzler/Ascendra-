@@ -6,6 +6,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { C, RADIUS } from "@/src/theme";
 import { useAuth } from "@/src/context/AuthContext";
 import { startGoogleAuthMobile, startGoogleAuthWeb, exchangeSessionIdForToken } from "@/src/auth/google";
+import { api } from "@/src/api";
 
 export default function Login() {
   const router = useRouter();
@@ -16,12 +17,29 @@ export default function Login() {
   const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const routeAfterLogin = async () => {
+    // Re-read auth context user (refreshed by login)
+    // we'll fetch /auth/me directly to know flags without race condition
+    try {
+      const me = await api.get("/auth/me");
+      if (me?.must_change_password) {
+        router.replace("/change-password");
+        return;
+      }
+      if (me?.is_admin) {
+        router.replace("/admin");
+        return;
+      }
+    } catch {}
+    router.replace("/(tabs)/home");
+  };
+
   const onSubmit = async () => {
     setError(null);
     setLoading(true);
     try {
       await login(email.trim(), password);
-      router.replace("/(tabs)/home");
+      await routeAfterLogin();
     } catch (e: any) {
       setError(e.message || "Login failed");
     } finally {
@@ -41,7 +59,7 @@ export default function Login() {
       if (!sid) { setGoogleLoading(false); return; }
       const data = await exchangeSessionIdForToken(sid);
       await loginWithGoogleToken(data.session_token);
-      router.replace("/(tabs)/home");
+      await routeAfterLogin();
     } catch (e: any) {
       setError(e?.message || "Google sign-in failed");
       setGoogleLoading(false);

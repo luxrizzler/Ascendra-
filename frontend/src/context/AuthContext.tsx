@@ -19,6 +19,8 @@ export type User = {
   subscription_interval?: string | null;
   tier_expires_at?: string | null;
   created_at?: string;
+  is_admin?: boolean;
+  must_change_password?: boolean;
 };
 
 type AuthCtx = {

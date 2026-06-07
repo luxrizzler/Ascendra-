@@ -28,6 +28,9 @@ export const api = {
     request(p, { method: "POST", body: body ? JSON.stringify(body) : undefined }),
   put: (p: string, body?: any) =>
     request(p, { method: "PUT", body: body ? JSON.stringify(body) : undefined }),
+  patch: (p: string, body?: any) =>
+    request(p, { method: "PATCH", body: body ? JSON.stringify(body) : undefined }),
+  del: (p: string) => request(p, { method: "DELETE" }),
 };
 
 export const BACKEND_URL = BASE;
