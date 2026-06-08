@@ -1273,10 +1273,18 @@ async def admin_users(_admin=Depends(require_admin),
         query["tier"] = tier
     cur = users_col.find(query, {"_id": 0}).sort("created_at", -1).limit(min(limit, 500))
     users = await cur.to_list(min(limit, 500))
+    # Batch-fetch progress for all users in a single query (avoid N+1)
+    user_ids = [u["id"] for u in users]
+    progress_map = {}
+    if user_ids:
+        progress_list = await progress_col.find(
+            {"user_id": {"$in": user_ids}}, {"_id": 0}
+        ).to_list(len(user_ids))
+        progress_map = {p["user_id"]: p for p in progress_list}
     out = []
     for u in users:
         row = _serialize_user_admin(u)
-        prog = await progress_col.find_one({"user_id": u["id"]}, {"_id": 0})
+        prog = progress_map.get(u["id"])
         if prog:
             row["last_active_date"] = prog.get("last_active_date")
             row["total_xp"] = prog.get("total_xp", 0)
@@ -1391,15 +1399,22 @@ async def admin_resend_invite(uid: str, admin=Depends(require_admin)):
 async def admin_sales(_admin=Depends(require_admin), limit: int = 100):
     cur = sessions_col.find({"status": "paid"}, {"_id": 0}).sort("paid_at", -1).limit(min(limit, 500))
     sales = await cur.to_list(min(limit, 500))
-    # Enrich with email
+    # Batch-fetch user info for all sales in a single query (avoid N+1)
+    user_ids = list({s.get("user_id") for s in sales if s.get("user_id")})
+    users_map = {}
+    if user_ids:
+        users_list = await users_col.find(
+            {"id": {"$in": user_ids}}, {"_id": 0, "id": 1, "email": 1, "name": 1}
+        ).to_list(len(user_ids))
+        users_map = {u["id"]: u for u in users_list}
     enriched = []
     for s in sales:
-        u = await users_col.find_one({"id": s.get("user_id")}, {"_id": 0, "email": 1, "name": 1})
+        u = users_map.get(s.get("user_id"), {})
         enriched.append({
             "session_id": s.get("session_id"),
             "user_id": s.get("user_id"),
-            "user_email": (u or {}).get("email"),
-            "user_name": (u or {}).get("name"),
+            "user_email": u.get("email"),
+            "user_name": u.get("name"),
             "tier": s.get("tier"),
             "interval": s.get("interval"),
             "amount_usd": (s.get("amount_usd") if s.get("amount_usd") is not None
@@ -1451,38 +1466,41 @@ app.add_middleware(
 )
 
 # ─── Serve Expo web build (so the site has a public website at the same domain) ─
-# The Expo web export lives at /app/frontend/dist/ after `yarn expo export -p web`.
-# We mount it AFTER the API so /api/* still takes precedence; any other path falls
-# back to index.html (SPA routing for expo-router web).
+# We look in TWO places (in order):
+#   1. /app/backend/static/  — pre-built and committed alongside backend (RELIABLE for prod deploy)
+#   2. /app/frontend/dist/   — local dev convenience (Expo's default export location)
+# /api/* still takes precedence; any other path falls back to index.html (SPA routing).
 import os as _os
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, Response
 
-WEB_DIST = "/app/frontend/dist"
+_CANDIDATE_DIRS = ["/app/backend/static", "/app/frontend/dist"]
+WEB_DIST = next((d for d in _CANDIDATE_DIRS if _os.path.isdir(d)), _CANDIDATE_DIRS[0])
 INDEX_HTML = _os.path.join(WEB_DIST, "index.html")
 
 if _os.path.isdir(WEB_DIST):
+    log.info(f"Serving Expo web build from {WEB_DIST}")
     # Serve files like /assets/..., /_expo/..., /favicon.ico directly
-    app.mount("/assets",  StaticFiles(directory=_os.path.join(WEB_DIST, "assets")),  name="assets")
-    if _os.path.isdir(_os.path.join(WEB_DIST, "_expo")):
-        app.mount("/_expo", StaticFiles(directory=_os.path.join(WEB_DIST, "_expo")), name="_expo")
+    _assets_dir = _os.path.join(WEB_DIST, "assets")
+    if _os.path.isdir(_assets_dir):
+        app.mount("/assets",  StaticFiles(directory=_assets_dir),  name="assets")
+    _expo_dir = _os.path.join(WEB_DIST, "_expo")
+    if _os.path.isdir(_expo_dir):
+        app.mount("/_expo", StaticFiles(directory=_expo_dir), name="_expo")
 
     @app.get("/{full_path:path}")
     async def spa_catch_all(full_path: str):
-        # Direct file hit (favicon, robots, manifest, etc.)
         candidate = _os.path.join(WEB_DIST, full_path)
         if full_path and _os.path.isfile(candidate):
             return FileResponse(candidate)
-        # Static HTML route export (expo-router can pre-render certain pages)
         html_candidate = _os.path.join(WEB_DIST, full_path + ".html")
         if full_path and _os.path.isfile(html_candidate):
             return FileResponse(html_candidate)
-        # Otherwise serve the SPA shell
         if _os.path.isfile(INDEX_HTML):
             return FileResponse(INDEX_HTML)
         return Response("Web build missing — run `yarn expo export -p web` from /app/frontend.", status_code=503)
 else:
-    log.warning(f"WEB_DIST not found at {WEB_DIST} — only /api routes will be served.")
+    log.warning(f"No web build found in any of: {_CANDIDATE_DIRS} — only /api routes will be served.")
 
 @app.on_event("shutdown")
 async def shutdown():
