@@ -1,34 +1,30 @@
 [
   {
-    "content": "Phase 1: Port backend (server.py, curriculum.py, email_service.py, seed_accounts.py) + install deps + .env + seed admin",
+    "content": "Phase 1: Port backend + smoke test",
     "status": "completed"
   },
   {
-    "content": "Phase 1: Smoke-test backend (curl /api, signup, login, paths, complete lesson, certificate, tutor chat)",
+    "content": "Phase 2: Frontend foundation",
     "status": "completed"
   },
   {
-    "content": "Phase 2: Build React web frontend foundation (theme, API client, AuthContext, Router, Nav, Footer)",
-    "status": "in_progress"
+    "content": "Phase 2: Landing + Auth pages",
+    "status": "completed"
   },
   {
-    "content": "Phase 2: Landing, Login, Signup, Forgot/Reset Password pages",
-    "status": "pending"
+    "content": "Phase 2: Onboarding + Dashboard + Paths",
+    "status": "completed"
   },
   {
-    "content": "Phase 2: Onboarding quiz, Dashboard, Paths list, Path detail pages",
-    "status": "pending"
+    "content": "Phase 2: Lesson player",
+    "status": "completed"
   },
   {
-    "content": "Phase 2: Lesson player (swipeable cards + quiz + completion + cert popup)",
-    "status": "pending"
+    "content": "Phase 2: Tutor + Models + Profile + Pricing + Admin",
+    "status": "completed"
   },
   {
-    "content": "Phase 2: AI Tutor chat, Models library, Profile, Pricing, Checkout success, Certificate, Admin pages",
-    "status": "pending"
-  },
-  {
-    "content": "Phase 2: End-to-end testing via testing_agent_v3 covering all user stories",
-    "status": "pending"
+    "content": "Phase 2: End-to-end testing (97.8% pass, fixed Fundamentals tier to free)",
+    "status": "completed"
   }
 ]

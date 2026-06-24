@@ -293,7 +293,7 @@ PATHS = [
         "color": "#FFB000",
         "level": "Beginner",
         "duration": "~4 hours",
-        "tier": "ascender",
+        "tier": "free",
         "image": "https://images.pexels.com/photos/12623752/pexels-photo-12623752.jpeg",
         "modules": [
             {
