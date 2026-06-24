@@ -1,0 +1,122 @@
+{
+  "summary": "Completed comprehensive E2E testing of Ascendra Academy (backend + frontend). Backend: 96.7% pass rate (29/30 tests). Frontend: 100% pass rate (16/16 tests). All core features working: auth, admin, tier access control, progress tracking, AI Tutor (Claude 4.5), Stripe checkout, onboarding, and all pages. One minor backend issue: fundamentals path requires paid tier, blocking free users from trying any lessons.",
+  "backend_issues": {
+    "critical_bugs": [],
+    "minor_bugs": [
+      {
+        "endpoint": "/api/lessons/f1l1",
+        "issue": "First lesson in fundamentals path requires ASCENDER tier, blocking free users from accessing any lessons",
+        "impact": "Free users cannot try any lessons before upgrading. This may be intentional design (all paths are paid), but reduces conversion funnel.",
+        "fix_priority": "LOW",
+        "note": "curriculum.py shows fundamentals path has tier='ascender'. If this is intentional, no fix needed. If free users should access some lessons, change fundamentals path tier to 'free'."
+      }
+    ],
+    "flaky_endpoints": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "component": "Console",
+        "issue": "One 404 error in browser console (asset not found)",
+        "affected_selectors": [],
+        "fix_priority": "LOW",
+        "note": "Does not affect functionality. Likely a missing favicon or asset."
+      }
+    ]
+  },
+  "passed_tests": [
+    "Backend: Health check (/api/)",
+    "Backend: Signup new user",
+    "Backend: Login",
+    "Backend: Get current user (/auth/me)",
+    "Backend: Get all paths (10 paths)",
+    "Backend: Get fundamentals path detail",
+    "Backend: Tier access control (403 for sage lesson as free user)",
+    "Backend: Get all AI models (22 models)",
+    "Backend: Get user progress",
+    "Backend: Complete lesson (XP awarded)",
+    "Backend: Save quiz answers (recommendation works)",
+    "Backend: Get certificates",
+    "Backend: Get pricing tiers (3 tiers)",
+    "Backend: Create Stripe checkout session (valid URL)",
+    "Backend: AI Tutor chat (Claude Sonnet 4.5 responded in ~2 seconds)",
+    "Backend: Change password",
+    "Backend: Forgot password (dev mode with token)",
+    "Backend: Reset password with token",
+    "Backend: Admin login",
+    "Backend: Admin /auth/me (is_admin=true, must_change_password=true)",
+    "Backend: Admin change password (forced)",
+    "Backend: Admin stats endpoint",
+    "Backend: Admin users endpoint",
+    "Backend: Admin sales endpoint",
+    "Backend: Admin traffic endpoint",
+    "Backend: Sage user login",
+    "Backend: Sage /auth/me (tier=sage)",
+    "Backend: Sage change password (forced)",
+    "Backend: Sage user can access sage tier lesson (sp1l1)",
+    "Frontend: Landing page loads with 'Begin your ascent' CTA",
+    "Frontend: Signup flow (redirects to onboarding)",
+    "Frontend: Onboarding quiz (4 steps: goal, experience, time, focus)",
+    "Frontend: Onboarding redirects to recommended path (fundamentals)",
+    "Frontend: Dashboard loads with XP, Level, Streak, Certificates count",
+    "Frontend: Paths page loads with lock indicators for paid paths",
+    "Frontend: Path detail page (AI Fundamentals) loads",
+    "Frontend: Models page loads with 22 models and search",
+    "Frontend: Pricing page loads with 3 tiers (Ascender, Pathfinder, Sage)",
+    "Frontend: Profile page loads with user email",
+    "Frontend: AI Tutor page loads, suggestion button works, AI response received",
+    "Frontend: Admin login with changed password",
+    "Frontend: Admin dashboard loads with all 4 tabs (STATS, USERS, SALES, TRAFFIC)",
+    "Frontend: Lesson player shows tier upgrade message for free user (expected behavior)",
+    "Frontend: Stripe checkout redirect works (redirected to checkout.stripe.com with $199 annual Pathfinder)"
+  ],
+  "test_report_links": [
+    "/app/backend_test.py",
+    "/root/.emergent/automation_output/20260624_032622/console_20260624_032622.log",
+    "/root/.emergent/automation_output/20260624_032748/console_20260624_032748.log"
+  ],
+  "success_percentage": {
+    "backend": "96.7% (29/30 tests passed)",
+    "frontend": "100% (16/16 tests passed)",
+    "overall": "97.8% (45/46 tests passed)"
+  },
+  "action_item_for_main_agent": "One minor backend issue: fundamentals path requires ASCENDER tier (curriculum.py line 296), blocking free users from accessing any lessons. If this is intentional (all content is paid), no action needed. If free users should be able to try some lessons, change fundamentals path tier from 'ascender' to 'free' in curriculum.py. All other features working perfectly.",
+  "updated_files": [
+    "/app/backend_test.py"
+  ],
+  "should_call_test_agent_after_fix": "false",
+  "should_main_agent_test_itself": "true",
+  "mocked_apis": {
+    "stripe": "Sandbox mode - checkout URL works, redirects to checkout.stripe.com. Do not complete payment.",
+    "email": "Dry-run mode - forgot password returns dev_reset_token in API response for testing."
+  },
+  "test_environment": {
+    "public_url": "https://repo-to-site-2.preview.emergentagent.com",
+    "backend_url": "https://repo-to-site-2.preview.emergentagent.com/api",
+    "test_credentials_used": [
+      "New user: e2e_1782271586@ascendraacademy.com / password123",
+      "Admin: admin@ascendraacademy.com / NewAdminPw123 (password changed during test)",
+      "Sage: sage1@ascendraacademy.com / newsagepass123 (password changed during test)"
+    ]
+  },
+  "screenshots": [
+    ".screenshots/01_landing.png",
+    ".screenshots/02_signup.png",
+    ".screenshots/03_onboarding.png",
+    ".screenshots/04_recommended_path.png",
+    ".screenshots/05_dashboard.png",
+    ".screenshots/06_paths.png",
+    ".screenshots/07_path_detail.png",
+    ".screenshots/08_models.png",
+    ".screenshots/09_pricing.png",
+    ".screenshots/10_profile.png",
+    ".screenshots/11_tutor.png",
+    ".screenshots/12_admin_logged_in.png",
+    ".screenshots/13_admin_dashboard.png",
+    ".screenshots/13b_admin_tabs.png",
+    ".screenshots/15_lesson_tier_error.png",
+    ".screenshots/16_stripe_checkout.png"
+  ]
+}

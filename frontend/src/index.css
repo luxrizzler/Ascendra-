@@ -1,0 +1,183 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─── Ascendra Celestial Phoenix Theme ─────────────────────────────── */
+:root {
+  --asc-bg: #0A0413;
+  --asc-surface: #15102B;
+  --asc-surface-2: #1F183A;
+  --asc-celestial: #1A1F3D;
+  --asc-text: #FFFFFF;
+  --asc-text-dim: #C8C5E6;
+  --asc-text-muted: #7E84A3;
+  --asc-brand: #FFB000;
+  --asc-brand-soft: #E8C572;
+  --asc-coral: #FF6B35;
+  --asc-lavender: #BFB4FF;
+  --asc-violet: #7C3AED;
+  --asc-success: #34D399;
+  --asc-danger: #F87171;
+  --asc-border: rgba(191, 180, 255, 0.12);
+  --asc-border-strong: rgba(191, 180, 255, 0.28);
+
+  /* shadcn-compatible tokens, mapped to celestial dark */
+  --background: 257 65% 6%;
+  --foreground: 0 0% 100%;
+  --card: 257 47% 12%;
+  --card-foreground: 0 0% 100%;
+  --popover: 257 47% 12%;
+  --popover-foreground: 0 0% 100%;
+  --primary: 41 100% 50%;
+  --primary-foreground: 0 0% 0%;
+  --secondary: 257 38% 16%;
+  --secondary-foreground: 0 0% 100%;
+  --muted: 257 38% 16%;
+  --muted-foreground: 232 14% 57%;
+  --accent: 263 80% 58%;
+  --accent-foreground: 0 0% 100%;
+  --destructive: 0 88% 70%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 250 100% 84% / 0.12;
+  --input: 257 38% 18%;
+  --ring: 41 100% 50%;
+  --radius: 1rem;
+}
+
+* { border-color: var(--asc-border); }
+
+html, body, #root {
+  margin: 0;
+  background: var(--asc-bg);
+  color: var(--asc-text);
+  font-family: 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  min-height: 100vh;
+}
+
+body {
+  background:
+    radial-gradient(1200px 600px at 0% -10%, rgba(124, 58, 237, 0.20), transparent 60%),
+    radial-gradient(1000px 500px at 100% 0%, rgba(255, 176, 0, 0.10), transparent 60%),
+    var(--asc-bg);
+}
+
+/* Typography utilities */
+.asc-h1 { font-weight: 900; letter-spacing: -0.04em; line-height: 1; }
+.asc-h2 { font-weight: 900; letter-spacing: -0.03em; line-height: 1.05; }
+.asc-kicker { font-size: 11px; font-weight: 800; letter-spacing: 0.25em; text-transform: uppercase; color: var(--asc-brand); }
+.asc-label { font-size: 11px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: var(--asc-lavender); }
+.asc-mono { font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace; }
+
+.asc-card {
+  background: var(--asc-surface);
+  border: 1px solid var(--asc-border);
+  border-radius: 1.25rem;
+  transition: transform .25s ease, border-color .25s ease, box-shadow .25s ease;
+}
+.asc-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--asc-border-strong);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+}
+
+.asc-btn-primary {
+  background: var(--asc-brand);
+  color: #000;
+  font-weight: 800;
+  padding: 12px 22px;
+  border-radius: 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  transition: all .2s ease;
+  border: none;
+}
+.asc-btn-primary:hover { background: #F59E0B; transform: translateY(-1px); }
+.asc-btn-primary:active { transform: scale(0.97); }
+.asc-btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.asc-btn-secondary {
+  background: rgba(31, 24, 58, 0.6);
+  color: var(--asc-text);
+  font-weight: 700;
+  padding: 12px 22px;
+  border-radius: 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  transition: all .2s ease;
+  border: 1px solid var(--asc-border-strong);
+}
+.asc-btn-secondary:hover { border-color: var(--asc-lavender); background: rgba(31, 24, 58, 0.9); }
+
+.asc-input {
+  width: 100%;
+  background: var(--asc-surface-2);
+  border: 1px solid var(--asc-border);
+  border-radius: 12px;
+  color: var(--asc-text);
+  padding: 14px 16px;
+  font-size: 15px;
+  outline: none;
+  transition: border-color .2s ease;
+}
+.asc-input:focus { border-color: var(--asc-brand); }
+.asc-input::placeholder { color: var(--asc-text-muted); }
+
+.asc-glass {
+  background: rgba(10, 4, 19, 0.7);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border-bottom: 1px solid var(--asc-border);
+}
+
+/* Brand gradient text */
+.asc-gradient-text {
+  background: linear-gradient(120deg, var(--asc-brand-soft), var(--asc-brand) 40%, var(--asc-coral));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Hide scrollbar in chat */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* Lesson card swipe drag */
+.lesson-card { user-select: none; touch-action: none; }
+
+/* Marquee */
+@keyframes marquee {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+.marquee-track { animation: marquee 35s linear infinite; }
+
+/* Subtle pulsing dot */
+@keyframes pulse-dot {
+  0%, 100% { opacity: 0.4; transform: scale(0.9); }
+  50% { opacity: 1; transform: scale(1.1); }
+}
+.pulse-dot { animation: pulse-dot 2s ease-in-out infinite; }
+
+/* Page enter */
+@keyframes fadeup {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.fade-up { animation: fadeup .4s ease-out both; }
+
+/* Certificate seal spin (subtle) */
+@keyframes slow-spin { to { transform: rotate(360deg); } }
+.slow-spin { animation: slow-spin 60s linear infinite; }
+
+/* Print styles for certificate */
+@media print {
+  body { background: white; }
+  .no-print { display: none !important; }
+  .print-cert { color: black !important; }
+}
