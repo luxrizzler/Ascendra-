@@ -3,14 +3,16 @@
 **Tagline**: AI-Powered Learning. Boundless Growth.
 **Mission**: To empower every learner to rise beyond limits through AI-driven education and human potential.
 
-A premium mobile-first AI learning app (Coursiv-style) with a web marketing landing page. Designed to take learners from absolute beginner to advanced AI builder.
+A premium **web-first AI learning platform** (Coursiv-style web SaaS) with a public marketing landing page and authenticated browser dashboard. Designed to take learners from absolute beginner to advanced AI builder. Fully responsive — desktop & mobile-browser layouts. iOS/Android native builds are out of scope for this phase.
 
 ## Tech stack
-- Frontend: React Native / Expo Router (mobile + web)
-- Backend: FastAPI + MongoDB
+- Frontend: Expo Router + React Native Web (exported to static HTML/JS via `yarn expo export -p web`)
+- Backend: FastAPI + MongoDB — also serves the static web build from `/app/backend/static`
 - LLM: Claude Sonnet 4.5 via Emergent Universal LLM Key (emergentintegrations.llm.chat)
-- Payments: Stripe via emergentintegrations.payments.stripe.checkout
+- Payments: Stripe (native SDK for real subs + Customer Portal; emergentintegrations wrapper as fallback)
 - Auth: JWT (email/password, bcrypt) + Emergent-managed Google Social Login
+- Email: Resend (transactional — password reset + admin invite)
+- Hosting: Emergent Publish (web + backend + DB bundled at one URL)
 
 ## Brand
 - **Palette (Celestial Phoenix)**: Deep Navy `#070B1F` · Celestial `#1A1F3D` · Champagne `#E8C572` · Amber Gold `#FFB000` · Phoenix Coral `#FF6B35` · Lavender Mist `#BFB4FF` · Celestial Violet `#7C3AED`

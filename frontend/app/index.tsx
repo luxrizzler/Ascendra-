@@ -15,9 +15,11 @@ export default function Index() {
     );
   }
 
-  // Web visitors -> marketing landing page. Mobile -> straight into app or onboarding.
-  if (Platform.OS === "web" && !user) {
-    return <Redirect href="/landing" />;
+  // Web is the primary surface — public visitors land at /landing, authed users go to dashboard.
+  // (Native mobile path retained as a fallback but not the priority for this phase.)
+  if (Platform.OS === "web") {
+    if (!user) return <Redirect href="/landing" />;
+    return <Redirect href="/(tabs)/home" />;
   }
   if (!user) {
     return <Redirect href="/onboarding" />;
