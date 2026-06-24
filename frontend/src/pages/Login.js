@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { Sparkles, ArrowRight } from "lucide-react";
 import { toast } from "sonner";
+import GoogleButton from "@/components/GoogleButton";
 
 export default function Login() {
   const { login } = useAuth();
@@ -32,6 +33,8 @@ export default function Login() {
 
   return (
     <AuthShell title="Welcome back" subtitle="Sign in to continue your ascent.">
+      <GoogleButton label="Continue with Google" />
+      <Divider />
       <form onSubmit={submit} className="space-y-4" data-testid="login-form">
         <input className="asc-input" type="email" placeholder="Email" required value={email} onChange={(e) => setEmail(e.target.value)} data-testid="login-email-input" />
         <input className="asc-input" type="password" placeholder="Password" required value={password} onChange={(e) => setPassword(e.target.value)} data-testid="login-password-input" />
@@ -44,6 +47,16 @@ export default function Login() {
         <Link to="/signup" className="text-[var(--asc-brand)] hover:underline">Create account →</Link>
       </div>
     </AuthShell>
+  );
+}
+
+function Divider() {
+  return (
+    <div className="flex items-center gap-3 my-4">
+      <div className="flex-1 h-px" style={{ background: "rgba(191,180,255,0.18)" }} />
+      <div className="text-[10px] uppercase tracking-[0.25em] text-[var(--asc-text-muted)]">Or with email</div>
+      <div className="flex-1 h-px" style={{ background: "rgba(191,180,255,0.18)" }} />
+    </div>
   );
 }
 

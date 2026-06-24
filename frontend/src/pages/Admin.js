@@ -56,11 +56,13 @@ export default function Admin() {
       <div className="flex items-center gap-2 mb-4"><Shield size={18} className="text-[var(--asc-coral)]" /><div className="asc-kicker">Admin</div></div>
       <h1 className="asc-h2 text-4xl">Operations console</h1>
 
-      <div className="flex gap-2 mt-6">
+      <div className="flex flex-wrap gap-2 mt-6">
         {["stats", "users", "sales", "traffic"].map((t) => (
           <button key={t} onClick={() => setTab(t)} data-testid={`admin-tab-${t}`} className="px-4 py-2 rounded-full text-sm font-bold transition"
             style={tab === t ? { background: "#FFB000", color: "#000" } : { background: "#1F183A", color: "#C8C5E6", border: "1px solid rgba(191,180,255,0.15)" }}>{t.toUpperCase()}</button>
         ))}
+        <a href="/admin/curriculum" data-testid="admin-tab-curriculum" className="px-4 py-2 rounded-full text-sm font-bold transition" style={{ background: "rgba(124,58,237,0.12)", color: "#BFB4FF", border: "1px solid rgba(191,180,255,0.28)" }}>CURRICULUM</a>
+        <a href="/admin/studio" data-testid="admin-tab-studio" className="px-4 py-2 rounded-full text-sm font-bold transition border" style={{ background: "rgba(255,176,0,0.10)", color: "#FFB000", borderColor: "#FFB000" }}>AI STUDIO</a>
       </div>
 
       {tab === "stats" && stats && (

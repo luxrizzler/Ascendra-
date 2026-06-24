@@ -24,6 +24,10 @@ import Pricing from "@/pages/Pricing";
 import CheckoutSuccess from "@/pages/CheckoutSuccess";
 import Certificate from "@/pages/Certificate";
 import Admin from "@/pages/Admin";
+import AdminCurriculum from "@/pages/AdminCurriculum";
+import AdminCurriculumEdit from "@/pages/AdminCurriculumEdit";
+import AdminStudio from "@/pages/AdminStudio";
+import AuthCallback from "@/pages/AuthCallback";
 import NotFound from "@/pages/NotFound";
 import { api } from "@/lib/api";
 
@@ -43,7 +47,7 @@ function PageviewTracker() {
 
 function Shell() {
   const loc = useLocation();
-  const hideNav = loc.pathname.startsWith("/lessons/") || loc.pathname.startsWith("/certificate/");
+  const hideNav = loc.pathname.startsWith("/lessons/") || loc.pathname.startsWith("/certificate/") || loc.pathname.startsWith("/auth/callback");
   return (
     <div className="min-h-screen flex flex-col">
       {!hideNav && <WebNav />}
@@ -66,6 +70,10 @@ function Shell() {
           <Route path="/checkout-success" element={<RequireAuth><CheckoutSuccess /></RequireAuth>} />
           <Route path="/certificate/:certId" element={<RequireAuth><Certificate /></RequireAuth>} />
           <Route path="/admin" element={<RequireAuth admin><Admin /></RequireAuth>} />
+          <Route path="/admin/curriculum" element={<RequireAuth admin><AdminCurriculum /></RequireAuth>} />
+          <Route path="/admin/curriculum/:pathId" element={<RequireAuth admin><AdminCurriculumEdit /></RequireAuth>} />
+          <Route path="/admin/studio" element={<RequireAuth admin><AdminStudio /></RequireAuth>} />
+          <Route path="/auth/callback" element={<AuthCallback />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </main>

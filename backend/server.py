@@ -30,14 +30,25 @@ from emergentintegrations.payments.stripe.checkout import (
     StripeCheckout, CheckoutSessionRequest,
 )
 
-from curriculum import (
-    PATHS,
-    AI_MODELS,
-    get_path,
-    get_lesson,
+from curriculum_db import (
+    ensure_seeded as _curric_ensure_seeded,
+    list_paths as _curric_list_paths,
+    get_path as _curric_get_path,
+    get_lesson as _curric_get_lesson,
     path_summary,
     can_access,
+    create_path as _curric_create_path,
+    update_path as _curric_update_path,
+    delete_path as _curric_delete_path,
+    add_module as _curric_add_module,
+    update_module as _curric_update_module,
+    delete_module as _curric_delete_module,
+    add_lesson as _curric_add_lesson,
+    update_lesson as _curric_update_lesson,
+    delete_lesson as _curric_delete_lesson,
 )
+from curriculum import AI_MODELS
+import ai_studio
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
@@ -260,22 +271,28 @@ def compute_level(total_xp: int) -> dict:
     return {"level": n, "level_progress_pct": max(0, min(100, pct)), "xp_to_next_level": max(0, next_xp - total_xp)}
 
 
-def _path_lesson_index() -> dict:
+def _path_lesson_index_sync(paths_list: list) -> dict:
     idx = {}
-    for p in PATHS:
+    for p in paths_list:
         ids = []
-        for m in p["modules"]:
-            for lsn in m["lessons"]:
+        for m in p.get("modules", []):
+            for lsn in m.get("lessons", []):
                 ids.append(lsn["id"])
         idx[p["id"]] = ids
     return idx
 
 
-def _compute_path_progress(completed_ids: list) -> tuple[dict, list]:
+async def _path_lesson_index() -> dict:
+    paths = await _curric_list_paths(db)
+    return _path_lesson_index_sync(paths)
+
+
+async def _compute_path_progress(completed_ids: list) -> tuple[dict, list]:
     completed_set = set(completed_ids)
     path_progress = {}
     completed_paths = []
-    for pid, lids in _path_lesson_index().items():
+    idx = await _path_lesson_index()
+    for pid, lids in idx.items():
         total = len(lids)
         done = sum(1 for x in lids if x in completed_set)
         pct = int((done / total) * 100) if total else 0
@@ -300,9 +317,8 @@ async def get_progress(user_id: str) -> dict:
     return p
 
 
-def _build_progress_out(p: dict) -> ProgressOut:
+def _build_progress_out(p: dict, path_progress: dict, completed_paths: list) -> ProgressOut:
     lvl = compute_level(p.get("total_xp", 0))
-    path_progress, completed_paths = _compute_path_progress(p.get("completed_lesson_ids", []))
     return ProgressOut(
         completed_lesson_ids=p.get("completed_lesson_ids", []),
         total_xp=p.get("total_xp", 0),
@@ -314,6 +330,11 @@ def _build_progress_out(p: dict) -> ProgressOut:
         completed_paths=completed_paths,
         path_progress=path_progress,
     )
+
+
+async def _build_progress_out_async(p: dict) -> ProgressOut:
+    path_progress, completed_paths = await _compute_path_progress(p.get("completed_lesson_ids", []))
+    return _build_progress_out(p, path_progress, completed_paths)
 
 
 def _recommend_path(answers: dict) -> str:
@@ -345,7 +366,7 @@ async def _issue_certificate_if_complete(user: dict, path_id: str) -> Optional[d
     existing = await certs_col.find_one({"user_id": user["id"], "path_id": path_id}, {"_id": 0})
     if existing:
         return None
-    p = get_path(path_id)
+    p = await _curric_get_path(db, path_id)
     if not p:
         return None
     serial = f"ASC-{path_id[:4].upper()}-{uuid.uuid4().hex[:6].upper()}"
@@ -443,44 +464,45 @@ async def me(user=Depends(current_user)):
 # ─── Curriculum routes ──────────────────────────────────────────────────────
 @api.get("/paths")
 async def list_paths():
-    return {"paths": [path_summary(p) for p in PATHS]}
+    paths = await _curric_list_paths(db)
+    return {"paths": [path_summary(p) for p in paths]}
 
 @api.get("/paths/{path_id}")
 async def get_path_detail(path_id: str):
-    p = get_path(path_id)
+    p = await _curric_get_path(db, path_id)
     if not p:
         raise HTTPException(404, "Path not found")
     modules = []
     for m in p["modules"]:
         lessons = []
-        for lsn in m["lessons"]:
+        for lsn in m.get("lessons", []):
             lessons.append({
                 "id": lsn["id"],
                 "title": lsn["title"],
-                "duration_min": lsn["duration_min"],
-                "xp": lsn["xp"],
-                "card_count": len(lsn["cards"]),
+                "duration_min": lsn.get("duration_min", 5),
+                "xp": lsn.get("xp", 50),
+                "card_count": len(lsn.get("cards", [])),
             })
         modules.append({"id": m["id"], "title": m["title"], "lessons": lessons})
     return {
         "id": p["id"],
         "title": p["title"],
-        "subtitle": p["subtitle"],
-        "tagline": p["tagline"],
-        "color": p["color"],
-        "level": p["level"],
-        "duration": p["duration"],
-        "image": p["image"],
+        "subtitle": p.get("subtitle", ""),
+        "tagline": p.get("tagline", ""),
+        "color": p.get("color", "#FFB000"),
+        "level": p.get("level", "Beginner"),
+        "duration": p.get("duration", ""),
+        "image": p.get("image", ""),
         "tier": p.get("tier", "free"),
         "modules": modules,
     }
 
 @api.get("/lessons/{lesson_id}")
 async def fetch_lesson(lesson_id: str, user=Depends(current_user)):
-    lsn = get_lesson(lesson_id)
+    lsn = await _curric_get_lesson(db, lesson_id)
     if not lsn:
         raise HTTPException(404, "Lesson not found")
-    p = get_path(lsn["path_id"])
+    p = await _curric_get_path(db, lsn["path_id"])
     if p and not can_access(user.get("tier", "free"), p.get("tier", "free")):
         raise HTTPException(403, f"This lesson requires {p['tier'].upper()} tier. Upgrade to unlock.")
     return lsn
@@ -493,11 +515,11 @@ async def list_models():
 @api.get("/progress", response_model=ProgressOut)
 async def progress(user=Depends(current_user)):
     p = await get_progress(user["id"])
-    return _build_progress_out(p)
+    return await _build_progress_out_async(p)
 
 @api.post("/progress/complete", response_model=CompleteLessonOut)
 async def complete_lesson(body: CompleteLessonIn, user=Depends(current_user)):
-    lesson = get_lesson(body.lesson_id)
+    lesson = await _curric_get_lesson(db, body.lesson_id)
     if not lesson:
         raise HTTPException(404, "Lesson not found")
 
@@ -505,12 +527,13 @@ async def complete_lesson(body: CompleteLessonIn, user=Depends(current_user)):
     today = datetime.now(timezone.utc).date().isoformat()
 
     awarded_xp = 0
-    prev_completed_paths = set(_compute_path_progress(p["completed_lesson_ids"])[1])
+    prev_pp, prev_completed_paths = await _compute_path_progress(p["completed_lesson_ids"])
+    prev_completed_set = set(prev_completed_paths)
 
     if body.lesson_id not in p["completed_lesson_ids"]:
         p["completed_lesson_ids"].append(body.lesson_id)
-        p["total_xp"] += lesson["xp"]
-        awarded_xp = lesson["xp"]
+        p["total_xp"] += lesson.get("xp", 50)
+        awarded_xp = lesson.get("xp", 50)
 
     last = p.get("last_active_date")
     if last != today:
@@ -531,7 +554,8 @@ async def complete_lesson(body: CompleteLessonIn, user=Depends(current_user)):
         }},
     )
 
-    new_completed_paths = set(_compute_path_progress(p["completed_lesson_ids"])[1]) - prev_completed_paths
+    new_pp, now_completed_paths = await _compute_path_progress(p["completed_lesson_ids"])
+    new_completed_paths = set(now_completed_paths) - prev_completed_set
     issued_ids: list = []
     for pid in new_completed_paths:
         cert = await _issue_certificate_if_complete(user, pid)
@@ -539,7 +563,7 @@ async def complete_lesson(body: CompleteLessonIn, user=Depends(current_user)):
             issued_ids.append(cert["id"])
 
     return CompleteLessonOut(
-        progress=_build_progress_out(p),
+        progress=_build_progress_out(p, new_pp, now_completed_paths),
         awarded_xp=awarded_xp,
         newly_completed_paths=list(new_completed_paths),
         certificates_issued=issued_ids,
@@ -1150,6 +1174,265 @@ async def admin_traffic(_admin=Depends(require_admin), days: int = 14):
     return {"daily": daily, "top_paths": top_paths, "days": days}
 
 
+# ─── Pydantic models for Curriculum CMS ─────────────────────────────────────
+class CardIn(BaseModel):
+    title: str
+    body: str
+
+
+class QuizIn(BaseModel):
+    question: str
+    options: List[str]
+    answer_index: int = 0
+    explanation: Optional[str] = ""
+
+
+class LessonUpsert(BaseModel):
+    id: Optional[str] = None
+    title: str
+    duration_min: int = 5
+    xp: int = 50
+    cards: List[CardIn] = []
+    quiz: QuizIn
+
+
+class ModuleUpsert(BaseModel):
+    id: Optional[str] = None
+    title: str
+    lessons: Optional[List[LessonUpsert]] = None
+
+
+class PathUpsert(BaseModel):
+    id: Optional[str] = None
+    title: str
+    subtitle: Optional[str] = ""
+    tagline: Optional[str] = ""
+    color: Optional[str] = "#FFB000"
+    level: Optional[str] = "Beginner"
+    duration: Optional[str] = "~2 hours"
+    image: Optional[str] = ""
+    tier: Optional[Literal["free", "ascender", "pathfinder", "sage"]] = "free"
+    modules: Optional[List[ModuleUpsert]] = None
+
+
+class LessonGenIn(BaseModel):
+    topic: str
+    level: str = "Beginner"
+    path_id: Optional[str] = None
+    module_id: Optional[str] = None
+    publish: bool = False  # if True, also inserts into the path/module
+
+
+class PathGenIn(BaseModel):
+    concept: str
+    level: str = "Beginner"
+    tier: Literal["free", "ascender", "pathfinder", "sage"] = "free"
+    generate_lessons: bool = False
+    auto_cover: bool = True
+
+
+class CoverGenIn(BaseModel):
+    prompt: str
+    path_id: Optional[str] = None
+
+
+# ─── Curriculum CRUD (admin only) ───────────────────────────────────────────
+@api.get("/admin/curriculum/paths")
+async def admin_list_paths(_admin=Depends(require_admin)):
+    paths = await _curric_list_paths(db)
+    return {"paths": paths}
+
+
+@api.get("/admin/curriculum/paths/{path_id}")
+async def admin_get_path(path_id: str, _admin=Depends(require_admin)):
+    p = await _curric_get_path(db, path_id)
+    if not p:
+        raise HTTPException(404, "Path not found")
+    return p
+
+
+@api.post("/admin/curriculum/paths")
+async def admin_create_path(body: PathUpsert, _admin=Depends(require_admin)):
+    p = await _curric_create_path(db, body.dict(exclude_none=True))
+    return p
+
+
+@api.patch("/admin/curriculum/paths/{path_id}")
+async def admin_update_path(path_id: str, body: PathUpsert, _admin=Depends(require_admin)):
+    p = await _curric_update_path(db, path_id, body.dict(exclude_none=True))
+    if not p:
+        raise HTTPException(404, "Path not found")
+    return p
+
+
+@api.delete("/admin/curriculum/paths/{path_id}")
+async def admin_delete_path(path_id: str, _admin=Depends(require_admin)):
+    ok = await _curric_delete_path(db, path_id)
+    if not ok:
+        raise HTTPException(404, "Path not found")
+    return {"ok": True}
+
+
+@api.post("/admin/curriculum/paths/{path_id}/modules")
+async def admin_add_module(path_id: str, body: ModuleUpsert, _admin=Depends(require_admin)):
+    m = await _curric_add_module(db, path_id, body.dict(exclude_none=True))
+    if not m:
+        raise HTTPException(404, "Path not found")
+    return m
+
+
+@api.patch("/admin/curriculum/paths/{path_id}/modules/{module_id}")
+async def admin_update_module(path_id: str, module_id: str, body: ModuleUpsert, _admin=Depends(require_admin)):
+    m = await _curric_update_module(db, path_id, module_id, body.dict(exclude_none=True))
+    if not m:
+        raise HTTPException(404, "Module not found")
+    return m
+
+
+@api.delete("/admin/curriculum/paths/{path_id}/modules/{module_id}")
+async def admin_delete_module(path_id: str, module_id: str, _admin=Depends(require_admin)):
+    ok = await _curric_delete_module(db, path_id, module_id)
+    if not ok:
+        raise HTTPException(404, "Module not found")
+    return {"ok": True}
+
+
+@api.post("/admin/curriculum/paths/{path_id}/modules/{module_id}/lessons")
+async def admin_add_lesson(path_id: str, module_id: str, body: LessonUpsert, _admin=Depends(require_admin)):
+    payload = body.dict(exclude_none=True)
+    lsn = await _curric_add_lesson(db, path_id, module_id, payload)
+    if not lsn:
+        raise HTTPException(404, "Path/Module not found")
+    return lsn
+
+
+@api.patch("/admin/curriculum/paths/{path_id}/modules/{module_id}/lessons/{lesson_id}")
+async def admin_update_lesson(path_id: str, module_id: str, lesson_id: str, body: LessonUpsert, _admin=Depends(require_admin)):
+    lsn = await _curric_update_lesson(db, path_id, module_id, lesson_id, body.dict(exclude_none=True))
+    if not lsn:
+        raise HTTPException(404, "Lesson not found")
+    return lsn
+
+
+@api.delete("/admin/curriculum/paths/{path_id}/modules/{module_id}/lessons/{lesson_id}")
+async def admin_delete_lesson(path_id: str, module_id: str, lesson_id: str, _admin=Depends(require_admin)):
+    ok = await _curric_delete_lesson(db, path_id, module_id, lesson_id)
+    if not ok:
+        raise HTTPException(404, "Lesson not found")
+    return {"ok": True}
+
+
+# ─── AI Studio (admin only) ─────────────────────────────────────────────────
+@api.post("/admin/ai/generate-lesson")
+async def admin_generate_lesson(body: LessonGenIn, _admin=Depends(require_admin)):
+    try:
+        path_context = None
+        if body.path_id:
+            p = await _curric_get_path(db, body.path_id)
+            if p:
+                path_context = f"This lesson belongs to the path: {p['title']} — {p.get('tagline','')}"
+        draft = await ai_studio.generate_lesson_draft(body.topic, body.level, path_context)
+    except Exception as e:
+        log.exception("generate-lesson failed")
+        raise HTTPException(503, f"AI Studio unavailable: {str(e)[:160]}")
+    inserted = None
+    if body.publish and body.path_id and body.module_id:
+        inserted = await _curric_add_lesson(db, body.path_id, body.module_id, draft)
+        if not inserted:
+            raise HTTPException(404, "Path/Module not found — could not publish")
+    return {"draft": draft, "published": inserted}
+
+
+@api.post("/admin/ai/generate-path")
+async def admin_generate_path(body: PathGenIn, _admin=Depends(require_admin)):
+    try:
+        outline = await ai_studio.generate_path_outline(body.concept, body.level)
+    except Exception as e:
+        log.exception("generate-path failed")
+        raise HTTPException(503, f"AI Studio unavailable: {str(e)[:160]}")
+    outline["tier"] = body.tier
+    # Optionally generate cover
+    if body.auto_cover:
+        try:
+            outline["image"] = await ai_studio.generate_cover_image(outline["title"], outline.get("id"))
+        except Exception as e:
+            log.warning(f"cover gen failed: {e}")
+    # Persist as a new path
+    created = await _curric_create_path(db, outline)
+
+    generated_lessons = 0
+    if body.generate_lessons:
+        # For each module / lesson title, ask Claude to fill in the lesson body
+        for m in created["modules"]:
+            for lsn in m.get("lessons", []):
+                try:
+                    full = await ai_studio.generate_lesson_draft(
+                        lsn["title"], body.level, path_context=f"{created['title']} — {created.get('tagline','')}",
+                    )
+                    # Keep original lesson id, replace contents
+                    full["id"] = lsn["id"]
+                    full["title"] = lsn["title"]
+                    await _curric_update_lesson(db, created["id"], m["id"], lsn["id"], full)
+                    generated_lessons += 1
+                except Exception as e:
+                    log.warning(f"per-lesson generation failed for {lsn['id']}: {e}")
+    refreshed = await _curric_get_path(db, created["id"])
+    return {"path": refreshed, "generated_lessons": generated_lessons}
+
+
+@api.post("/admin/ai/refresh-lesson/{path_id}/{module_id}/{lesson_id}")
+async def admin_refresh_lesson(path_id: str, module_id: str, lesson_id: str, _admin=Depends(require_admin)):
+    lsn = await _curric_get_lesson(db, lesson_id)
+    if not lsn or lsn.get("path_id") != path_id or lsn.get("module_id") != module_id:
+        raise HTTPException(404, "Lesson not found")
+    try:
+        refreshed = await ai_studio.refresh_lesson(lsn)
+    except Exception as e:
+        log.exception("refresh-lesson failed")
+        raise HTTPException(503, f"AI Studio unavailable: {str(e)[:160]}")
+    updated = await _curric_update_lesson(db, path_id, module_id, lesson_id, refreshed)
+    return {"lesson": updated, "refreshed": True}
+
+
+@api.get("/admin/ai/scan-outdated")
+async def admin_scan_outdated(_admin=Depends(require_admin)):
+    """Scan all lessons for mentions of outdated AI models / tools."""
+    paths = await _curric_list_paths(db)
+    findings = []
+    for p in paths:
+        for m in p.get("modules", []):
+            for lsn in m.get("lessons", []):
+                text_blob = lsn.get("title", "") + "\n"
+                for c in lsn.get("cards", []):
+                    text_blob += (c.get("title", "") + " " + c.get("body", "") + "\n")
+                q = lsn.get("quiz") or {}
+                text_blob += q.get("question", "") + "\n"
+                for opt in q.get("options", []):
+                    text_blob += opt + "\n"
+                text_blob += q.get("explanation", "")
+                hits = ai_studio.scan_outdated_terms(text_blob)
+                if hits:
+                    findings.append({
+                        "path_id": p["id"], "path_title": p["title"],
+                        "module_id": m["id"], "module_title": m["title"],
+                        "lesson_id": lsn["id"], "lesson_title": lsn["title"],
+                        "outdated_terms": hits,
+                    })
+    return {"findings": findings, "count": len(findings)}
+
+
+@api.post("/admin/ai/generate-cover")
+async def admin_generate_cover(body: CoverGenIn, _admin=Depends(require_admin)):
+    try:
+        url = await ai_studio.generate_cover_image(body.prompt, body.path_id)
+    except Exception as e:
+        log.exception("generate-cover failed")
+        raise HTTPException(503, f"Image generation failed: {str(e)[:160]}")
+    if body.path_id:
+        await _curric_update_path(db, body.path_id, {"image": url})
+    return {"url": url}
+
+
 app.include_router(api)
 
 app.add_middleware(
@@ -1159,6 +1442,22 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Serve generated cover images under /api/static/covers
+from fastapi.staticfiles import StaticFiles
+STATIC_DIR = ROOT_DIR / "static"
+STATIC_DIR.mkdir(exist_ok=True)
+(STATIC_DIR / "covers").mkdir(exist_ok=True)
+app.mount("/api/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+
+@app.on_event("startup")
+async def startup():
+    try:
+        await _curric_ensure_seeded(db)
+        log.info("Curriculum DB ready.")
+    except Exception as e:
+        log.exception(f"Curriculum seeding failed: {e}")
 
 
 @app.on_event("shutdown")

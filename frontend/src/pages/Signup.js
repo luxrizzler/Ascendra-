@@ -4,6 +4,7 @@ import { useAuth } from "@/context/AuthContext";
 import { AuthShell } from "./Login";
 import { ArrowRight } from "lucide-react";
 import { toast } from "sonner";
+import GoogleButton from "@/components/GoogleButton";
 
 export default function Signup() {
   const { signup } = useAuth();
@@ -30,6 +31,12 @@ export default function Signup() {
 
   return (
     <AuthShell title="Begin your ascent" subtitle="Create a free account. No card required.">
+      <GoogleButton label="Continue with Google" />
+      <div className="flex items-center gap-3 my-4">
+        <div className="flex-1 h-px" style={{ background: "rgba(191,180,255,0.18)" }} />
+        <div className="text-[10px] uppercase tracking-[0.25em] text-[var(--asc-text-muted)]">Or with email</div>
+        <div className="flex-1 h-px" style={{ background: "rgba(191,180,255,0.18)" }} />
+      </div>
       <form onSubmit={submit} className="space-y-4" data-testid="signup-form">
         <input className="asc-input" type="text" placeholder="Your name (optional)" value={name} onChange={(e) => setName(e.target.value)} data-testid="signup-name-input" />
         <input className="asc-input" type="email" placeholder="Email" required value={email} onChange={(e) => setEmail(e.target.value)} data-testid="signup-email-input" />

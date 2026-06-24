@@ -23,7 +23,7 @@ class AscendraAPITester:
     def log(self, msg):
         print(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}")
     
-    def test(self, name, method, endpoint, expected_status, data=None, headers=None, token=None):
+    def test(self, name, method, endpoint, expected_status, data=None, headers=None, token=None, timeout=30):
         """Run a single API test"""
         url = f"{BASE_URL}{endpoint}"
         h = headers or {}
@@ -37,13 +37,15 @@ class AscendraAPITester:
         
         try:
             if method == 'GET':
-                r = requests.get(url, headers=h, timeout=30)
+                r = requests.get(url, headers=h, timeout=timeout)
             elif method == 'POST':
-                r = requests.post(url, json=data, headers=h, timeout=30)
+                r = requests.post(url, json=data, headers=h, timeout=timeout)
             elif method == 'PUT':
-                r = requests.put(url, json=data, headers=h, timeout=30)
+                r = requests.put(url, json=data, headers=h, timeout=timeout)
             elif method == 'PATCH':
-                r = requests.patch(url, json=data, headers=h, timeout=30)
+                r = requests.patch(url, json=data, headers=h, timeout=timeout)
+            elif method == 'DELETE':
+                r = requests.delete(url, headers=h, timeout=timeout)
             
             success = r.status_code == expected_status
             if success:
@@ -284,16 +286,25 @@ class AscendraAPITester:
         
         # 20. Admin endpoints - login as admin first
         self.log("\n📋 SECTION 13: ADMIN ENDPOINTS")
-        self.log("   Logging in as admin (must change password on first login)...")
+        self.log("   Logging in as admin (trying both passwords)...")
         
-        # Try login as admin
+        # Try login as admin with NewAdmin789! first (changed in prior test)
         success, resp = self.test(
-            "Admin login",
+            "Admin login (NewAdmin789!)",
             "POST",
             "/auth/login",
             200,
-            data={"email": "admin@ascendraacademy.com", "password": "AscendraAdmin2026!"}
+            data={"email": "admin@ascendraacademy.com", "password": "NewAdmin789!"}
         )
+        if not success:
+            # Try original password
+            success, resp = self.test(
+                "Admin login (AscendraAdmin2026!)",
+                "POST",
+                "/auth/login",
+                200,
+                data={"email": "admin@ascendraacademy.com", "password": "AscendraAdmin2026!"}
+            )
         if success and 'access_token' in resp:
             self.admin_token = resp['access_token']
             self.log(f"   ✓ Admin token obtained")
@@ -369,6 +380,249 @@ class AscendraAPITester:
             )
             if success3:
                 self.log("   ✓ Sage tier access working correctly")
+        
+        # 22. PHASE 5: Google OAuth endpoint
+        self.log("\n📋 SECTION 15: PHASE 5 - GOOGLE OAUTH")
+        success, resp = self.test(
+            "Google OAuth with fake token (should 401)",
+            "POST",
+            "/auth/google",
+            401,
+            data={"session_token": "fake-invalid-token-12345"}
+        )
+        if success:
+            self.log("   ✓ Google OAuth endpoint exists and validates tokens")
+        
+        # 23. PHASE 5: Non-admin access control
+        self.log("\n📋 SECTION 16: PHASE 5 - ADMIN ACCESS CONTROL")
+        success, resp = self.test(
+            "Non-admin accessing admin curriculum (should 403)",
+            "GET",
+            "/admin/curriculum/paths",
+            403,
+            token=self.token  # regular user token
+        )
+        if success:
+            self.log("   ✓ Admin access control working correctly")
+        
+        # 24. PHASE 5: Admin Curriculum CRUD
+        if self.admin_token:
+            self.log("\n📋 SECTION 17: PHASE 5 - ADMIN CURRICULUM CRUD")
+            
+            # List all paths
+            success, resp = self.test(
+                "Admin list all paths",
+                "GET",
+                "/admin/curriculum/paths",
+                200,
+                token=self.admin_token
+            )
+            if success and 'paths' in resp:
+                path_count = len(resp['paths'])
+                self.log(f"   ✓ Found {path_count} paths")
+            
+            # Create a test path
+            test_path_data = {
+                "title": "Test Path E2E",
+                "subtitle": "Test subtitle",
+                "tagline": "Test tagline for automated testing",
+                "tier": "free",
+                "level": "Beginner",
+                "color": "#FFB000"
+            }
+            success, resp = self.test(
+                "Admin create test path",
+                "POST",
+                "/admin/curriculum/paths",
+                200,
+                data=test_path_data,
+                token=self.admin_token
+            )
+            test_path_id = None
+            if success and 'id' in resp:
+                test_path_id = resp['id']
+                self.log(f"   ✓ Created test path: {test_path_id}")
+                
+                # Update the path
+                success2, resp2 = self.test(
+                    "Admin update test path",
+                    "PATCH",
+                    f"/admin/curriculum/paths/{test_path_id}",
+                    200,
+                    data={"title": "Test Path E2E", "tagline": "Updated tagline for testing"},
+                    token=self.admin_token
+                )
+                if success2:
+                    self.log("   ✓ Path updated successfully")
+                
+                # Add a module
+                module_data = {"title": "Test Module 1"}
+                success3, resp3 = self.test(
+                    "Admin add module to path",
+                    "POST",
+                    f"/admin/curriculum/paths/{test_path_id}/modules",
+                    200,
+                    data=module_data,
+                    token=self.admin_token
+                )
+                module_id = None
+                if success3 and 'id' in resp3:
+                    module_id = resp3['id']
+                    self.log(f"   ✓ Module added: {module_id}")
+                    
+                    # Add a lesson to the module
+                    lesson_data = {
+                        "title": "Test Lesson 1",
+                        "duration_min": 5,
+                        "xp": 50,
+                        "cards": [
+                            {"title": "Card 1", "body": "Test card body 1"},
+                            {"title": "Card 2", "body": "Test card body 2"},
+                            {"title": "Card 3", "body": "Test card body 3"},
+                            {"title": "Card 4", "body": "Test card body 4"}
+                        ],
+                        "quiz": {
+                            "question": "Test question?",
+                            "options": ["A", "B", "C", "D"],
+                            "answer_index": 0,
+                            "explanation": "Test explanation"
+                        }
+                    }
+                    success4, resp4 = self.test(
+                        "Admin add lesson to module",
+                        "POST",
+                        f"/admin/curriculum/paths/{test_path_id}/modules/{module_id}/lessons",
+                        200,
+                        data=lesson_data,
+                        token=self.admin_token
+                    )
+                    if success4:
+                        self.log("   ✓ Lesson added successfully")
+                
+                # Delete the test path (cleanup)
+                success5, resp5 = self.test(
+                    "Admin delete test path",
+                    "DELETE",
+                    f"/admin/curriculum/paths/{test_path_id}",
+                    200,
+                    token=self.admin_token
+                )
+                if success5:
+                    self.log("   ✓ Test path deleted (cleanup)")
+        
+        # 25. PHASE 5: AI Studio - Generate Lesson
+        if self.admin_token:
+            self.log("\n📋 SECTION 18: PHASE 5 - AI STUDIO LESSON GENERATION")
+            self.log("   ⏳ Generating lesson with Claude (may take 15-30 seconds)...")
+            
+            lesson_gen_data = {
+                "topic": "Prompt engineering for short-form video scripts",
+                "level": "Beginner",
+                "publish": False
+            }
+            success, resp = self.test(
+                "AI Studio generate lesson",
+                "POST",
+                "/admin/ai/generate-lesson",
+                200,
+                data=lesson_gen_data,
+                token=self.admin_token,
+                timeout=60  # Claude takes 15-30 seconds
+            )
+            if success and 'draft' in resp:
+                draft = resp['draft']
+                self.log(f"   ✓ Lesson generated: {draft.get('title', 'N/A')}")
+                cards = draft.get('cards', [])
+                self.log(f"   ✓ Cards: {len(cards)} (expected 4)")
+                if len(cards) != 4:
+                    self.log(f"   ⚠️  WARNING: Expected 4 cards, got {len(cards)}")
+                else:
+                    # Check card body length
+                    for i, card in enumerate(cards):
+                        body_len = len(card.get('body', ''))
+                        self.log(f"      Card {i+1}: {len(card.get('title', ''))} chars title, {body_len} chars body")
+                        if body_len < 50:
+                            self.log(f"      ⚠️  WARNING: Card {i+1} body too short ({body_len} < 50)")
+                
+                quiz = draft.get('quiz', {})
+                options = quiz.get('options', [])
+                self.log(f"   ✓ Quiz options: {len(options)} (expected 4)")
+                if len(options) != 4:
+                    self.log(f"   ⚠️  WARNING: Expected 4 quiz options, got {len(options)}")
+                answer_idx = quiz.get('answer_index')
+                if answer_idx is not None and 0 <= answer_idx < len(options):
+                    self.log(f"   ✓ Valid answer_index: {answer_idx}")
+                else:
+                    self.log(f"   ⚠️  WARNING: Invalid answer_index: {answer_idx}")
+        
+        # 26. PHASE 5: AI Studio - Scan Outdated
+        if self.admin_token:
+            self.log("\n📋 SECTION 19: PHASE 5 - AI STUDIO SCAN OUTDATED")
+            success, resp = self.test(
+                "AI Studio scan outdated content",
+                "GET",
+                "/admin/ai/scan-outdated",
+                200,
+                token=self.admin_token
+            )
+            if success and 'findings' in resp:
+                findings = resp['findings']
+                self.log(f"   ✓ Findings: {len(findings)}")
+                if len(findings) > 0:
+                    self.log(f"   ✓ Found at least 1 outdated lesson (expected)")
+                    first = findings[0]
+                    self.log(f"      Path: {first.get('path_title', 'N/A')}")
+                    self.log(f"      Lesson: {first.get('lesson_title', 'N/A')}")
+                    self.log(f"      Outdated terms: {first.get('outdated_terms', [])}")
+                else:
+                    self.log("   ⚠️  WARNING: Expected at least 1 finding (f1l1 mentions GPT-4)")
+        
+        # 27. PHASE 5: AI Studio - Generate Cover
+        if self.admin_token:
+            self.log("\n📋 SECTION 20: PHASE 5 - AI STUDIO COVER GENERATION")
+            self.log("   ⏳ Generating cover image with gpt-image-1 (may take 25-40 seconds)...")
+            
+            cover_gen_data = {
+                "prompt": "Mastering AI Tutoring",
+                "path_id": None
+            }
+            success, resp = self.test(
+                "AI Studio generate cover",
+                "POST",
+                "/admin/ai/generate-cover",
+                200,
+                data=cover_gen_data,
+                token=self.admin_token,
+                timeout=60  # gpt-image-1 takes 25-40 seconds
+            )
+            if success and 'url' in resp:
+                cover_url = resp['url']
+                self.log(f"   ✓ Cover URL: {cover_url}")
+                if '/api/static/covers/' in cover_url or cover_url.startswith('http'):
+                    self.log("   ✓ Valid cover URL format")
+                    
+                    # Try to fetch the cover image
+                    try:
+                        if cover_url.startswith('/api/static/'):
+                            full_url = f"{BASE_URL.replace('/api', '')}{cover_url}"
+                        else:
+                            full_url = cover_url
+                        
+                        self.log(f"   ⏳ Fetching cover image from: {full_url[:80]}...")
+                        img_resp = requests.get(full_url, timeout=10)
+                        if img_resp.status_code == 200:
+                            self.log(f"   ✓ Cover image accessible (HTTP 200)")
+                            content_type = img_resp.headers.get('content-type', '')
+                            if 'image' in content_type:
+                                self.log(f"   ✓ Valid image content-type: {content_type}")
+                            else:
+                                self.log(f"   ⚠️  WARNING: Unexpected content-type: {content_type}")
+                        else:
+                            self.log(f"   ⚠️  WARNING: Cover image not accessible (HTTP {img_resp.status_code})")
+                    except Exception as e:
+                        self.log(f"   ⚠️  WARNING: Failed to fetch cover: {str(e)[:100]}")
+                else:
+                    self.log(f"   ⚠️  WARNING: Unexpected URL format: {cover_url}")
         
         # Summary
         self.log("\n" + "=" * 60)

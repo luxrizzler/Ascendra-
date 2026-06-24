@@ -1,30 +1,30 @@
 [
   {
-    "content": "Phase 1: Port backend + smoke test",
+    "content": "Phase 5: Migrate curriculum to MongoDB",
     "status": "completed"
   },
   {
-    "content": "Phase 2: Frontend foundation",
+    "content": "Phase 5: Admin CRUD endpoints for paths/modules/lessons",
     "status": "completed"
   },
   {
-    "content": "Phase 2: Landing + Auth pages",
+    "content": "Phase 5: AI Lesson Studio backend (generate, refresh, scan, cover)",
     "status": "completed"
   },
   {
-    "content": "Phase 2: Onboarding + Dashboard + Paths",
+    "content": "Phase 5: Cover image generator (gpt-image-1 verified working)",
     "status": "completed"
   },
   {
-    "content": "Phase 2: Lesson player",
-    "status": "completed"
+    "content": "Phase 5: Google OAuth frontend wiring (button + session_id hash handler)",
+    "status": "in_progress"
   },
   {
-    "content": "Phase 2: Tutor + Models + Profile + Pricing + Admin",
-    "status": "completed"
+    "content": "Phase 5: Admin UI — Curriculum Manager + AI Studio + Path/Lesson editors",
+    "status": "pending"
   },
   {
-    "content": "Phase 2: End-to-end testing (97.8% pass, fixed Fundamentals tier to free)",
-    "status": "completed"
+    "content": "Phase 5: E2E test with testing_agent_v3",
+    "status": "pending"
   }
 ]
