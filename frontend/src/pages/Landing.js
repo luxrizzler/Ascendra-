@@ -56,11 +56,6 @@ export default function Landing() {
               </button>
               <button onClick={() => nav("/pricing")} className="asc-btn-secondary text-base" data-testid="hero-pricing-btn">See pricing</button>
             </div>
-            <div className="mt-8 flex items-center gap-4 text-xs text-[var(--asc-text-muted)]">
-              <div className="flex items-center gap-1.5"><CheckCircle2 size={14} className="text-[var(--asc-success)]" /> Free to start</div>
-              <div className="flex items-center gap-1.5"><CheckCircle2 size={14} className="text-[var(--asc-success)]" /> No card required</div>
-              <div className="flex items-center gap-1.5"><CheckCircle2 size={14} className="text-[var(--asc-success)]" /> Cancel anytime</div>
-            </div>
           </div>
         </div>
       </section>

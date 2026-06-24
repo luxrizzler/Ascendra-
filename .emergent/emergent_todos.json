@@ -4,27 +4,27 @@
     "status": "completed"
   },
   {
-    "content": "Phase 5: Admin CRUD endpoints for paths/modules/lessons",
+    "content": "Phase 5: Admin CRUD endpoints",
     "status": "completed"
   },
   {
-    "content": "Phase 5: AI Lesson Studio backend (generate, refresh, scan, cover)",
+    "content": "Phase 5: AI Lesson Studio backend",
     "status": "completed"
   },
   {
-    "content": "Phase 5: Cover image generator (gpt-image-1 verified working)",
+    "content": "Phase 5: Cover image generator",
     "status": "completed"
   },
   {
-    "content": "Phase 5: Google OAuth frontend wiring (button + session_id hash handler)",
-    "status": "in_progress"
+    "content": "Phase 5: Google OAuth frontend wiring",
+    "status": "completed"
   },
   {
     "content": "Phase 5: Admin UI — Curriculum Manager + AI Studio + Path/Lesson editors",
-    "status": "pending"
+    "status": "completed"
   },
   {
     "content": "Phase 5: E2E test with testing_agent_v3",
-    "status": "pending"
+    "status": "in_progress"
   }
 ]

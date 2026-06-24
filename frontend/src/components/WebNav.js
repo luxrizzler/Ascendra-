@@ -8,7 +8,6 @@ const NAV_LINKS = [
   { to: "/paths", label: "Paths", auth: true },
   { to: "/tutor", label: "AI Tutor", auth: true },
   { to: "/models", label: "Models", auth: true },
-  { to: "/pricing", label: "Pricing" },
 ];
 
 export default function WebNav() {
@@ -50,10 +49,7 @@ export default function WebNav() {
 
         <div className="flex items-center gap-3">
           {!user ? (
-            <>
-              <Link to="/login" data-testid="nav-signin-btn" className="text-sm text-[var(--asc-text-dim)] hover:text-white hidden sm:inline">Sign in</Link>
-              <Link to="/signup" data-testid="nav-signup-btn" className="asc-btn-primary text-sm">Start free</Link>
-            </>
+            <Link to="/login" data-testid="nav-signin-btn" className="text-sm text-[var(--asc-text-dim)] hover:text-white">Sign in</Link>
           ) : (
             <div className="relative">
               {tierBadge}
