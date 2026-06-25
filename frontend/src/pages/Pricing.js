@@ -39,7 +39,11 @@ export default function Pricing() {
     <div className="max-w-7xl mx-auto px-5 sm:px-8 py-10" data-testid="pricing-page">
       <div className="asc-kicker">Plans</div>
       <h1 className="asc-h2 text-4xl sm:text-5xl mt-2">Learn AI like the top 1%.</h1>
-      <p className="text-[var(--asc-text-dim)] mt-2 max-w-2xl">Cancel anytime. 7-day money-back guarantee.</p>
+      <p className="text-[var(--asc-text-dim)] mt-2 max-w-2xl">Cancel anytime in one click from your profile. 7-day money-back guarantee.</p>
+
+      <div className="text-xs text-[var(--asc-text-muted)] mt-3 max-w-2xl leading-relaxed">
+        Monthly &amp; annual plans <strong className="text-[var(--asc-text-dim)]">automatically renew</strong> at the end of each billing period using the payment method on file. You can cancel anytime from <span className="text-[var(--asc-brand)]">Profile → Manage billing</span> — access continues until the period ends. The $2.99 7-day trial is a single one-time charge and does NOT auto-renew.
+      </div>
 
       {/* Interval toggle */}
       <div className="inline-flex items-center gap-1 mt-6 p-1 rounded-full border border-[var(--asc-border)]" style={{ background: "#15102B" }}>

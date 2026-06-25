@@ -747,44 +747,81 @@ async def pricing():
 async def create_checkout(body: CheckoutIn, request: Request, user=Depends(current_user)):
     if body.tier not in TIERS:
         raise HTTPException(400, "Invalid tier")
+    origin = body.origin_url.rstrip("/")
+
+    # The $2.99 trial stays as a one-time payment (via the emergent wrapper).
     if body.interval == "trial":
         if user.get("has_used_trial"):
             raise HTTPException(400, "Trial already used. Pick a plan to keep going.")
         amount_usd = 2.99
         plan_name = "Sage (7-day trial)"
-    elif body.interval == "annual":
-        amount_usd = TIERS[body.tier]["price_annual"]
-        plan_name = f"{TIERS[body.tier]['name']} (Annual)"
-    else:
-        amount_usd = TIERS[body.tier]["price_monthly"]
-        plan_name = f"{TIERS[body.tier]['name']} (Monthly)"
-    origin = body.origin_url.rstrip("/")
-    webhook_url = f"{str(request.base_url).rstrip('/')}/api/billing/webhook"
-    stripe_checkout = StripeCheckout(api_key=STRIPE_API_KEY, webhook_url=webhook_url)
-    try:
-        session = await stripe_checkout.create_checkout_session(
-            CheckoutSessionRequest(
-                amount=float(amount_usd),
-                currency="usd",
-                success_url=f"{origin}/checkout-success?session_id={{CHECKOUT_SESSION_ID}}",
-                cancel_url=f"{origin}/pricing",
-                metadata={"user_id": user["id"], "tier": body.tier, "interval": body.interval, "plan": plan_name},
+        webhook_url = f"{str(request.base_url).rstrip('/')}/api/billing/webhook"
+        stripe_checkout = StripeCheckout(api_key=STRIPE_API_KEY, webhook_url=webhook_url)
+        try:
+            session = await stripe_checkout.create_checkout_session(
+                CheckoutSessionRequest(
+                    amount=float(amount_usd),
+                    currency="usd",
+                    success_url=f"{origin}/checkout-success?session_id={{CHECKOUT_SESSION_ID}}",
+                    cancel_url=f"{origin}/pricing",
+                    metadata={"user_id": user["id"], "tier": body.tier, "interval": body.interval, "plan": plan_name},
+                )
             )
+        except Exception as e:
+            log.exception("Stripe error (trial)")
+            raise HTTPException(502, f"Stripe error: {str(e)[:140]}")
+        await sessions_col.insert_one({
+            "session_id": session.session_id, "user_id": user["id"],
+            "tier": body.tier, "interval": body.interval, "amount_usd": amount_usd,
+            "status": "pending", "mode": "payment",
+            "created_at": datetime.now(timezone.utc),
+        })
+        return {"url": session.url, "session_id": session.session_id}
+
+    # Recurring subscriptions for monthly + annual — use the native Stripe SDK
+    cfg = _load_stripe_config()
+    price_id = cfg.get("tiers", {}).get(body.tier, {}).get("prices", {}).get(body.interval)
+    if not price_id:
+        raise HTTPException(503, "Subscription pricing not configured yet — admin needs to seed Stripe Products/Prices.")
+    amount_usd = TIERS[body.tier]["price_annual"] if body.interval == "annual" else TIERS[body.tier]["price_monthly"]
+    plan_name = f"{TIERS[body.tier]['name']} ({body.interval.title()})"
+    try:
+        import stripe as _stripe
+        _stripe.api_key = STRIPE_API_KEY
+        sess = _stripe.checkout.Session.create(
+            mode="subscription",
+            line_items=[{"price": price_id, "quantity": 1}],
+            success_url=f"{origin}/checkout-success?session_id={{CHECKOUT_SESSION_ID}}",
+            cancel_url=f"{origin}/pricing",
+            customer_email=(user.get("email") if not user.get("stripe_customer_id") else None),
+            customer=user.get("stripe_customer_id"),
+            client_reference_id=user["id"],
+            metadata={"user_id": user["id"], "tier": body.tier, "interval": body.interval, "plan": plan_name},
+            allow_promotion_codes=True,
         )
     except Exception as e:
-        log.exception("Stripe error")
-        raise HTTPException(502, f"Stripe error: {str(e)[:140]}")
+        log.exception("Stripe subscription checkout error")
+        raise HTTPException(502, f"Stripe error: {str(e)[:200]}")
 
     await sessions_col.insert_one({
-        "session_id": session.session_id,
-        "user_id": user["id"],
-        "tier": body.tier,
-        "interval": body.interval,
-        "amount_usd": amount_usd,
-        "status": "pending",
+        "session_id": sess.id, "user_id": user["id"],
+        "tier": body.tier, "interval": body.interval, "amount_usd": amount_usd,
+        "status": "pending", "mode": "subscription", "price_id": price_id,
         "created_at": datetime.now(timezone.utc),
     })
-    return {"url": session.url, "session_id": session.session_id}
+    return {"url": sess.url, "session_id": sess.id}
+
+
+def _load_stripe_config() -> dict:
+    """Load Stripe Products/Prices/Portal config (created by setup script)."""
+    try:
+        cfg_path = ROOT_DIR / "stripe_config.json"
+        if cfg_path.exists():
+            import json as _json
+            return _json.loads(cfg_path.read_text())
+    except Exception as e:
+        log.warning(f"stripe_config.json load failed: {e}")
+    return {}
 
 @api.get("/billing/status/{session_id}")
 async def checkout_status(session_id: str, request: Request, user=Depends(current_user)):
@@ -794,52 +831,54 @@ async def checkout_status(session_id: str, request: Request, user=Depends(curren
 
     if rec["status"] == "pending":
         try:
-            webhook_url = f"{str(request.base_url).rstrip('/')}/api/billing/webhook"
-            sc = StripeCheckout(api_key=STRIPE_API_KEY, webhook_url=webhook_url)
-            s = await sc.get_checkout_status(session_id)
-            if s.payment_status == "paid":
+            import stripe as _stripe
+            _stripe.api_key = STRIPE_API_KEY
+            sess = _stripe.checkout.Session.retrieve(session_id)
+            payment_paid = (sess.get("payment_status") == "paid") if isinstance(sess, dict) else (getattr(sess, "payment_status", "") == "paid")
+            if payment_paid:
+                mode = rec.get("mode", "payment")
                 interval = rec.get("interval", "monthly")
-                days = {"trial": 7, "annual": 365, "monthly": 30}.get(interval, 30)
-                expires_at = datetime.now(timezone.utc) + timedelta(days=days)
                 granted_tier = "sage" if interval == "trial" else rec["tier"]
-                update = {
-                    "tier": granted_tier,
-                    "subscription_interval": interval,
-                    "tier_expires_at": expires_at,
-                }
-                if interval == "trial":
-                    update["has_used_trial"] = True
-                # Try to capture the Stripe customer id for the billing portal
-                try:
-                    import stripe as _stripe
-                    _stripe.api_key = STRIPE_API_KEY
-                    full = _stripe.checkout.Session.retrieve(session_id)
-                    cust_id = full.get("customer") if isinstance(full, dict) else getattr(full, "customer", None)
-                    if cust_id:
-                        update["stripe_customer_id"] = cust_id
-                except Exception as _e:
-                    log.warning(f"customer id fetch failed: {_e}")
+
+                if mode == "subscription":
+                    # Real Stripe subscription — read the subscription period for expiry
+                    sub_id = sess.get("subscription") if isinstance(sess, dict) else getattr(sess, "subscription", None)
+                    cust_id = sess.get("customer") if isinstance(sess, dict) else getattr(sess, "customer", None)
+                    expires_at = None
+                    if sub_id:
+                        sub = _stripe.Subscription.retrieve(sub_id)
+                        cpe = sub.get("current_period_end") if isinstance(sub, dict) else getattr(sub, "current_period_end", None)
+                        if cpe:
+                            expires_at = datetime.fromtimestamp(int(cpe), tz=timezone.utc)
+                    update = {
+                        "tier": granted_tier, "subscription_interval": interval,
+                        "tier_expires_at": expires_at, "stripe_subscription_id": sub_id,
+                        "subscription_status": "active",
+                    }
+                    if cust_id: update["stripe_customer_id"] = cust_id
+                else:
+                    # One-time payment (trial)
+                    days = {"trial": 7, "annual": 365, "monthly": 30}.get(interval, 30)
+                    expires_at = datetime.now(timezone.utc) + timedelta(days=days)
+                    update = {"tier": granted_tier, "subscription_interval": interval, "tier_expires_at": expires_at}
+                    if interval == "trial": update["has_used_trial"] = True
+                    cust_id = sess.get("customer") if isinstance(sess, dict) else getattr(sess, "customer", None)
+                    if cust_id: update["stripe_customer_id"] = cust_id
+
                 await users_col.update_one({"id": user["id"]}, {"$set": update})
-                await sessions_col.update_one(
-                    {"session_id": session_id},
-                    {"$set": {"status": "paid", "paid_at": datetime.now(timezone.utc)}},
-                )
+                await sessions_col.update_one({"session_id": session_id}, {"$set": {"status": "paid", "paid_at": datetime.now(timezone.utc)}})
                 rec["status"] = "paid"
-                # Send the welcome email (idempotent — only if not already sent)
+
                 if not rec.get("welcome_email_sent"):
                     try:
                         from email_service import send_checkout_success
-                        amt = float(rec.get("amount_usd") or 0)
                         send_checkout_success(
                             to=user["email"], name=user.get("name"),
                             tier=granted_tier, interval=interval,
-                            amount_usd=amt,
+                            amount_usd=float(rec.get("amount_usd") or 0),
                             dashboard_url=f"{_public_web_url()}/dashboard",
                         )
-                        await sessions_col.update_one(
-                            {"session_id": session_id},
-                            {"$set": {"welcome_email_sent": True, "welcome_email_at": datetime.now(timezone.utc)}},
-                        )
+                        await sessions_col.update_one({"session_id": session_id}, {"$set": {"welcome_email_sent": True, "welcome_email_at": datetime.now(timezone.utc)}})
                     except Exception as e:
                         log.warning(f"welcome email send failed: {e}")
         except Exception as e:
@@ -849,35 +888,92 @@ async def checkout_status(session_id: str, request: Request, user=Depends(curren
 
 @api.post("/billing/webhook")
 async def stripe_webhook(request: Request, stripe_signature: Optional[str] = Header(None)):
+    """Handles Stripe events for both one-time payments and subscriptions."""
     payload = await request.body()
+    import stripe as _stripe
+    _stripe.api_key = STRIPE_API_KEY
+    webhook_secret = os.environ.get("STRIPE_WEBHOOK_SECRET", "").strip()
     try:
-        webhook_url = f"{str(request.base_url).rstrip('/')}/api/billing/webhook"
-        sc = StripeCheckout(api_key=STRIPE_API_KEY, webhook_url=webhook_url)
-        event = await sc.handle_webhook(payload, stripe_signature)
+        if webhook_secret and stripe_signature:
+            event = _stripe.Webhook.construct_event(payload, stripe_signature, webhook_secret)
+        else:
+            import json as _json
+            event = _json.loads(payload)
     except Exception as e:
-        log.warning(f"webhook parse failed: {e}")
+        log.warning(f"webhook verify failed: {e}")
         raise HTTPException(400, "Invalid payload")
-    if getattr(event, "payment_status", None) == "paid" and getattr(event, "metadata", None):
-        meta = event.metadata or {}
-        uid = meta.get("user_id")
-        tier = meta.get("tier")
-        interval = meta.get("interval", "monthly")
-        if uid and tier:
-            days = {"trial": 7, "annual": 365, "monthly": 30}.get(interval, 30)
-            expires_at = datetime.now(timezone.utc) + timedelta(days=days)
+
+    etype = event.get("type") if isinstance(event, dict) else getattr(event, "type", "")
+    obj = (event.get("data", {}) or {}).get("object", {}) if isinstance(event, dict) else event.data.object
+
+    try:
+        if etype == "checkout.session.completed":
+            sess_id = obj.get("id") if isinstance(obj, dict) else getattr(obj, "id", None)
+            meta = obj.get("metadata", {}) if isinstance(obj, dict) else (getattr(obj, "metadata", {}) or {})
+            uid = meta.get("user_id")
+            tier = meta.get("tier")
+            interval = meta.get("interval", "monthly")
+            mode = obj.get("mode") if isinstance(obj, dict) else getattr(obj, "mode", "payment")
+            cust_id = obj.get("customer") if isinstance(obj, dict) else getattr(obj, "customer", None)
+            sub_id = obj.get("subscription") if isinstance(obj, dict) else getattr(obj, "subscription", None)
             granted_tier = "sage" if interval == "trial" else tier
-            update = {
-                "tier": granted_tier,
-                "subscription_interval": interval,
-                "tier_expires_at": expires_at,
-            }
-            if interval == "trial":
-                update["has_used_trial"] = True
-            await users_col.update_one({"id": uid}, {"$set": update})
-            await sessions_col.update_one(
-                {"session_id": event.session_id},
-                {"$set": {"status": "paid", "paid_at": datetime.now(timezone.utc)}},
-            )
+            if uid and granted_tier:
+                update = {"tier": granted_tier, "subscription_interval": interval}
+                if cust_id: update["stripe_customer_id"] = cust_id
+                if sub_id:
+                    update["stripe_subscription_id"] = sub_id
+                    update["subscription_status"] = "active"
+                    sub = _stripe.Subscription.retrieve(sub_id)
+                    cpe = sub.get("current_period_end") if isinstance(sub, dict) else getattr(sub, "current_period_end", None)
+                    if cpe: update["tier_expires_at"] = datetime.fromtimestamp(int(cpe), tz=timezone.utc)
+                else:
+                    days = {"trial": 7, "annual": 365, "monthly": 30}.get(interval, 30)
+                    update["tier_expires_at"] = datetime.now(timezone.utc) + timedelta(days=days)
+                    if interval == "trial": update["has_used_trial"] = True
+                await users_col.update_one({"id": uid}, {"$set": update})
+                await sessions_col.update_one({"session_id": sess_id}, {"$set": {"status": "paid", "paid_at": datetime.now(timezone.utc)}})
+
+        elif etype in ("invoice.paid", "invoice.payment_succeeded"):
+            sub_id = obj.get("subscription") if isinstance(obj, dict) else getattr(obj, "subscription", None)
+            cust_id = obj.get("customer") if isinstance(obj, dict) else getattr(obj, "customer", None)
+            if sub_id:
+                sub = _stripe.Subscription.retrieve(sub_id)
+                cpe = sub.get("current_period_end") if isinstance(sub, dict) else getattr(sub, "current_period_end", None)
+                if cpe and cust_id:
+                    expires_at = datetime.fromtimestamp(int(cpe), tz=timezone.utc)
+                    await users_col.update_one({"stripe_customer_id": cust_id}, {"$set": {"tier_expires_at": expires_at, "subscription_status": "active"}})
+
+        elif etype == "customer.subscription.updated":
+            sub_id = obj.get("id") if isinstance(obj, dict) else getattr(obj, "id", None)
+            cust_id = obj.get("customer") if isinstance(obj, dict) else getattr(obj, "customer", None)
+            status = obj.get("status") if isinstance(obj, dict) else getattr(obj, "status", "active")
+            cpe = obj.get("current_period_end") if isinstance(obj, dict) else getattr(obj, "current_period_end", None)
+            cancel_at_period_end = obj.get("cancel_at_period_end") if isinstance(obj, dict) else getattr(obj, "cancel_at_period_end", False)
+            update = {"subscription_status": status, "stripe_subscription_id": sub_id, "subscription_cancel_at_period_end": bool(cancel_at_period_end)}
+            if cpe: update["tier_expires_at"] = datetime.fromtimestamp(int(cpe), tz=timezone.utc)
+            # Detect tier change via Price → metadata
+            items = obj.get("items", {}).get("data", []) if isinstance(obj, dict) else []
+            if items:
+                price = items[0].get("price", {}) if isinstance(items[0], dict) else {}
+                meta = price.get("metadata", {}) if isinstance(price, dict) else {}
+                new_tier = meta.get("ascendra_tier")
+                new_interval = meta.get("ascendra_interval")
+                if new_tier and status == "active":
+                    update["tier"] = new_tier
+                    if new_interval: update["subscription_interval"] = new_interval
+            if cust_id:
+                await users_col.update_one({"stripe_customer_id": cust_id}, {"$set": update})
+
+        elif etype == "customer.subscription.deleted":
+            cust_id = obj.get("customer") if isinstance(obj, dict) else getattr(obj, "customer", None)
+            if cust_id:
+                await users_col.update_one(
+                    {"stripe_customer_id": cust_id},
+                    {"$set": {"tier": "free", "subscription_interval": None, "subscription_status": "canceled", "tier_expires_at": None}},
+                )
+    except Exception as e:
+        log.exception(f"webhook handler error for {etype}: {e}")
+
     return {"received": True}
 
 
@@ -903,6 +999,7 @@ async def billing_portal(body: PortalIn, user=Depends(current_user)):
         session = _stripe.billing_portal.Session.create(
             customer=cust_id,
             return_url=(body.return_url or f"{_public_web_url()}/profile"),
+            configuration=(_load_stripe_config().get("portal_configuration_id") or None),
         )
         url = session.get("url") if isinstance(session, dict) else getattr(session, "url", None)
         if not url:
