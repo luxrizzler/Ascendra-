@@ -94,7 +94,7 @@ async def main():
             tier="sage",
             subscription_interval="annual",
             tier_expires_at=expires,
-            must_change_password=True,
+            must_change_password=False,
         )
 
     print("\nDone. Admins logging in will be prompted to set a new password.")
