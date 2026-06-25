@@ -1,18 +1,30 @@
 [
   {
-    "content": "Add checkout-success email template + wire into payment confirmation",
+    "content": "Explore backend: webhook handler, email_service, ai_studio, models — understand existing patterns",
     "status": "completed"
   },
   {
-    "content": "Add /admin/email page (preview + send-test)",
+    "content": "Phase 5a: Add `renewal_reminder` HTML email template in email_service.py",
     "status": "completed"
   },
   {
-    "content": "Add /api/billing/portal endpoint + Manage Billing button on Profile",
+    "content": "Phase 5b: Add `invoice.upcoming` Stripe webhook handler in server.py (primary trigger)",
     "status": "completed"
   },
   {
-    "content": "Verified email preview iframe + test send (Resend ID returned)",
+    "content": "Phase 5c: Add daily fallback job: scan active subscriptions, send reminder when next_invoice is exactly 7 days away (idempotent via `last_renewal_reminder_at`)",
     "status": "completed"
+  },
+  {
+    "content": "Phase 5d: Add admin manual-trigger endpoint + email preview support for renewal_reminder template",
+    "status": "completed"
+  },
+  {
+    "content": "Phase 5e: Wire renewal_reminder into AdminEmail.js previewer + add a 'Run renewal reminders now' button",
+    "status": "completed"
+  },
+  {
+    "content": "Phase 5f: Run testing_agent on renewal reminders",
+    "status": "in_progress"
   }
 ]

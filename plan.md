@@ -2,15 +2,23 @@
 
 ## 1. Objectives
 - Deliver Ascendra as a **standalone responsive website**: React (CRA) + FastAPI + MongoDB.
-- Preserve the full product loop from the GitHub repo:
+- Preserve the full product loop:
   - Curriculum (paths → modules → lessons → cards + quiz)
   - Progress (XP, streak, levels)
   - Certificates (auto-issued on path completion)
   - AI Tutor chat (Claude Sonnet 4.5 via `emergentintegrations`)
-  - Pricing/checkout (Stripe sandbox) + tier gating
+  - Pricing/checkout (Stripe **LIVE**, recurring subscriptions + Customer Portal)
   - Admin dashboard (stats/users/sales/traffic)
-- Web-first UX: sticky top nav, responsive grids, accessible lesson player (buttons + swipe), share/print certificates.
+- Web-first UX: sticky nav, responsive grids, accessible lesson player, share/print certificates.
 - Ensure **free users can experience the product**: the intro “AI Fundamentals” path is accessible on the free tier.
+- Production integrations:
+  - Stripe LIVE subscriptions + Customer Portal
+  - Resend transactional emails from verified domain `ascendraacademy.com`
+  - Emergent-managed Google OAuth
+- **Next-phase deliverables (sequential ship)**:
+  1) Renewal reminders (monthly + annual) 7 days before renewal
+  2) “What’s New” (admin + user-facing) surfacing recent AI-generated lessons + Admin Subscribers list
+  - Promo/discount codes: **explicitly out of scope for now**
 
 ---
 
@@ -29,9 +37,9 @@ Goal: validate external integrations + completion→certificate data flow before
 2) **POC smoke tests**
 - Verified with curl:
   - Signup/login/JWT + `/api/auth/me`
-  - `/api/paths` (10 paths) and `/api/models` (22 models)
+  - `/api/paths` (paths) and `/api/models` (models)
   - `/api/progress/complete` updates XP/streak/level
-  - `/api/tutor/chat` returns live Claude 4.5 output
+  - `/api/tutor/chat` returns live Claude output
   - `/api/billing/checkout` returns Stripe hosted checkout URL
 
 **Phase 1 user stories (POC) — COMPLETED ✅**
@@ -53,7 +61,7 @@ Goal: ship a working website covering the main learning + certificate flow.
 
 2) **V1 routes (React Router)**
 - Implemented:
-  - `/` landing (brand hero, mission, models marquee, pillars, symbolism, pricing teaser)
+  - `/` landing
   - `/signup`, `/login`
   - `/dashboard`
   - `/paths`, `/paths/:id`
@@ -66,7 +74,7 @@ Goal: ship a working website covering the main learning + certificate flow.
 - Errors surfaced via toasts; loading/empty states included.
 
 4) **Connect to backend (real data only)**
-- Uses real curriculum from `curriculum.py` (no mocked lessons).
+- Uses real curriculum (migrated to MongoDB in later phase).
 
 5) **Testing**
 - Manual verification + automation screenshots confirmed core flows.
@@ -81,33 +89,40 @@ Goal: ship a working website covering the main learning + certificate flow.
 ---
 
 ### Phase 3 — Feature expansion (production flows) (COMPLETED ✅)
-Goal: bring feature parity with repo beyond the V1 learning loop.
+Goal: bring feature parity beyond the V1 learning loop.
 
 Implemented:
 1) **AI Tutor UI**
-- `/tutor` chat UI with persisted session in localStorage
-- History endpoint support
+- `/tutor` chat UI with persisted session.
 
-2) **Pricing + payments**
-- `/pricing` full tier cards, monthly/annual toggle, $2.99 trial CTA
-- `/checkout-success` polls `/api/billing/status/{session_id}` and refreshes tier
+2) **Pricing + payments (Stripe LIVE, subscriptions)**
+- `/pricing` tier cards, monthly/annual toggle, $2.99 trial CTA.
+- Migrated checkout to **recurring subscriptions** and added **Stripe Customer Portal**.
+- `/checkout-success` polls `/api/billing/status/{session_id}` and refreshes tier.
+- UI auto-renewal disclosure text added.
 
 3) **Onboarding quiz → recommendation**
-- `/onboarding` (4 steps) → `PUT /api/auth/me/quiz` → route to recommended path
+- `/onboarding` → `PUT /api/auth/me/quiz` → recommended path routing.
 
 4) **Profile**
-- `/profile` account info, tier badge, change password, certificates list, subscription summary
+- `/profile` includes billing management (Customer Portal).
 
 5) **Admin UI**
-- `/admin` admin-only route
-- Stats, users list + inline tier editing, sales list, traffic charts
+- `/admin` admin-only route.
+- Stats, users list + inline tier editing, sales list, traffic charts.
+- AI Curriculum Studio (auto-generate courses + cover images).
+- Email template previewer.
+
+6) **Resend production emails (LIVE)**
+- Resend integration live with verified domain `ascendraacademy.com`.
+- Checkout-success email trigger implemented.
 
 **Phase 3 user stories — COMPLETED ✅**
 1. AI Tutor chat persists across reload and supports multi-turn.
 2. Onboarding quiz produces a recommended path.
 3. User can start Stripe checkout and return to success flow.
-4. User can manage password + view certificates.
-5. Admin can view stats/users/sales/traffic.
+4. User can manage password + view certificates + manage billing.
+5. Admin can view stats/users/sales/traffic and use AI Studio.
 
 ---
 
@@ -115,54 +130,89 @@ Implemented:
 Goal: validate end-to-end reliability and improve conversion funnel.
 
 1) **Automated E2E testing**
-- Ran `testing_agent_v3`:
-  - 45/46 tests passed (97.8% overall)
-  - Frontend pass rate: 100%
+- Ran `testing_agent_v3` with 97%+ pass rate across iterations.
 
-2) **Key fix from testing**
+2) **Key conversion fix**
 - Adjusted curriculum tiering so **free users can try lessons**:
-  - Set `AI Fundamentals` path tier from `ascender` → `free`
-  - Kept specialty paths gated (Pathfinder) and founder paths gated (Sage)
-- Verified fresh signup can access `fundamentals` and complete lesson cards → quiz.
+  - Set `AI Fundamentals` path tier from `ascender` → `free`.
 
-3) **Minor polish**
-- Updated HTML metadata (title/description/theme-color) and added a minimal inline favicon.
-
-**Phase 4 user stories — COMPLETED ✅**
-1. New user can experience at least one full path without upgrading (Fundamentals).
-2. Admin dashboard and protected routes validated.
-3. Forgot/reset password validated (dev token flow when Resend not configured).
+3) **UX polish (recent)**
+- Pricing page now **leads with monthly amount**; annual shown as note.
+- Landing pricing teaser visibility fixed:
+  - Moved pricing teaser higher on the home page.
+  - Added fallback tier data so cards render even if `/api/pricing` is slow.
+- Verified via `testing_agent_v3` (100% for this specific fix).
 
 ---
 
 ## 3. Next Actions
-### Immediate (optional)
-1) **Decide the free-to-paid funnel**
-- Keep only Fundamentals free (current), or make the first module of additional paths free.
 
-2) **Stripe production readiness**
-- Add real Stripe keys + webhook secret.
-- Confirm webhook signature handling and tier-expiration policy.
+### Immediate (Planned, sequential)
 
-3) **Email production readiness**
-- Add `RESEND_API_KEY` + verified sender domain.
-- Remove `dev_reset_token` response when in production.
+#### Phase 5 — Renewal reminders (P1) — NOT STARTED
+**Goal:** Send renewal reminder emails **7 days before renewal** for **both monthly and annual** subscriptions.
 
-4) **Hardening**
-- Add rate limiting for `/tutor/chat` and auth endpoints.
-- Lock down CORS origins in production.
+Implementation approach:
+1) **Backend billing logic**
+- Add Stripe `invoice.upcoming` (and/or scheduled job logic) handling to calculate the upcoming renewal date and determine if it is 7 days away.
+- Store “last renewal reminder sent” markers in MongoDB to avoid duplicates.
 
-### Longer-term (optional)
-5) **Google OAuth UI parity**
-- Add a “Continue with Google” button wired to `/api/auth/google` session-token exchange.
+2) **Email sending (Resend)**
+- Add new HTML email template: renewal reminder.
+- Include: plan name, renewal date, amount, manage billing link (Customer Portal), support contact.
+
+3) **Trigger mechanism**
+- Implement a safe, idempotent mechanism:
+  - Webhook-driven where possible, plus a scheduled fallback (cron-like) to query upcoming invoices daily.
+- Ensure resilience to Stripe event retries.
+
+4) **Testing**
+- Add test checklist + run `testing_agent_v3` to validate:
+  - Reminder logic does not spam
+  - Portal link works
+  - Emails send from `noreply@ascendraacademy.com`
+
+
+#### Phase 6 — “What’s New” + Subscribers list (P2) — NOT STARTED
+**Goal:** Increase engagement by surfacing newly AI-generated content and providing admin visibility into subscribers.
+
+1) **What’s New (admin + user-facing)**
+- Backend:
+  - Persist metadata on AI-generated entities (created_by=AI Studio, created_at, published flag).
+  - Create endpoints to fetch “recent AI-generated lessons/paths.”
+- Admin UI:
+  - New section/page (e.g. `/admin/whats-new`) showing recent items with filters.
+- User Dashboard:
+  - Add “New this week” widget showing latest AI-generated lessons/paths with direct deep links.
+
+2) **Subscribers list (admin)**
+- Backend:
+  - Add an endpoint to list subscribers with Stripe subscription status and plan:
+    - active/canceled/past_due
+    - tier, interval, start date, renewal date (where available)
+- Admin UI:
+  - Add a table view: subscriber email, plan, status, next renewal, created date.
+
+3) **Testing**
+- Run `testing_agent_v3` to validate:
+  - Subscriber list loads and is admin-protected
+  - “What’s New” appears on dashboard for regular users
+  - Admin filtering works and doesn’t break existing admin pages
+
+
+### Explicitly out of scope (for now)
+- Discount/promo codes: **skipped per user direction** (no discounts available).
 
 ---
 
 ## 4. Success Criteria
-- ✅ Backend integrations proven: Claude tutor, Stripe checkout URL, certificates.
+- ✅ Backend integrations proven: Claude tutor, Stripe LIVE checkout + subscriptions + Customer Portal, certificates.
 - ✅ Website supports full learning loop end-to-end:
   - Landing → signup/login → onboarding → paths → lesson player → completion → progress update → certificate.
 - ✅ Responsive UI (mobile + desktop) with Celestial Phoenix theme and brand artwork.
-- ✅ Real curriculum from backend (no mocks).
-- ✅ Automated E2E tests pass at high rate; key conversion issue fixed (Fundamentals now free).
-- ✅ Deployed preview available: **https://repo-to-site-2.preview.emergentagent.com**
+- ✅ Real curriculum stored in MongoDB + Admin AI Studio for generation.
+- ✅ Resend emails live on verified custom domain.
+- ✅ Recent bugfix: pricing teaser cards are visible on home page; pricing display leads with monthly.
+- **Next**:
+  - ⬜ Renewal reminders sent 7 days before renewal (monthly + annual) without duplicates.
+  - ⬜ “What’s New” surfaced to users + admin view + admin subscribers list.

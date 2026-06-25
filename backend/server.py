@@ -823,6 +823,117 @@ def _load_stripe_config() -> dict:
         log.warning(f"stripe_config.json load failed: {e}")
     return {}
 
+
+# ─── Renewal Reminder helpers ───────────────────────────────────────────────
+# Triggered by Stripe `invoice.upcoming` webhook (primary) and a daily
+# fallback admin cron endpoint. Idempotent via the `last_renewal_reminder_*`
+# fields on the user document.
+async def _try_send_renewal_reminder(
+    customer_id: Optional[str],
+    subscription_id: Optional[str],
+    amount_usd: float,
+    renewal_unix: Optional[int],
+    source: str = "webhook",
+    user_override: Optional[dict] = None,
+    force: bool = False,
+) -> dict:
+    """Send a renewal-reminder email if not already sent for this renewal cycle.
+    Returns a small dict describing the outcome — never raises.
+    """
+    user = user_override
+    if not user and customer_id:
+        user = await users_col.find_one({"stripe_customer_id": customer_id}, {"_id": 0})
+    if not user:
+        return {"ok": False, "reason": "user_not_found", "customer_id": customer_id}
+    if not user.get("email"):
+        return {"ok": False, "reason": "no_email", "user_id": user.get("id")}
+    # Idempotency: don't re-send for the same renewal cycle
+    renewal_dt = None
+    if renewal_unix:
+        try:
+            renewal_dt = datetime.fromtimestamp(int(renewal_unix), tz=timezone.utc)
+        except Exception:
+            renewal_dt = None
+    if not renewal_dt:
+        renewal_dt = user.get("tier_expires_at")
+    if not renewal_dt:
+        return {"ok": False, "reason": "no_renewal_date", "user_id": user.get("id")}
+    last_for = user.get("last_renewal_reminder_for")
+    if not force and last_for and renewal_dt and abs((last_for - renewal_dt).total_seconds()) < 60:
+        return {"ok": True, "reason": "already_sent", "user_id": user["id"], "skipped": True}
+
+    # Days until renewal
+    days_until = max(0, int(round((renewal_dt - datetime.now(timezone.utc)).total_seconds() / 86400)))
+    # Resolve amount: prefer Stripe-provided amount_due, otherwise look up from TIERS
+    tier = user.get("tier") or "ascender"
+    interval = user.get("subscription_interval") or "monthly"
+    if (not amount_usd or amount_usd < 0.01) and tier in TIERS:
+        amount_usd = float(TIERS[tier]["price_annual"] if interval == "annual" else TIERS[tier]["price_monthly"])
+    portal_url = f"{_public_web_url()}/profile"
+    try:
+        from email_service import send_renewal_reminder
+        r = send_renewal_reminder(
+            to=user["email"], name=user.get("name"),
+            tier=tier, interval=interval,
+            renewal_date_str=renewal_dt.strftime("%B %-d, %Y") if hasattr(renewal_dt, "strftime") else str(renewal_dt),
+            amount_usd=float(amount_usd or 0),
+            portal_url=portal_url,
+            days_until=days_until or 7,
+        )
+    except Exception as e:
+        log.exception(f"renewal reminder send failed for user={user.get('id')}: {e}")
+        return {"ok": False, "reason": "send_exception", "error": str(e)[:160]}
+    if not r.get("ok"):
+        return {"ok": False, "reason": "send_failed", "error": r.get("error")}
+    # Mark sent (idempotency)
+    await users_col.update_one(
+        {"id": user["id"]},
+        {"$set": {
+            "last_renewal_reminder_sent_at": datetime.now(timezone.utc),
+            "last_renewal_reminder_for": renewal_dt,
+            "last_renewal_reminder_source": source,
+        }},
+    )
+    log.info(f"renewal_reminder sent user={user.get('email')} source={source} renews={renewal_dt.isoformat() if hasattr(renewal_dt, 'isoformat') else renewal_dt}")
+    return {"ok": True, "user_id": user["id"], "email": user["email"], "renewal_at": renewal_dt.isoformat() if hasattr(renewal_dt, "isoformat") else str(renewal_dt)}
+
+
+async def _scan_and_send_renewal_reminders(window_days_min: float = 6.5, window_days_max: float = 7.5) -> dict:
+    """Scan users with an active subscription whose renewal is ~7 days away
+    (within the configurable window) and send the reminder email.
+    Idempotent via _try_send_renewal_reminder. Returns a summary dict."""
+    now = datetime.now(timezone.utc)
+    window_start = now + timedelta(days=window_days_min)
+    window_end = now + timedelta(days=window_days_max)
+    cur = users_col.find({
+        "subscription_status": "active",
+        "tier": {"$in": ["ascender", "pathfinder", "sage"]},
+        "tier_expires_at": {"$gte": window_start, "$lte": window_end},
+        "subscription_interval": {"$in": ["monthly", "annual"]},
+    }, {"_id": 0})
+    candidates = await cur.to_list(1000)
+    sent, skipped, failed = [], [], []
+    for u in candidates:
+        result = await _try_send_renewal_reminder(
+            customer_id=u.get("stripe_customer_id"),
+            subscription_id=u.get("stripe_subscription_id"),
+            amount_usd=0.0,  # let helper resolve from TIERS
+            renewal_unix=None,
+            source="cron",
+            user_override=u,
+        )
+        if result.get("ok") and not result.get("skipped"):
+            sent.append({"user_id": u["id"], "email": u["email"]})
+        elif result.get("ok") and result.get("skipped"):
+            skipped.append({"user_id": u["id"], "email": u["email"], "reason": "already_sent"})
+        else:
+            failed.append({"user_id": u.get("id"), "email": u.get("email"), "reason": result.get("reason")})
+    return {
+        "scanned": len(candidates), "sent": len(sent), "skipped": len(skipped), "failed": len(failed),
+        "details": {"sent": sent, "skipped": skipped, "failed": failed},
+        "window": [window_start.isoformat(), window_end.isoformat()],
+    }
+
 @api.get("/billing/status/{session_id}")
 async def checkout_status(session_id: str, request: Request, user=Depends(current_user)):
     rec = await sessions_col.find_one({"session_id": session_id, "user_id": user["id"]}, {"_id": 0})
@@ -971,6 +1082,21 @@ async def stripe_webhook(request: Request, stripe_signature: Optional[str] = Hea
                     {"stripe_customer_id": cust_id},
                     {"$set": {"tier": "free", "subscription_interval": None, "subscription_status": "canceled", "tier_expires_at": None}},
                 )
+
+        elif etype == "invoice.upcoming":
+            # Stripe fires this ~7 days before the next renewal (configurable in dashboard).
+            # We use it as the primary renewal-reminder trigger.
+            cust_id = obj.get("customer") if isinstance(obj, dict) else getattr(obj, "customer", None)
+            sub_id = obj.get("subscription") if isinstance(obj, dict) else getattr(obj, "subscription", None)
+            amount_due = obj.get("amount_due") if isinstance(obj, dict) else getattr(obj, "amount_due", 0)
+            period_end_ts = obj.get("period_end") if isinstance(obj, dict) else getattr(obj, "period_end", None)
+            await _try_send_renewal_reminder(
+                customer_id=cust_id,
+                subscription_id=sub_id,
+                amount_usd=(int(amount_due or 0) / 100.0),
+                renewal_unix=int(period_end_ts) if period_end_ts else None,
+                source="webhook",
+            )
     except Exception as e:
         log.exception(f"webhook handler error for {etype}: {e}")
 
@@ -1020,7 +1146,7 @@ async def billing_portal(body: PortalIn, user=Depends(current_user)):
 
 # ─── Admin email preview & test send ────────────────────────────────────────
 class EmailTestIn(BaseModel):
-    template: Literal["password_reset", "checkout_success", "invite"]
+    template: Literal["password_reset", "checkout_success", "invite", "renewal_reminder"]
     to: Optional[EmailStr] = None  # if not provided, sends to the admin
 
 
@@ -1075,6 +1201,25 @@ async def admin_email_preview(template: str, admin=Depends(require_admin)):
           <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:14px 0 22px 0;"><tr><td bgcolor="#FFB000" style="border-radius:12px;"><a href="{login_url}" style="display:inline-block;padding:14px 26px;color:#000000;font-weight:800;font-size:15px;text-decoration:none;border-radius:12px;">Sign in to Ascendra →</a></td></tr></table>
         """
         return {"subject": subject, "html": _shell(subject, preheader, body_html)}
+    elif template == "renewal_reminder":
+        portal_url = f"{_public_web_url()}/profile"
+        renewal_date_str = (datetime.now(timezone.utc) + timedelta(days=7)).strftime("%B %-d, %Y")
+        subject = "Heads up — your Ascendra PATHFINDER renews in 7 days"
+        preheader = "Renewal in 7 days · $19.99 monthly"
+        body_html = f"""
+          <h1 style="margin:0 0 6px 0;color:#FFFFFF;font-size:28px;line-height:34px;letter-spacing:-0.5px;font-weight:900;">Your plan renews in 7 days</h1>
+          <p style="margin:0 0 18px 0;color:#B8B8C2;font-size:15px;line-height:22px;">Hey {name} — quick heads up that your Ascendra <strong style="color:#FFB000;">PATHFINDER</strong> plan will automatically renew on <strong style="color:#EDEDED;">{renewal_date_str}</strong>. No action needed if you'd like to keep climbing.</p>
+          <div style="margin:18px 0;padding:18px;background:#0d0d12;border:1px solid #26262E;border-radius:12px;">
+            <div style="color:#7a7a85;font-size:11px;letter-spacing:1.5px;font-weight:700;">UPCOMING CHARGE</div>
+            <div style="margin-top:10px;color:#EDEDED;font-size:14px;"><span style="color:#7a7a85;">Plan:</span> <strong>Ascendra PATHFINDER</strong></div>
+            <div style="margin-top:6px;color:#EDEDED;font-size:14px;"><span style="color:#7a7a85;">Billing:</span> monthly</div>
+            <div style="margin-top:6px;color:#EDEDED;font-size:14px;"><span style="color:#7a7a85;">Amount:</span> <strong style="color:#FFB000;">$19.99 USD</strong></div>
+            <div style="margin-top:6px;color:#EDEDED;font-size:14px;"><span style="color:#7a7a85;">Charges on:</span> {renewal_date_str}</div>
+          </div>
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:14px 0 22px 0;"><tr><td bgcolor="#FFB000" style="border-radius:12px;"><a href="{portal_url}" style="display:inline-block;padding:14px 26px;color:#000000;font-weight:800;font-size:15px;text-decoration:none;border-radius:12px;">Manage billing →</a></td></tr></table>
+          <p style="margin:18px 0 0 0;color:#7a7a85;font-size:12px;line-height:18px;">If you cancel before {renewal_date_str}, you keep your PATHFINDER access until that date — and you won't be charged again.</p>
+        """
+        return {"subject": subject, "html": _shell(subject, preheader, body_html)}
     raise HTTPException(404, "Unknown template")
 
 
@@ -1099,6 +1244,17 @@ async def admin_email_test_send(body: EmailTestIn, admin=Depends(require_admin))
                              temp_password="preview_temp_pass",
                              login_url=f"{_public_web_url()}/login",
                              invited_by="Ascendra Studio", tier="sage")
+        elif body.template == "renewal_reminder":
+            from email_service import send_renewal_reminder
+            renewal_date = datetime.now(timezone.utc) + timedelta(days=7)
+            r = send_renewal_reminder(
+                to=target, name=admin.get("name"),
+                tier="pathfinder", interval="monthly",
+                renewal_date_str=renewal_date.strftime("%B %-d, %Y"),
+                amount_usd=19.99,
+                portal_url=f"{_public_web_url()}/profile",
+                days_until=7,
+            )
         else:
             raise HTTPException(400, "Unknown template")
     except HTTPException:
@@ -1109,6 +1265,41 @@ async def admin_email_test_send(body: EmailTestIn, admin=Depends(require_admin))
     if not r.get("ok"):
         raise HTTPException(503, r.get("error", "Send failed"))
     return {"ok": True, "to": target, "template": body.template, "id": r.get("id"), "dry_run": r.get("dry_run", False)}
+
+
+# ─── Renewal-Reminder admin endpoints ───────────────────────────────────────
+class RenewalReminderSendIn(BaseModel):
+    user_id: str
+    force: bool = False  # bypass idempotency check (for manual re-send)
+
+
+@api.post("/admin/billing/renewal-reminders/run")
+async def admin_run_renewal_reminders(_admin=Depends(require_admin),
+                                       min_days: float = 6.5, max_days: float = 7.5):
+    """Daily/manual fallback. Scans active subs whose renewal is min_days..max_days
+    away and sends the reminder email (idempotent)."""
+    summary = await _scan_and_send_renewal_reminders(window_days_min=min_days, window_days_max=max_days)
+    return summary
+
+
+@api.post("/admin/billing/renewal-reminders/send")
+async def admin_send_renewal_reminder_for_user(body: RenewalReminderSendIn, _admin=Depends(require_admin)):
+    """Manually send a renewal-reminder email for a specific user (for testing)."""
+    u = await users_col.find_one({"id": body.user_id}, {"_id": 0})
+    if not u:
+        raise HTTPException(404, "User not found")
+    result = await _try_send_renewal_reminder(
+        customer_id=u.get("stripe_customer_id"),
+        subscription_id=u.get("stripe_subscription_id"),
+        amount_usd=0.0,
+        renewal_unix=None,
+        source="admin_manual",
+        user_override=u,
+        force=body.force,
+    )
+    if not result.get("ok"):
+        raise HTTPException(400, result.get("reason", "Could not send reminder") + (f": {result.get('error','')}" if result.get('error') else ""))
+    return result
 
 
 # ─── Health ─────────────────────────────────────────────────────────────────

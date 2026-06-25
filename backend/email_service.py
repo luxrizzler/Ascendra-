@@ -236,6 +236,86 @@ def send_checkout_success(to: str, name: Optional[str], tier: str, interval: str
 
 
 
+def send_renewal_reminder(
+    to: str,
+    name: Optional[str],
+    tier: str,
+    interval: str,           # "monthly" | "annual"
+    renewal_date_str: str,   # e.g. "January 8, 2026"
+    amount_usd: float,
+    portal_url: str,
+    days_until: int = 7,
+) -> dict:
+    """Renewal reminder, sent ~7 days before next Stripe invoice charges."""
+    display = name or to.split("@")[0]
+    tier_upper = (tier or "ascender").upper()
+    cycle = "yearly" if interval == "annual" else "monthly"
+    subject = f"Heads up — your Ascendra {tier_upper} renews in {days_until} days"
+    preheader = f"Renewal in {days_until} days · ${amount_usd:.2f} {cycle}"
+
+    body_html = f"""
+      <h1 style="margin:0 0 6px 0;color:#FFFFFF;font-size:28px;line-height:34px;letter-spacing:-0.5px;font-weight:900;">
+        Your plan renews in {days_until} days
+      </h1>
+      <p style="margin:0 0 18px 0;color:#B8B8C2;font-size:15px;line-height:22px;">
+        Hey {display} — quick heads up that your Ascendra
+        <strong style="color:#FFB000;">{tier_upper}</strong> plan will automatically
+        renew on <strong style="color:#EDEDED;">{renewal_date_str}</strong>. No action
+        needed if you'd like to keep climbing.
+      </p>
+
+      <div style="margin:18px 0;padding:18px;background:#0d0d12;border:1px solid #26262E;border-radius:12px;">
+        <div style="color:#7a7a85;font-size:11px;letter-spacing:1.5px;font-weight:700;">UPCOMING CHARGE</div>
+        <div style="margin-top:10px;color:#EDEDED;font-size:14px;">
+          <span style="color:#7a7a85;">Plan:</span> <strong>Ascendra {tier_upper}</strong>
+        </div>
+        <div style="margin-top:6px;color:#EDEDED;font-size:14px;">
+          <span style="color:#7a7a85;">Billing:</span> {cycle}
+        </div>
+        <div style="margin-top:6px;color:#EDEDED;font-size:14px;">
+          <span style="color:#7a7a85;">Amount:</span>
+          <strong style="color:#FFB000;">${amount_usd:.2f} USD</strong>
+        </div>
+        <div style="margin-top:6px;color:#EDEDED;font-size:14px;">
+          <span style="color:#7a7a85;">Charges on:</span> {renewal_date_str}
+        </div>
+      </div>
+
+      <p style="margin:0 0 12px 0;color:#B8B8C2;font-size:14px;line-height:21px;">
+        Want to update your card, change plan, or cancel? You can do all of that
+        in one click from the billing portal:
+      </p>
+
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:14px 0 22px 0;">
+        <tr>
+          <td bgcolor="#FFB000" style="border-radius:12px;">
+            <a href="{portal_url}"
+               style="display:inline-block;padding:14px 26px;color:#000000;font-weight:800;font-size:15px;text-decoration:none;border-radius:12px;">
+              Manage billing →
+            </a>
+          </td>
+        </tr>
+      </table>
+
+      <p style="margin:18px 0 0 0;color:#7a7a85;font-size:12px;line-height:18px;">
+        If you cancel before {renewal_date_str}, you keep your {tier_upper} access until
+        that date — and you won't be charged again. Reply to this email if you need a hand.
+      </p>
+    """
+    text = (
+        f"Hey {display},\n\n"
+        f"Heads up — your Ascendra {tier_upper} plan will automatically renew on {renewal_date_str}.\n\n"
+        f"Plan:        Ascendra {tier_upper}\n"
+        f"Billing:     {cycle}\n"
+        f"Amount:      ${amount_usd:.2f} USD\n"
+        f"Charges on:  {renewal_date_str}\n\n"
+        f"Want to update your card, change plan, or cancel? Manage billing here:\n{portal_url}\n\n"
+        f"If you cancel before {renewal_date_str}, you keep {tier_upper} access until that date "
+        f"and you won't be charged again."
+    )
+    return _send(to, subject, _shell(subject, preheader, body_html), text)
+
+
 def send_invite(to: str, name: Optional[str], temp_password: str, login_url: str,
                   invited_by: Optional[str] = None, tier: str = "sage") -> dict:
     """Welcome / invite email with one-time temp password."""

@@ -3,13 +3,14 @@ import { useNavigate } from "react-router-dom";
 import { api } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import Loader from "@/components/Loader";
-import { ArrowLeft, Mail, Send, KeyRound, CreditCard, UserPlus, RefreshCw } from "lucide-react";
+import { ArrowLeft, Mail, Send, KeyRound, CreditCard, UserPlus, RefreshCw, BellRing, Zap } from "lucide-react";
 import { toast } from "sonner";
 
 const TEMPLATES = [
   { id: "password_reset", title: "Password Reset", icon: KeyRound, body: "Sent when a user requests to reset their password." },
   { id: "checkout_success", title: "Checkout Success", icon: CreditCard, body: "Sent automatically when a Stripe payment is confirmed." },
   { id: "invite", title: "Invite (Temp Password)", icon: UserPlus, body: "Sent when an admin creates an account with a temporary password." },
+  { id: "renewal_reminder", title: "Renewal Reminder", icon: BellRing, body: "Sent 7 days before a monthly or annual subscription auto-renews." },
 ];
 
 export default function AdminEmail() {
@@ -50,6 +51,19 @@ export default function AdminEmail() {
       toast.error(e.message || "Send failed");
     } finally {
       setSending(false);
+    }
+  };
+
+  const [running, setRunning] = useState(false);
+  const runRenewalScan = async () => {
+    setRunning(true);
+    try {
+      const r = await api.post("/admin/billing/renewal-reminders/run", {});
+      toast.success(`Scanned ${r.scanned} · sent ${r.sent} · skipped ${r.skipped} · failed ${r.failed}`);
+    } catch (e) {
+      toast.error(e.message || "Scan failed");
+    } finally {
+      setRunning(false);
     }
   };
 
@@ -101,6 +115,11 @@ export default function AdminEmail() {
                 </div>
               </div>
               <div className="flex items-center gap-2 flex-wrap">
+                {active === "renewal_reminder" && (
+                  <button onClick={runRenewalScan} disabled={running} className="asc-btn-secondary text-xs" data-testid="email-run-renewal-scan-btn" title="Scan all active subscriptions and send reminders to anyone renewing in 6.5–7.5 days. Idempotent.">
+                    <Zap size={12} /> {running ? "Scanning…" : "Run renewal scan"}
+                  </button>
+                )}
                 <input
                   className="asc-input text-sm"
                   placeholder={user?.email}

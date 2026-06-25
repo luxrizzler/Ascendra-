@@ -624,6 +624,180 @@ class AscendraAPITester:
                 else:
                     self.log(f"   ⚠️  WARNING: Unexpected URL format: {cover_url}")
         
+        # 28. PHASE 5: Email Templates - Renewal Reminder
+        if self.admin_token:
+            self.log("\n📋 SECTION 21: PHASE 5 - RENEWAL REMINDER EMAIL")
+            
+            # Test preview endpoint (admin auth required)
+            success, resp = self.test(
+                "Admin email preview - renewal_reminder",
+                "GET",
+                "/admin/email/preview/renewal_reminder",
+                200,
+                token=self.admin_token
+            )
+            if success:
+                if 'subject' in resp and 'html' in resp:
+                    self.log(f"   ✓ Subject: {resp['subject'][:60]}...")
+                    html_len = len(resp.get('html', ''))
+                    self.log(f"   ✓ HTML body: {html_len} chars")
+                    if html_len < 500:
+                        self.log(f"   ⚠️  WARNING: HTML body too short ({html_len} < 500)")
+                else:
+                    self.log("   ⚠️  WARNING: Missing subject or html in response")
+            
+            # Test preview without admin auth (should 401)
+            success, resp = self.test(
+                "Email preview without admin auth (should 401)",
+                "GET",
+                "/admin/email/preview/renewal_reminder",
+                401,
+                token=self.token  # regular user token
+            )
+            if success:
+                self.log("   ✓ Auth gating working correctly")
+            
+            # Test send test email
+            success, resp = self.test(
+                "Admin email test-send - renewal_reminder",
+                "POST",
+                "/admin/email/test-send",
+                200,
+                data={"template": "renewal_reminder", "to": "test@example.com"},
+                token=self.admin_token
+            )
+            if success:
+                if resp.get('ok'):
+                    self.log(f"   ✓ Test email sent to: {resp.get('to', 'N/A')}")
+                    if resp.get('dry_run'):
+                        self.log("   ℹ️  Dry-run mode (no RESEND_API_KEY)")
+                    else:
+                        self.log(f"   ✓ Email ID: {resp.get('id', 'N/A')[:20]}...")
+                else:
+                    self.log("   ⚠️  WARNING: ok=false in response")
+            
+            # Test send without admin auth (should 401)
+            success, resp = self.test(
+                "Email test-send without admin auth (should 401)",
+                "POST",
+                "/admin/email/test-send",
+                401,
+                data={"template": "renewal_reminder"},
+                token=self.token  # regular user token
+            )
+            if success:
+                self.log("   ✓ Auth gating working correctly")
+        
+        # 29. PHASE 5: Renewal Reminders - Scan & Send
+        if self.admin_token:
+            self.log("\n📋 SECTION 22: PHASE 5 - RENEWAL REMINDER SCAN & SEND")
+            
+            # Test scan endpoint (admin auth required)
+            success, resp = self.test(
+                "Admin renewal-reminders/run",
+                "POST",
+                "/admin/billing/renewal-reminders/run",
+                200,
+                data={},
+                token=self.admin_token
+            )
+            if success:
+                scanned = resp.get('scanned', 0)
+                sent = resp.get('sent', 0)
+                skipped = resp.get('skipped', 0)
+                failed = resp.get('failed', 0)
+                self.log(f"   ✓ Scanned: {scanned}, Sent: {sent}, Skipped: {skipped}, Failed: {failed}")
+                if 'window' in resp:
+                    self.log(f"   ✓ Window: {resp['window']}")
+                if 'details' in resp:
+                    self.log("   ✓ Details field present")
+                # Note: seeded users don't have active subscriptions, so scanned=0 is expected
+                if scanned == 0:
+                    self.log("   ℹ️  No candidates found (expected - seeded users don't have active subs)")
+            
+            # Test scan without admin auth (should 401)
+            success, resp = self.test(
+                "Renewal-reminders/run without admin auth (should 401)",
+                "POST",
+                "/admin/billing/renewal-reminders/run",
+                401,
+                data={},
+                token=self.token  # regular user token
+            )
+            if success:
+                self.log("   ✓ Auth gating working correctly")
+            
+            # Test idempotency - run scan again (should send 0 if there were candidates)
+            success, resp = self.test(
+                "Admin renewal-reminders/run (2nd time - idempotency)",
+                "POST",
+                "/admin/billing/renewal-reminders/run",
+                200,
+                data={},
+                token=self.admin_token
+            )
+            if success:
+                scanned2 = resp.get('scanned', 0)
+                sent2 = resp.get('sent', 0)
+                skipped2 = resp.get('skipped', 0)
+                self.log(f"   ✓ 2nd run: Scanned: {scanned2}, Sent: {sent2}, Skipped: {skipped2}")
+                if scanned2 == 0:
+                    self.log("   ℹ️  Still no candidates (expected)")
+                elif sent2 == 0 and skipped2 > 0:
+                    self.log("   ✓ Idempotency working - skipped previously sent reminders")
+            
+            # Test manual send for specific user (should 404 for non-existent user)
+            success, resp = self.test(
+                "Admin renewal-reminders/send (non-existent user - should 404)",
+                "POST",
+                "/admin/billing/renewal-reminders/send",
+                404,
+                data={"user_id": "non-existent-user-id-12345"},
+                token=self.admin_token
+            )
+            if success:
+                self.log("   ✓ Returns 404 for non-existent user")
+            
+            # Test manual send without admin auth (should 401)
+            success, resp = self.test(
+                "Renewal-reminders/send without admin auth (should 401)",
+                "POST",
+                "/admin/billing/renewal-reminders/send",
+                401,
+                data={"user_id": "some-user-id"},
+                token=self.token  # regular user token
+            )
+            if success:
+                self.log("   ✓ Auth gating working correctly")
+        
+        # 30. PHASE 5: Stripe Webhook - invoice.upcoming
+        self.log("\n📋 SECTION 23: PHASE 5 - STRIPE WEBHOOK (invoice.upcoming)")
+        
+        # Test webhook with invoice.upcoming event (no auth required for webhooks)
+        webhook_payload = {
+            "type": "invoice.upcoming",
+            "data": {
+                "object": {
+                    "customer": "cus_test_non_existent_12345",
+                    "subscription": "sub_test_12345",
+                    "amount_due": 1999,
+                    "period_end": int(time.time()) + (7 * 86400)  # 7 days from now
+                }
+            }
+        }
+        success, resp = self.test(
+            "Stripe webhook - invoice.upcoming (non-existent customer)",
+            "POST",
+            "/billing/webhook",
+            200,
+            data=webhook_payload
+        )
+        if success:
+            if resp.get('received'):
+                self.log("   ✓ Webhook received without crash (graceful no-op for non-existent customer)")
+            else:
+                self.log("   ⚠️  WARNING: Expected {received: true} in response")
+        
         # Summary
         self.log("\n" + "=" * 60)
         self.log("TEST SUMMARY")
