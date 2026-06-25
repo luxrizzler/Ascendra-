@@ -4,31 +4,7 @@
     "status": "completed"
   },
   {
-    "content": "Phase 6a: Backend — tag AI-generated paths/lessons with source='ai-studio' + generated_at timestamp",
+    "content": "Phase 6: What's New + Subscribers — COMPLETE (98% test pass)",
     "status": "completed"
-  },
-  {
-    "content": "Phase 6b: Backend — GET /api/admin/whats-new and GET /api/whats-new (user) endpoints",
-    "status": "completed"
-  },
-  {
-    "content": "Phase 6c: Backend — GET /api/admin/subscribers endpoint (active subs list with plan, interval, status, renewal date)",
-    "status": "completed"
-  },
-  {
-    "content": "Phase 6d: Frontend — /admin/whats-new page (admin) + /admin/subscribers page",
-    "status": "completed"
-  },
-  {
-    "content": "Phase 6e: Frontend — Dashboard 'New this week' widget surfacing recent AI lessons to users",
-    "status": "completed"
-  },
-  {
-    "content": "Phase 6f: Link new pages from /admin index and wire routes",
-    "status": "completed"
-  },
-  {
-    "content": "Phase 6g: Run testing_agent on what's-new + subscribers",
-    "status": "in_progress"
   }
 ]

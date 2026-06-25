@@ -15,10 +15,10 @@
   - Stripe LIVE subscriptions + Customer Portal
   - Resend transactional emails from verified domain `ascendraacademy.com`
   - Emergent-managed Google OAuth
-- **Next-phase deliverables (sequential ship)**:
+- **Next-phase deliverables (sequential ship)** — COMPLETED ✅:
   1) Renewal reminders (monthly + annual) 7 days before renewal
   2) “What’s New” (admin + user-facing) surfacing recent AI-generated lessons + Admin Subscribers list
-  - Promo/discount codes: **explicitly out of scope for now**
+  - Promo/discount codes: **explicitly out of scope for now** (per user: “no discount available”)
 
 ---
 
@@ -141,7 +141,7 @@ Goal: validate end-to-end reliability and improve conversion funnel.
 - Landing pricing teaser visibility fixed:
   - Moved pricing teaser higher on the home page.
   - Added fallback tier data so cards render even if `/api/pricing` is slow.
-- Verified via `testing_agent_v3` (100% for this specific fix).
+- Verified via `testing_agent_v3` (100% for the teaser visibility fix).
 
 ---
 
@@ -149,55 +149,76 @@ Goal: validate end-to-end reliability and improve conversion funnel.
 
 ### Immediate (Planned, sequential)
 
-#### Phase 5 — Renewal reminders (P1) — NOT STARTED
+#### Phase 5 — Renewal reminders (P1) — COMPLETED ✅
 **Goal:** Send renewal reminder emails **7 days before renewal** for **both monthly and annual** subscriptions.
 
-Implementation approach:
-1) **Backend billing logic**
-- Add Stripe `invoice.upcoming` (and/or scheduled job logic) handling to calculate the upcoming renewal date and determine if it is 7 days away.
-- Store “last renewal reminder sent” markers in MongoDB to avoid duplicates.
+Implementation delivered:
+1) **Backend billing logic (webhook + idempotency)**
+- Added Stripe `invoice.upcoming` handling in `/api/billing/webhook`.
+- Added helper `_try_send_renewal_reminder` with idempotency fields on user:
+  - `last_renewal_reminder_sent_at`
+  - `last_renewal_reminder_for`
+  - `last_renewal_reminder_source`
 
-2) **Email sending (Resend)**
-- Add new HTML email template: renewal reminder.
-- Include: plan name, renewal date, amount, manage billing link (Customer Portal), support contact.
+2) **Fallback trigger (cron-like) + manual trigger**
+- Added admin endpoint to scan upcoming renewals and send reminders:
+  - `POST /api/admin/billing/renewal-reminders/run` (window defaults ~6.5–7.5 days)
+- Added admin per-user manual send:
+  - `POST /api/admin/billing/renewal-reminders/send` (supports `force=true`)
 
-3) **Trigger mechanism**
-- Implement a safe, idempotent mechanism:
-  - Webhook-driven where possible, plus a scheduled fallback (cron-like) to query upcoming invoices daily.
-- Ensure resilience to Stripe event retries.
+3) **Email templates (Resend)**
+- Added `send_renewal_reminder()` template in `email_service.py`.
+- Added admin preview + test-send support:
+  - `GET /api/admin/email/preview/renewal_reminder`
+  - `POST /api/admin/email/test-send` with `template=renewal_reminder`
+- Admin Email UI includes:
+  - “Renewal Reminder” template tab
+  - “Run renewal scan” button visible only on that tab
 
 4) **Testing**
-- Add test checklist + run `testing_agent_v3` to validate:
-  - Reminder logic does not spam
-  - Portal link works
-  - Emails send from `noreply@ascendraacademy.com`
+- Verified with `testing_agent_v3`:
+  - **95% pass** overall; remaining misses were non-critical (401 vs 403 expectations + pre-existing sage login issue).
+
+**Operational note (LIVE Stripe)**
+- For best real-world behavior, enable the **`invoice.upcoming`** event in Stripe Dashboard webhook settings.
+- If it’s not enabled, the fallback scan endpoint + manual send cover the gap.
 
 
-#### Phase 6 — “What’s New” + Subscribers list (P2) — NOT STARTED
+#### Phase 6 — “What’s New” + Subscribers list (P2) — COMPLETED ✅
 **Goal:** Increase engagement by surfacing newly AI-generated content and providing admin visibility into subscribers.
 
-1) **What’s New (admin + user-facing)**
-- Backend:
-  - Persist metadata on AI-generated entities (created_by=AI Studio, created_at, published flag).
-  - Create endpoints to fetch “recent AI-generated lessons/paths.”
-- Admin UI:
-  - New section/page (e.g. `/admin/whats-new`) showing recent items with filters.
-- User Dashboard:
-  - Add “New this week” widget showing latest AI-generated lessons/paths with direct deep links.
+Implementation delivered:
+1) **AI-generated content metadata**
+- Tagged AI Studio output:
+  - Paths: `source="ai-studio"`
+  - Lessons: `source="ai-studio"`, `created_at` stored in MongoDB
 
-2) **Subscribers list (admin)**
-- Backend:
-  - Add an endpoint to list subscribers with Stripe subscription status and plan:
-    - active/canceled/past_due
-    - tier, interval, start date, renewal date (where available)
-- Admin UI:
-  - Add a table view: subscriber email, plan, status, next renewal, created date.
+2) **What’s New endpoints**
+- User-facing:
+  - `GET /api/whats-new?days=14&limit=12`
+- Admin:
+  - `GET /api/admin/whats-new?days=30&limit=100`
+- Server flattens recent AI-generated paths + lessons into a timeline.
 
-3) **Testing**
-- Run `testing_agent_v3` to validate:
-  - Subscriber list loads and is admin-protected
-  - “What’s New” appears on dashboard for regular users
-  - Admin filtering works and doesn’t break existing admin pages
+3) **What’s New UI (admin + user-facing)**
+- Admin page:
+  - `/admin/whats-new` with window filters (7/30/90/all) and type filters (all/path/lesson)
+- User dashboard:
+  - “New this week” widget (conditionally shown when items exist)
+
+4) **Subscribers list (admin)**
+- Endpoint:
+  - `GET /api/admin/subscribers?include_canceled=true|false`
+- UI:
+  - `/admin/subscribers` table + summary cards
+  - CSV export
+  - Per-user “Renewal email” action (calls Phase 5 manual reminder endpoint)
+- Includes estimated MRR/ARR (annual normalized to monthly) using TIERS.
+
+5) **Testing**
+- Verified with `testing_agent_v3`:
+  - **98% overall**; 2 backend misses were non-Phase-6 issues (pre-existing sage login + one AI path gen test parameter mismatch).
+  - One real backend bug was fixed during testing: timezone normalization for `tier_expires_at` in `/admin/subscribers`.
 
 
 ### Explicitly out of scope (for now)
@@ -212,7 +233,12 @@ Implementation approach:
 - ✅ Responsive UI (mobile + desktop) with Celestial Phoenix theme and brand artwork.
 - ✅ Real curriculum stored in MongoDB + Admin AI Studio for generation.
 - ✅ Resend emails live on verified custom domain.
-- ✅ Recent bugfix: pricing teaser cards are visible on home page; pricing display leads with monthly.
-- **Next**:
-  - ⬜ Renewal reminders sent 7 days before renewal (monthly + annual) without duplicates.
-  - ⬜ “What’s New” surfaced to users + admin view + admin subscribers list.
+- ✅ Pricing UX improvements shipped:
+  - Pricing page leads with monthly.
+  - Landing pricing teaser is visible and resilient.
+- ✅ Renewal reminders shipped (monthly + annual) with webhook + cron fallback + admin manual tools.
+- ✅ “What’s New” shipped (admin page + dashboard widget) and AI content tagging implemented.
+- ✅ Admin Subscribers list shipped (table + MRR/ARR + CSV export + per-user renewal email action).
+
+**Remaining operator setup (recommended):**
+- ⬜ Enable Stripe webhook event: **`invoice.upcoming`** to ensure reminders fire automatically 7 days before renewals.
