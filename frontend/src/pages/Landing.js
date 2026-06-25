@@ -129,6 +129,7 @@ export default function Landing() {
                 <span className="text-4xl font-black">${t.price_monthly}</span>
                 <span className="text-[var(--asc-text-dim)] text-sm pb-2">/mo</span>
               </div>
+              <div className="text-xs text-[var(--asc-text-muted)] mt-0.5">or ${t.price_annual}/yr</div>
               <p className="text-[var(--asc-text-dim)] text-sm mt-2">{t.blurb}</p>
               <ul className="mt-5 space-y-2">
                 {t.features.slice(0, 5).map((f, i) => (

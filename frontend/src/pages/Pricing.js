@@ -66,10 +66,20 @@ export default function Pricing() {
 
               <div className="asc-h2 text-2xl">{t.name}</div>
               <div className="flex items-end gap-1 mt-2">
-                <span className="text-5xl font-black">${price}</span>
-                <span className="text-[var(--asc-text-dim)] text-sm pb-2">/ {interval === "annual" ? "yr" : "mo"}</span>
+                <span className="text-5xl font-black" data-testid={`pricing-amount-${t.id}`}>
+                  ${interval === "annual" ? monthEq : price}
+                </span>
+                <span className="text-[var(--asc-text-dim)] text-sm pb-2">/ mo</span>
               </div>
-              {monthEq && <div className="text-xs text-[var(--asc-success)] font-bold">That's ${monthEq}/mo — 2 months free</div>}
+              {interval === "annual" ? (
+                <div className="text-xs text-[var(--asc-success)] font-bold" data-testid={`pricing-annual-note-${t.id}`}>
+                  Billed annually (${t.price_annual}/yr) — 2 months free
+                </div>
+              ) : (
+                <div className="text-xs text-[var(--asc-text-muted)]" data-testid={`pricing-monthly-note-${t.id}`}>
+                  or ${t.price_annual}/yr — save 17%
+                </div>
+              )}
               <p className="text-[var(--asc-text-dim)] text-sm mt-2">{t.blurb}</p>
               <ul className="mt-5 space-y-2">
                 {t.features.map((f, i) => (
