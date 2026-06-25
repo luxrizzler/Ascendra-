@@ -21,12 +21,32 @@ const SYMBOLISM = [
 
 const MODELS = ["GPT-5.2", "Claude 4.5", "Gemini 3", "Nano Banana", "Sora 2", "ElevenLabs", "Perplexity", "Midjourney", "Veo 3", "Whisper", "Cursor", "Suno"];
 
+// Fallback tiers so the teaser section always renders, even if /pricing is slow or fails.
+const FALLBACK_TIERS = [
+  {
+    id: "ascender", name: "Ascender", price_monthly: 9.99, price_annual: 99.0,
+    blurb: "Start your ascent. The essentials.",
+    features: ["AI Fundamentals path (8 lessons)", "Unlimited AI Tutor (Claude 4.5)", "Browse all 22 AI models", "Daily streak + XP tracking"],
+  },
+  {
+    id: "pathfinder", name: "Pathfinder", price_monthly: 19.99, price_annual: 199.0,
+    blurb: "For serious learners forging the way.",
+    features: ["Everything in Ascender, plus:", "7 additional paths", "Pro: Prompt Engineering Mastery", "Pro: AI Automation Stack", "XP + leaderboards"],
+    highlight: true,
+  },
+  {
+    id: "sage", name: "Sage", price_monthly: 29.99, price_annual: 299.0,
+    blurb: "Master the craft. Build the business.",
+    features: ["Everything in Pathfinder, plus:", "Sage: AI-First Startup Playbook", "Sage: AI Sales & Marketing Engine", "Real founder case studies", "Lifetime price lock"],
+  },
+];
+
 export default function Landing() {
   const nav = useNavigate();
-  const [tiers, setTiers] = useState([]);
+  const [tiers, setTiers] = useState(FALLBACK_TIERS);
 
   useEffect(() => {
-    api.get("/pricing").then((r) => setTiers(r.tiers)).catch(() => {});
+    api.get("/pricing").then((r) => { if (r?.tiers?.length) setTiers(r.tiers); }).catch(() => {});
   }, []);
 
   return (
@@ -100,24 +120,9 @@ export default function Landing() {
         </div>
       </Section>
 
-      {/* SYMBOLISM */}
-      <Section kicker="The name means" title="Rise. Light. Transformation. Guidance.">
-        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
-          {SYMBOLISM.map(({ icon: Icon, title, body }) => (
-            <div key={title} className="asc-card p-6">
-              <div className="w-12 h-12 rounded-full grid place-items-center mb-4" style={{ background: "rgba(124,58,237,0.15)", border: "1px solid rgba(191,180,255,0.35)" }}>
-                <Icon size={24} color="#FFB000" />
-              </div>
-              <h3 className="asc-h2 text-lg mb-1">{title}</h3>
-              <p className="text-[var(--asc-text-dim)] text-sm leading-relaxed">{body}</p>
-            </div>
-          ))}
-        </div>
-      </Section>
-
       {/* PRICING TEASER */}
       <Section kicker="Pricing" title="Start free. Rise on your terms.">
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5" data-testid="landing-pricing-teaser">
           {tiers.map((t) => (
             <div key={t.id} data-testid={`landing-tier-${t.id}`} className={`asc-card p-7 relative ${t.highlight ? "border-[var(--asc-brand)]" : ""}`}
               style={t.highlight ? { borderColor: "#FFB000", background: "rgba(255,176,0,0.04)" } : {}}>
@@ -146,6 +151,21 @@ export default function Landing() {
         </div>
         <div className="text-center mt-6 text-sm text-[var(--asc-text-muted)]">
           <Link to="/pricing" className="text-[var(--asc-brand)] hover:underline">See all features & annual pricing →</Link>
+        </div>
+      </Section>
+
+      {/* SYMBOLISM */}
+      <Section kicker="The name means" title="Rise. Light. Transformation. Guidance.">
+        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
+          {SYMBOLISM.map(({ icon: Icon, title, body }) => (
+            <div key={title} className="asc-card p-6">
+              <div className="w-12 h-12 rounded-full grid place-items-center mb-4" style={{ background: "rgba(124,58,237,0.15)", border: "1px solid rgba(191,180,255,0.35)" }}>
+                <Icon size={24} color="#FFB000" />
+              </div>
+              <h3 className="asc-h2 text-lg mb-1">{title}</h3>
+              <p className="text-[var(--asc-text-dim)] text-sm leading-relaxed">{body}</p>
+            </div>
+          ))}
         </div>
       </Section>
 

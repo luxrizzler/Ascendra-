@@ -1,0 +1,51 @@
+{
+  "summary": "Completed comprehensive frontend testing for pricing teaser cards bug fix. Verified that the 3 pricing teaser cards (Ascender $9.99/mo, Pathfinder $19.99/mo, Sage $29.99/mo) are now prominently displayed on the home page ABOVE the Symbolism section (within ~2 viewport scrolls at 2109px). Confirmed fallback data renders immediately without waiting for API. Also verified /pricing page Monthly/Annual toggle displays correct per-month-equivalent pricing for annual plans.",
+  
+  "backend_issues": {
+    "critical_bugs": [],
+    "flaky_endpoints": []
+  },
+  
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  
+  "passed_tests": [
+    "Home page (/) loads successfully without errors",
+    "All 3 pricing teaser cards present with correct data-testids (landing-tier-ascender, landing-tier-pathfinder, landing-tier-sage)",
+    "Each card displays monthly price prominently ($9.99/mo, $19.99/mo, $29.99/mo)",
+    "Each card shows annual price beneath (or $99/yr, or $199/yr, or $299/yr)",
+    "Pathfinder card has 'MOST POPULAR' badge",
+    "Section order correct: Hero → Mission → Models → Pillars → PRICING TEASER → Symbolism → Final CTA",
+    "Pricing teaser section visible at 2109px (~2 viewport scrolls, well within 2200px requirement)",
+    "Fallback data renders immediately (cards appear within 2 seconds without waiting for /api/pricing)",
+    "Each card has 'Choose [Tier]' CTA button that navigates to /signup",
+    "'See all features & annual pricing →' link present below cards",
+    "/pricing page loads successfully",
+    "/pricing page Monthly/Annual toggle works correctly",
+    "Annual mode shows per-month-equivalent as headline (Ascender $8.25/mo, Pathfinder $16.58/mo, Sage $24.92/mo)",
+    "Annual mode shows 'Billed annually ($XX/yr) — 2 months free' beneath headline",
+    "Monthly mode shows full monthly price ($9.99, $19.99, $29.99) with 'or $XX/yr — save 17%' beneath"
+  ],
+  
+  "test_report_links": [
+    ".screenshots/pricing_teaser_section.png",
+    ".screenshots/pricing_annual_mode.png",
+    ".screenshots/pricing_monthly_mode.png",
+    ".screenshots/landing_full_page_sections.png"
+  ],
+  
+  "action_item_for_main_agent": "",
+  
+  "updated_files": [],
+  
+  "success_percentage": {
+    "frontend": "100%",
+    "backend": "N/A (frontend-only testing)"
+  },
+  
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_test_itself": false
+}
