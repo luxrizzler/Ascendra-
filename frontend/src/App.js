@@ -32,6 +32,7 @@ import AdminEmail from "@/pages/AdminEmail";
 import AdminWhatsNew from "@/pages/AdminWhatsNew";
 import AdminSubscribers from "@/pages/AdminSubscribers";
 import AdminSeoStudio from "@/pages/AdminSeoStudio";
+import AdminAutoContent from "@/pages/AdminAutoContent";
 import LearnHub from "@/pages/LearnHub";
 import AuthCallback from "@/pages/AuthCallback";
 import NotFound from "@/pages/NotFound";
@@ -83,6 +84,7 @@ function Shell() {
           <Route path="/admin/whats-new" element={<RequireAuth admin><AdminWhatsNew /></RequireAuth>} />
           <Route path="/admin/subscribers" element={<RequireAuth admin><AdminSubscribers /></RequireAuth>} />
           <Route path="/admin/seo" element={<RequireAuth admin><AdminSeoStudio /></RequireAuth>} />
+          <Route path="/admin/auto-content" element={<RequireAuth admin><AdminAutoContent /></RequireAuth>} />
           <Route path="/learn/:modelSlug" element={<LearnHub />} />
           <Route path="/learn/:modelSlug/:useCaseSlug" element={<LearnHub />} />
           <Route path="/auth/callback" element={<AuthCallback />} />

@@ -51,6 +51,7 @@ from curriculum_db import (
 from curriculum import AI_MODELS
 import ai_studio
 import seo_studio
+import auto_content
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
@@ -1458,6 +1459,116 @@ async def admin_seo_delete_usecase(model_slug: str, use_case_slug: str, _admin=D
     return {"ok": True}
 
 
+# ─── Auto-Pilot Content Engine ──────────────────────────────────────────────
+class AutoSettingsIn(BaseModel):
+    paused: Optional[bool] = None
+    auto_publish: Optional[bool] = None
+    quality_threshold: Optional[int] = None
+    target_path_id: Optional[str] = None
+    target_module_id: Optional[str] = None
+
+
+class AutoQueueItemIn(BaseModel):
+    topic: str
+    kind: Literal["lesson", "path"] = "lesson"
+    level: Literal["Beginner", "Intermediate", "Advanced"] = "Beginner"
+    model_hint: Optional[str] = None
+    tier: Optional[Literal["free", "ascender", "pathfinder", "sage"]] = None
+    priority: Optional[int] = 9999
+
+
+class AutoRunIn(BaseModel):
+    kind: Literal["daily_lesson", "monday_path", "digest"]
+
+
+@api.get("/admin/auto/settings")
+async def admin_auto_settings(_admin=Depends(require_admin)):
+    s = await auto_content.get_settings(db)
+    s["next_runs"] = auto_content.next_run_times()
+    return s
+
+
+@api.post("/admin/auto/settings")
+async def admin_update_auto_settings(body: AutoSettingsIn, _admin=Depends(require_admin)):
+    patch = {k: v for k, v in body.dict().items() if v is not None}
+    return await auto_content.update_settings(db, patch)
+
+
+@api.get("/admin/auto/queue")
+async def admin_auto_queue(_admin=Depends(require_admin), status: Optional[str] = None, limit: int = 500):
+    items = await auto_content.list_queue(db, status=status, limit=min(limit, 1000))
+    return {"items": items, "count": len(items)}
+
+
+@api.post("/admin/auto/queue")
+async def admin_auto_add_queue(body: AutoQueueItemIn, _admin=Depends(require_admin)):
+    item = await auto_content.add_queue_item(db, body.dict())
+    return item
+
+
+@api.delete("/admin/auto/queue/{queue_id}")
+async def admin_auto_remove_queue(queue_id: str, _admin=Depends(require_admin)):
+    ok = await auto_content.remove_queue_item(db, queue_id)
+    if not ok:
+        raise HTTPException(404, "Item not found")
+    return {"ok": True}
+
+
+@api.get("/admin/auto/runs")
+async def admin_auto_runs(_admin=Depends(require_admin), limit: int = 50):
+    runs = await auto_content.list_runs(db, limit=min(limit, 200))
+    return {"runs": runs, "count": len(runs)}
+
+
+@api.post("/admin/auto/run")
+async def admin_auto_run_manual(body: AutoRunIn, _admin=Depends(require_admin)):
+    if body.kind == "daily_lesson":
+        return await auto_content.run_daily_lesson(db, source="manual")
+    if body.kind == "monday_path":
+        return await auto_content.run_monday_path(db, source="manual")
+    if body.kind == "digest":
+        return await auto_content.send_daily_digest(db)
+    raise HTTPException(400, "Unknown kind")
+
+
+@api.post("/admin/auto/queue/{queue_id}/publish")
+async def admin_auto_publish_flagged(queue_id: str, _admin=Depends(require_admin)):
+    """Publish a flagged-for-review draft despite a low grade (manual override)."""
+    q = await db["content_queue"].find_one({"id": queue_id}, {"_id": 0})
+    if not q:
+        raise HTTPException(404, "Queue item not found")
+    if q.get("status") != "needs_review":
+        raise HTTPException(400, f"Queue item is in '{q.get('status')}' state, can only publish 'needs_review' drafts")
+    draft = q.get("draft")
+    if not draft:
+        raise HTTPException(400, "Draft content was not preserved for this item (older run)")
+    target_path_id, target_module_id = await auto_content._ensure_target_path(db)
+    if q.get("kind") == "path":
+        # Re-create the full path from the saved draft
+        outline = draft
+        outline["source"] = "auto-pilot"
+        created = await _curric_create_path(db, outline)
+        await db["content_queue"].update_one({"id": queue_id}, {"$set": {"status": "published", "path_id": created["id"]}})
+        return {"status": "published", "path_id": created["id"], "kind": "path"}
+    # lesson
+    draft["source"] = "auto-pilot"
+    published = await _curric_add_lesson(db, target_path_id, target_module_id, draft)
+    await db["content_queue"].update_one({"id": queue_id}, {"$set": {
+        "status": "published",
+        "lesson_id": (published.get("id") if published else None),
+        "path_id": target_path_id,
+    }})
+    return {"status": "published", "lesson_id": (published or {}).get("id"), "path_id": target_path_id, "kind": "lesson"}
+
+
+@api.get("/admin/auto/queue/{queue_id}")
+async def admin_auto_get_queue_item(queue_id: str, _admin=Depends(require_admin)):
+    q = await db["content_queue"].find_one({"id": queue_id}, {"_id": 0})
+    if not q:
+        raise HTTPException(404, "Queue item not found")
+    return q
+
+
 # ─── Health ─────────────────────────────────────────────────────────────────
 @api.get("/")
 async def root():
@@ -2189,8 +2300,19 @@ async def startup():
         log.info("Curriculum DB ready.")
     except Exception as e:
         log.exception(f"Curriculum seeding failed: {e}")
+    # Boot auto-pilot scheduler (daily lessons + Monday paths + daily digest)
+    try:
+        await auto_content.seed_default_queue(db)
+        await auto_content.get_settings(db)  # ensure settings doc exists
+        auto_content.start_scheduler(db)
+    except Exception as e:
+        log.exception(f"Auto-content scheduler failed to start: {e}")
 
 
 @app.on_event("shutdown")
 async def shutdown():
+    try:
+        auto_content.stop_scheduler()
+    except Exception:
+        pass
     client.close()

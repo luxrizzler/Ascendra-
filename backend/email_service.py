@@ -236,6 +236,55 @@ def send_checkout_success(to: str, name: Optional[str], tier: str, interval: str
 
 
 
+def send_digest(to: str, published: list, drafted: list, failed: list) -> dict:
+    """Daily auto-pilot digest for admins."""
+    total = len(published) + len(drafted) + len(failed)
+    subject = f"Ascendra auto-pilot · {len(published)} live, {len(drafted)} drafts, {len(failed)} failed"
+    preheader = f"Last 24h: {total} runs · {len(published)} published"
+
+    def _rows(items: list, color: str) -> str:
+        if not items:
+            return f'<div style="color:#7a7a85;font-size:12px;margin:6px 0;">None.</div>'
+        out = []
+        for it in items[:20]:
+            s = it.get("summary", {})
+            topic = s.get("topic", "(no topic)")
+            grades = s.get("grades", {})
+            grade_str = ""
+            if grades:
+                grade_str = (f' &nbsp; <span style="color:#7a7a85;font-size:11px;">'
+                             f'acc {grades.get("accuracy","?")} · cl {grades.get("clarity","?")} · '
+                             f'br {grades.get("brand_fit","?")} · dp {grades.get("depth","?")}</span>')
+            out.append(
+                f'<div style="padding:8px 10px;background:#0d0d12;border:1px solid #26262E;border-radius:8px;margin:6px 0;color:#EDEDED;font-size:13px;">'
+                f'<span style="color:{color};font-weight:800;">•</span> {topic}{grade_str}'
+                f'</div>'
+            )
+        return "".join(out)
+
+    body_html = f"""
+      <h1 style="margin:0 0 6px 0;color:#FFFFFF;font-size:28px;line-height:34px;letter-spacing:-0.5px;font-weight:900;">Auto-pilot digest</h1>
+      <p style="margin:0 0 18px 0;color:#B8B8C2;font-size:14px;">Last 24 hours of automated content generation.</p>
+
+      <div style="margin:16px 0;color:#34D399;font-size:12px;font-weight:800;letter-spacing:1.5px;">PUBLISHED ({len(published)})</div>
+      {_rows(published, "#34D399")}
+
+      <div style="margin:18px 0 6px 0;color:#FFB000;font-size:12px;font-weight:800;letter-spacing:1.5px;">FLAGGED FOR REVIEW ({len(drafted)})</div>
+      {_rows(drafted, "#FFB000")}
+
+      <div style="margin:18px 0 6px 0;color:#FB7185;font-size:12px;font-weight:800;letter-spacing:1.5px;">FAILED ({len(failed)})</div>
+      {_rows(failed, "#FB7185")}
+
+      <p style="margin:22px 0 0 0;color:#7a7a85;font-size:12px;">Review flagged items in <a href="https://repo-to-site-2.preview.emergentagent.com/admin/auto-content" style="color:#FFB000;">/admin/auto-content</a>.</p>
+    """
+    text = (
+        f"Auto-pilot digest — last 24 hours\n"
+        f"Published: {len(published)}\nFlagged for review: {len(drafted)}\nFailed: {len(failed)}\n"
+        f"Review: https://repo-to-site-2.preview.emergentagent.com/admin/auto-content\n"
+    )
+    return _send(to, subject, _shell(subject, preheader, body_html), text)
+
+
 def send_renewal_reminder(
     to: str,
     name: Optional[str],

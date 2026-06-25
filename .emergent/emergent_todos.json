@@ -1,26 +1,18 @@
 [
   {
-    "content": "Phase 7a-d: Backend SEO Studio (schema, public/admin endpoints, sitemap, robots) — COMPLETE",
+    "content": "Phase 7 — Programmatic SEO Studio (96% pass) — COMPLETE",
     "status": "completed"
   },
   {
-    "content": "Phase 7e: Frontend — /learn/:modelSlug and /learn/:modelSlug/:useCaseSlug routes with SEO meta + JSON-LD — COMPLETE",
+    "content": "Phase 8a-e: Backend auto-pilot (scheduler, queue, quality gate, runs log, digest, admin endpoints) — COMPLETE",
     "status": "completed"
   },
   {
-    "content": "Phase 7f: Frontend — /admin/seo page (list, generate, publish/archive/delete) — COMPLETE",
-    "status": "completed"
-  },
-  {
-    "content": "Phase 7g: Seed 8 SEO pages (6 hubs + 2 use-cases) — COMPLETE",
-    "status": "completed"
-  },
-  {
-    "content": "Phase 7g+: Link learn hubs from Landing page models section — COMPLETE",
-    "status": "completed"
-  },
-  {
-    "content": "Phase 7h: Run testing_agent on SEO routes + admin studio + sitemap",
+    "content": "Phase 8f: Frontend /admin/auto-content page — queue manager + recent runs + pause switch + manual run",
     "status": "in_progress"
+  },
+  {
+    "content": "Phase 8g: Run testing_agent on auto-pilot + force a manual run end-to-end",
+    "status": "pending"
   }
 ]
