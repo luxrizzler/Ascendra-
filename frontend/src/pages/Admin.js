@@ -63,6 +63,7 @@ export default function Admin() {
         ))}
         <a href="/admin/curriculum" data-testid="admin-tab-curriculum" className="px-4 py-2 rounded-full text-sm font-bold transition" style={{ background: "rgba(124,58,237,0.12)", color: "#BFB4FF", border: "1px solid rgba(191,180,255,0.28)" }}>CURRICULUM</a>
         <a href="/admin/studio" data-testid="admin-tab-studio" className="px-4 py-2 rounded-full text-sm font-bold transition border" style={{ background: "rgba(255,176,0,0.10)", color: "#FFB000", borderColor: "#FFB000" }}>AI STUDIO</a>
+        <a href="/admin/email" data-testid="admin-tab-email" className="px-4 py-2 rounded-full text-sm font-bold transition border" style={{ background: "rgba(52,211,153,0.10)", color: "#34D399", borderColor: "rgba(52,211,153,0.4)" }}>EMAIL</a>
       </div>
 
       {tab === "stats" && stats && (

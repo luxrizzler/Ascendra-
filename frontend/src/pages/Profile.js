@@ -124,10 +124,32 @@ export default function Profile() {
                 {user.tier_expires_at && <> · renews {formatDate(user.tier_expires_at)}</>}
               </div>
             </div>
-            <Link to="/pricing" className="asc-btn-secondary text-sm">Manage plan</Link>
+            <div className="flex gap-2 flex-wrap">
+              <BillingPortalButton />
+              <Link to="/pricing" className="asc-btn-secondary text-sm">Change plan</Link>
+            </div>
           </div>
         </div>
       )}
     </div>
+  );
+}
+
+function BillingPortalButton() {
+  const [busy, setBusy] = useState(false);
+  const open = async () => {
+    setBusy(true);
+    try {
+      const r = await api.post("/billing/portal", { return_url: window.location.href });
+      window.location.href = r.url;
+    } catch (e) {
+      toast.error(e.message || "Portal unavailable");
+      setBusy(false);
+    }
+  };
+  return (
+    <button onClick={open} disabled={busy} className="asc-btn-primary text-sm" data-testid="billing-portal-btn">
+      {busy ? "Opening…" : "Manage billing →"}
+    </button>
   );
 }

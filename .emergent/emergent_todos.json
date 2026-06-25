@@ -1,30 +1,18 @@
 [
   {
-    "content": "Phase 5: Migrate curriculum to MongoDB",
+    "content": "Add checkout-success email template + wire into payment confirmation",
     "status": "completed"
   },
   {
-    "content": "Phase 5: Admin CRUD endpoints",
+    "content": "Add /admin/email page (preview + send-test)",
     "status": "completed"
   },
   {
-    "content": "Phase 5: AI Lesson Studio backend",
+    "content": "Add /api/billing/portal endpoint + Manage Billing button on Profile",
     "status": "completed"
   },
   {
-    "content": "Phase 5: Cover image generator",
+    "content": "Verified email preview iframe + test send (Resend ID returned)",
     "status": "completed"
-  },
-  {
-    "content": "Phase 5: Google OAuth frontend wiring",
-    "status": "completed"
-  },
-  {
-    "content": "Phase 5: Admin UI — Curriculum Manager + AI Studio + Path/Lesson editors",
-    "status": "completed"
-  },
-  {
-    "content": "Phase 5: E2E test with testing_agent_v3",
-    "status": "in_progress"
   }
 ]

@@ -157,6 +157,85 @@ def send_password_reset(to: str, name: Optional[str], reset_url: str, expires_mi
     return _send(to, subject, _shell(subject, preheader, body_html), text)
 
 
+def send_checkout_success(to: str, name: Optional[str], tier: str, interval: str,
+                            amount_usd: float, dashboard_url: str) -> dict:
+    """Welcome email triggered when a checkout payment is confirmed."""
+    display = name or to.split("@")[0]
+    tier_upper = (tier or "ascender").upper()
+    blurbs = {
+        "ASCENDER": "You've unlocked Ascender — the path begins.",
+        "PATHFINDER": "Welcome to Pathfinder. Seven paths are now yours.",
+        "SAGE": "Welcome, Sage. Every path. Every founder playbook. Yours.",
+    }
+    headline = blurbs.get(tier_upper, f"Welcome to {tier_upper}.")
+    period_label = {"monthly": "monthly", "annual": "annual (12 months)", "trial": "7-day trial"}.get(interval, interval)
+    subject = f"You're in. Welcome to Ascendra {tier_upper}."
+    preheader = f"Your {tier_upper} access is active. Time to rise."
+
+    body_html = f"""
+      <h1 style="margin:0 0 6px 0;color:#FFFFFF;font-size:28px;line-height:34px;letter-spacing:-0.5px;font-weight:900;">
+        {headline}
+      </h1>
+      <p style="margin:0 0 18px 0;color:#B8B8C2;font-size:15px;line-height:22px;">
+        Hey {display} — your payment came through, and your full Ascendra
+        <strong style="color:#FFB000;">{tier_upper}</strong> access is now live.
+        Open the dashboard to pick up where you left off — or start your first path.
+      </p>
+
+      <div style="margin:18px 0;padding:18px;background:#0d0d12;border:1px solid #26262E;border-radius:12px;">
+        <div style="color:#7a7a85;font-size:11px;letter-spacing:1.5px;font-weight:700;">RECEIPT</div>
+        <div style="margin-top:10px;color:#EDEDED;font-size:14px;">
+          <span style="color:#7a7a85;">Plan:</span> <strong>Ascendra {tier_upper}</strong>
+        </div>
+        <div style="margin-top:6px;color:#EDEDED;font-size:14px;">
+          <span style="color:#7a7a85;">Billing:</span> {period_label}
+        </div>
+        <div style="margin-top:6px;color:#EDEDED;font-size:14px;">
+          <span style="color:#7a7a85;">Amount:</span>
+          <strong style="color:#FFB000;">${amount_usd:.2f} USD</strong>
+        </div>
+      </div>
+
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:14px 0 22px 0;">
+        <tr>
+          <td bgcolor="#FFB000" style="border-radius:12px;">
+            <a href="{dashboard_url}"
+               style="display:inline-block;padding:14px 26px;color:#000000;font-weight:800;font-size:15px;text-decoration:none;border-radius:12px;">
+              Open my dashboard →
+            </a>
+          </td>
+        </tr>
+      </table>
+
+      <p style="margin:18px 0 0 0;color:#B8B8C2;font-size:14px;line-height:21px;">
+        Quick wins for day one:
+      </p>
+      <ul style="margin:8px 0 14px 0;padding-left:18px;color:#B8B8C2;font-size:14px;line-height:22px;">
+        <li>Open one lesson — even 5 minutes builds the streak.</li>
+        <li>Ask the AI Tutor anything (it remembers across sessions).</li>
+        <li>Pick the path that maps to your goal — the rest can wait.</li>
+      </ul>
+
+      <p style="margin:18px 0 0 0;color:#7a7a85;font-size:12px;line-height:18px;">
+        Need help or have a question? Just reply to this email.
+      </p>
+    """
+    text = (
+        f"Hey {display}, your Ascendra {tier_upper} access is now live.\n\n"
+        f"Plan:    Ascendra {tier_upper}\n"
+        f"Billing: {period_label}\n"
+        f"Amount:  ${amount_usd:.2f} USD\n\n"
+        f"Open dashboard: {dashboard_url}\n\n"
+        f"Quick wins for day one:\n"
+        f"- Open one lesson (even 5 min builds the streak)\n"
+        f"- Ask the AI Tutor anything\n"
+        f"- Pick the path that maps to your goal\n\n"
+        f"Reply to this email if you need anything."
+    )
+    return _send(to, subject, _shell(subject, preheader, body_html), text)
+
+
+
 def send_invite(to: str, name: Optional[str], temp_password: str, login_url: str,
                   invited_by: Optional[str] = None, tier: str = "sage") -> dict:
     """Welcome / invite email with one-time temp password."""

@@ -809,12 +809,39 @@ async def checkout_status(session_id: str, request: Request, user=Depends(curren
                 }
                 if interval == "trial":
                     update["has_used_trial"] = True
+                # Try to capture the Stripe customer id for the billing portal
+                try:
+                    import stripe as _stripe
+                    _stripe.api_key = STRIPE_API_KEY
+                    full = _stripe.checkout.Session.retrieve(session_id)
+                    cust_id = full.get("customer") if isinstance(full, dict) else getattr(full, "customer", None)
+                    if cust_id:
+                        update["stripe_customer_id"] = cust_id
+                except Exception as _e:
+                    log.warning(f"customer id fetch failed: {_e}")
                 await users_col.update_one({"id": user["id"]}, {"$set": update})
                 await sessions_col.update_one(
                     {"session_id": session_id},
                     {"$set": {"status": "paid", "paid_at": datetime.now(timezone.utc)}},
                 )
                 rec["status"] = "paid"
+                # Send the welcome email (idempotent — only if not already sent)
+                if not rec.get("welcome_email_sent"):
+                    try:
+                        from email_service import send_checkout_success
+                        amt = float(rec.get("amount_usd") or 0)
+                        send_checkout_success(
+                            to=user["email"], name=user.get("name"),
+                            tier=granted_tier, interval=interval,
+                            amount_usd=amt,
+                            dashboard_url=f"{_public_web_url()}/dashboard",
+                        )
+                        await sessions_col.update_one(
+                            {"session_id": session_id},
+                            {"$set": {"welcome_email_sent": True, "welcome_email_at": datetime.now(timezone.utc)}},
+                        )
+                    except Exception as e:
+                        log.warning(f"welcome email send failed: {e}")
         except Exception as e:
             log.warning(f"Stripe status check failed: {e}")
 
@@ -857,6 +884,135 @@ async def stripe_webhook(request: Request, stripe_signature: Optional[str] = Hea
 @api.get("/billing/info")
 async def billing_info():
     return {"uses_real_stripe": False}
+
+
+# ─── Stripe Customer Portal ─────────────────────────────────────────────────
+class PortalIn(BaseModel):
+    return_url: Optional[str] = None
+
+
+@api.post("/billing/portal")
+async def billing_portal(body: PortalIn, user=Depends(current_user)):
+    """Open the Stripe-hosted customer portal so users can manage billing & invoices."""
+    cust_id = user.get("stripe_customer_id")
+    if not cust_id:
+        raise HTTPException(400, "No billing history found. Make a purchase first to enable the portal.")
+    try:
+        import stripe as _stripe
+        _stripe.api_key = STRIPE_API_KEY
+        session = _stripe.billing_portal.Session.create(
+            customer=cust_id,
+            return_url=(body.return_url or f"{_public_web_url()}/profile"),
+        )
+        url = session.get("url") if isinstance(session, dict) else getattr(session, "url", None)
+        if not url:
+            raise HTTPException(502, "Portal URL missing")
+        return {"url": url}
+    except HTTPException:
+        raise
+    except Exception as e:
+        msg = str(e)[:240]
+        log.warning(f"customer portal failed: {msg}")
+        # Detect the common "no portal configured" case and give a clear message
+        if "configuration" in msg.lower() or "no_such_configuration" in msg.lower():
+            raise HTTPException(503, "Stripe customer portal isn't configured yet. Admin: enable it at dashboard.stripe.com/settings/billing/portal")
+        if "permission" in msg.lower() or "scope" in msg.lower():
+            raise HTTPException(503, "Stripe restricted key is missing 'Billing portal: write' permission.")
+        raise HTTPException(502, f"Portal error: {msg}")
+
+
+# ─── Admin email preview & test send ────────────────────────────────────────
+class EmailTestIn(BaseModel):
+    template: Literal["password_reset", "checkout_success", "invite"]
+    to: Optional[EmailStr] = None  # if not provided, sends to the admin
+
+
+@api.get("/admin/email/preview/{template}")
+async def admin_email_preview(template: str, admin=Depends(require_admin)):
+    """Return the HTML body of a template so the admin can preview it in an iframe."""
+    from email_service import _shell  # internal — fine for admin tooling
+    name = admin.get("name") or admin["email"].split("@")[0]
+    dashboard_url = f"{_public_web_url()}/dashboard"
+    if template == "password_reset":
+        from email_service import send_password_reset
+        # Render but don't send — build the HTML by calling the template builders directly.
+        # Easiest: replicate the body the function would build. We'll re-import its internals.
+        reset_url = f"{_public_web_url()}/reset-password?token=PREVIEW_TOKEN_123"
+        subject = "Reset your Ascendra password"
+        preheader = "Reset your password — link expires in 60 minutes."
+        body_html = f"""
+          <h1 style="margin:0 0 6px 0;color:#FFFFFF;font-size:28px;line-height:34px;letter-spacing:-0.5px;font-weight:900;">Reset your password</h1>
+          <p style="margin:0 0 20px 0;color:#B8B8C2;font-size:15px;line-height:22px;">Hey {name}, we got a request to reset your Ascendra password. Tap the button below to choose a new one. The link expires in <strong style="color:#EDEDED;">60 minutes</strong> and can only be used once.</p>
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:18px 0 22px 0;"><tr><td bgcolor="#FFB000" style="border-radius:12px;"><a href="{reset_url}" style="display:inline-block;padding:14px 26px;color:#000000;font-weight:800;font-size:15px;text-decoration:none;border-radius:12px;">Reset password →</a></td></tr></table>
+          <p style="margin:8px 0 0 0;color:#7a7a85;font-size:12px;line-height:18px;">Or copy &amp; paste this URL into your browser:<br><a href="{reset_url}" style="color:#FFB000;text-decoration:none;word-break:break-all;">{reset_url}</a></p>
+          <p style="margin:24px 0 0 0;color:#7a7a85;font-size:12px;line-height:18px;">Didn't ask for this? You can safely ignore this email — your password won't change.</p>
+        """
+        return {"subject": subject, "html": _shell(subject, preheader, body_html)}
+    elif template == "checkout_success":
+        subject = "You're in. Welcome to Ascendra PATHFINDER."
+        preheader = "Your PATHFINDER access is active. Time to rise."
+        body_html = f"""
+          <h1 style="margin:0 0 6px 0;color:#FFFFFF;font-size:28px;line-height:34px;letter-spacing:-0.5px;font-weight:900;">Welcome to Pathfinder. Seven paths are now yours.</h1>
+          <p style="margin:0 0 18px 0;color:#B8B8C2;font-size:15px;line-height:22px;">Hey {name} — your payment came through, and your full Ascendra <strong style="color:#FFB000;">PATHFINDER</strong> access is now live. Open the dashboard to pick up where you left off — or start your first path.</p>
+          <div style="margin:18px 0;padding:18px;background:#0d0d12;border:1px solid #26262E;border-radius:12px;">
+            <div style="color:#7a7a85;font-size:11px;letter-spacing:1.5px;font-weight:700;">RECEIPT</div>
+            <div style="margin-top:10px;color:#EDEDED;font-size:14px;"><span style="color:#7a7a85;">Plan:</span> <strong>Ascendra PATHFINDER</strong></div>
+            <div style="margin-top:6px;color:#EDEDED;font-size:14px;"><span style="color:#7a7a85;">Billing:</span> annual (12 months)</div>
+            <div style="margin-top:6px;color:#EDEDED;font-size:14px;"><span style="color:#7a7a85;">Amount:</span> <strong style="color:#FFB000;">$199.00 USD</strong></div>
+          </div>
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:14px 0 22px 0;"><tr><td bgcolor="#FFB000" style="border-radius:12px;"><a href="{dashboard_url}" style="display:inline-block;padding:14px 26px;color:#000000;font-weight:800;font-size:15px;text-decoration:none;border-radius:12px;">Open my dashboard →</a></td></tr></table>
+        """
+        return {"subject": subject, "html": _shell(subject, preheader, body_html)}
+    elif template == "invite":
+        login_url = f"{_public_web_url()}/login"
+        subject = "Your Ascendra Academy invite"
+        preheader = "Your SAGE access is ready — first-time password inside."
+        body_html = f"""
+          <h1 style="margin:0 0 6px 0;color:#FFFFFF;font-size:28px;line-height:34px;letter-spacing:-0.5px;font-weight:900;">You're in. Welcome.</h1>
+          <p style="margin:0 0 18px 0;color:#B8B8C2;font-size:15px;line-height:22px;">Hey {name} — you've been invited to <strong style="color:#FFB000;">Ascendra Academy</strong> with full <strong>SAGE</strong> access.</p>
+          <div style="margin:18px 0;padding:18px;background:#0d0d12;border:1px solid #26262E;border-radius:12px;">
+            <div style="color:#7a7a85;font-size:11px;letter-spacing:1.5px;font-weight:700;">YOUR LOGIN</div>
+            <div style="margin-top:10px;color:#EDEDED;font-size:14px;"><span style="color:#7a7a85;">Email:</span> <strong>{admin['email']}</strong></div>
+            <div style="margin-top:6px;color:#EDEDED;font-size:14px;"><span style="color:#7a7a85;">Temp password:</span> <code style="background:#26262E;padding:3px 8px;border-radius:6px;color:#FFB000;font-family:ui-monospace,Menlo,monospace;">temp_xyz_789</code></div>
+          </div>
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:14px 0 22px 0;"><tr><td bgcolor="#FFB000" style="border-radius:12px;"><a href="{login_url}" style="display:inline-block;padding:14px 26px;color:#000000;font-weight:800;font-size:15px;text-decoration:none;border-radius:12px;">Sign in to Ascendra →</a></td></tr></table>
+        """
+        return {"subject": subject, "html": _shell(subject, preheader, body_html)}
+    raise HTTPException(404, "Unknown template")
+
+
+@api.post("/admin/email/test-send")
+async def admin_email_test_send(body: EmailTestIn, admin=Depends(require_admin)):
+    """Send a real email of the chosen template to the current admin (or `to`)."""
+    target = body.to or admin["email"]
+    dashboard_url = f"{_public_web_url()}/dashboard"
+    try:
+        if body.template == "password_reset":
+            from email_service import send_password_reset
+            reset_url = f"{_public_web_url()}/reset-password?token=PREVIEW_TEST_TOKEN"
+            r = send_password_reset(to=target, name=admin.get("name"), reset_url=reset_url, expires_minutes=60)
+        elif body.template == "checkout_success":
+            from email_service import send_checkout_success
+            r = send_checkout_success(to=target, name=admin.get("name"),
+                                       tier="pathfinder", interval="annual",
+                                       amount_usd=199.00, dashboard_url=dashboard_url)
+        elif body.template == "invite":
+            from email_service import send_invite
+            r = send_invite(to=target, name=admin.get("name"),
+                             temp_password="preview_temp_pass",
+                             login_url=f"{_public_web_url()}/login",
+                             invited_by="Ascendra Studio", tier="sage")
+        else:
+            raise HTTPException(400, "Unknown template")
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.exception("test send failed")
+        raise HTTPException(503, f"Send failed: {str(e)[:160]}")
+    if not r.get("ok"):
+        raise HTTPException(503, r.get("error", "Send failed"))
+    return {"ok": True, "to": target, "template": body.template, "id": r.get("id"), "dry_run": r.get("dry_run", False)}
+
 
 # ─── Health ─────────────────────────────────────────────────────────────────
 @api.get("/")
