@@ -23,12 +23,15 @@ class AscendraAPITester:
     def log(self, msg):
         print(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}")
     
-    def test(self, name, method, endpoint, expected_status, data=None, headers=None, token=None, timeout=30):
+    def test(self, name, method, endpoint, expected_status, data=None, headers=None, token=None, timeout=30, use_default_token=True):
         """Run a single API test"""
         url = f"{BASE_URL}{endpoint}"
         h = headers or {}
         if token:
             h['Authorization'] = f'Bearer {token}'
+        elif token is None and not use_default_token:
+            # Explicitly no token
+            pass
         elif self.token and not headers:
             h['Authorization'] = f'Bearer {self.token}'
         
@@ -797,6 +800,175 @@ class AscendraAPITester:
                 self.log("   ✓ Webhook received without crash (graceful no-op for non-existent customer)")
             else:
                 self.log("   ⚠️  WARNING: Expected {received: true} in response")
+        
+        # 31. PHASE 6: What's New endpoints
+        self.log("\n📋 SECTION 24: PHASE 6 - WHAT'S NEW ENDPOINTS")
+        
+        # Test user-facing /api/whats-new (any logged-in user)
+        success, resp = self.test(
+            "GET /api/whats-new (user auth)",
+            "GET",
+            "/whats-new?days=14&limit=10",
+            200,
+            token=self.token
+        )
+        if success:
+            if 'items' in resp and 'days' in resp and 'count' in resp:
+                self.log(f"   ✓ Returns correct shape: items={len(resp.get('items', []))}, days={resp.get('days')}, count={resp.get('count')}")
+            else:
+                self.log("   ⚠️  WARNING: Missing expected fields (items, days, count)")
+        
+        # Test without auth (should 401)
+        success, resp = self.test(
+            "GET /api/whats-new without auth (should 401)",
+            "GET",
+            "/whats-new",
+            401,
+            use_default_token=False
+        )
+        if success:
+            self.log("   ✓ Auth gating working correctly")
+        
+        # Test admin /api/admin/whats-new (admin only)
+        if self.admin_token:
+            success, resp = self.test(
+                "GET /api/admin/whats-new (admin auth)",
+                "GET",
+                "/admin/whats-new?days=30&limit=50",
+                200,
+                token=self.admin_token
+            )
+            if success:
+                if 'items' in resp and 'days' in resp and 'count' in resp:
+                    self.log(f"   ✓ Returns correct shape: items={len(resp.get('items', []))}, days={resp.get('days')}, count={resp.get('count')}")
+                else:
+                    self.log("   ⚠️  WARNING: Missing expected fields")
+            
+            # Test without admin auth (should 401 or 403)
+            success, resp = self.test(
+                "GET /api/admin/whats-new without admin (should 401 or 403)",
+                "GET",
+                "/admin/whats-new",
+                403,  # Expecting 403 per agent context note
+                token=self.token  # regular user token
+            )
+            if success:
+                self.log("   ✓ Admin auth gating working correctly (403 for non-admin)")
+        
+        # 32. PHASE 6: Subscribers endpoint
+        self.log("\n📋 SECTION 25: PHASE 6 - SUBSCRIBERS ENDPOINT")
+        
+        if self.admin_token:
+            # Test GET /api/admin/subscribers (admin only)
+            success, resp = self.test(
+                "GET /api/admin/subscribers (admin auth)",
+                "GET",
+                "/admin/subscribers",
+                200,
+                token=self.admin_token
+            )
+            if success:
+                required_fields = ['subscribers', 'count', 'by_tier', 'mrr_usd', 'arr_usd']
+                missing = [f for f in required_fields if f not in resp]
+                if not missing:
+                    self.log(f"   ✓ Returns all required fields")
+                    self.log(f"   ✓ count={resp.get('count')}, mrr_usd={resp.get('mrr_usd')}, arr_usd={resp.get('arr_usd')}")
+                    
+                    # Validate by_tier has expected keys
+                    by_tier = resp.get('by_tier', {})
+                    if 'ascender' in by_tier and 'pathfinder' in by_tier and 'sage' in by_tier:
+                        self.log(f"   ✓ by_tier has all tier keys: {by_tier}")
+                    else:
+                        self.log(f"   ⚠️  WARNING: by_tier missing expected keys: {by_tier}")
+                    
+                    # Validate mrr_usd and arr_usd are numeric
+                    if isinstance(resp.get('mrr_usd'), (int, float)) and isinstance(resp.get('arr_usd'), (int, float)):
+                        self.log("   ✓ mrr_usd and arr_usd are numeric")
+                    else:
+                        self.log("   ⚠️  WARNING: mrr_usd or arr_usd not numeric")
+                else:
+                    self.log(f"   ⚠️  WARNING: Missing fields: {missing}")
+            
+            # Test with include_canceled param
+            success, resp = self.test(
+                "GET /api/admin/subscribers?include_canceled=true",
+                "GET",
+                "/admin/subscribers?include_canceled=true",
+                200,
+                token=self.admin_token
+            )
+            if success:
+                self.log("   ✓ include_canceled param accepted without error")
+            
+            # Test without admin auth (should 401 or 403)
+            success, resp = self.test(
+                "GET /api/admin/subscribers without admin (should 403)",
+                "GET",
+                "/admin/subscribers",
+                403,  # Expecting 403 per agent context note
+                token=self.token  # regular user token
+            )
+            if success:
+                self.log("   ✓ Admin auth gating working correctly (403 for non-admin)")
+        
+        # 33. PHASE 6: Integration test - AI content tagging
+        self.log("\n📋 SECTION 26: PHASE 6 - AI CONTENT SOURCE TAGGING")
+        
+        if self.admin_token:
+            # Generate a draft lesson and verify it has source='ai-studio'
+            self.log("   ⏳ Generating AI lesson draft (may take 15-30 seconds)...")
+            success, gen_resp = self.test(
+                "AI Studio generate lesson (verify source tagging)",
+                "POST",
+                "/admin/ai/generate-lesson",
+                200,
+                data={
+                    "topic": "Testing AI Studio source tagging for What's New",
+                    "level": "Beginner",
+                    "publish": False
+                },
+                token=self.admin_token,
+                timeout=45
+            )
+            
+            if success and gen_resp.get('draft'):
+                draft = gen_resp['draft']
+                source = draft.get('source')
+                self.log(f"   ✓ Generated lesson draft: {draft.get('title')}")
+                if source == 'ai-studio':
+                    self.log(f"   ✓ Lesson correctly tagged with source='ai-studio'")
+                else:
+                    self.log(f"   ⚠️  WARNING: Expected source='ai-studio', got '{source}'")
+            else:
+                self.log("   ⚠️  AI lesson generation failed")
+            
+            # Also test path generation
+            self.log("   ⏳ Generating AI path (may take 20-40 seconds)...")
+            success, path_resp = self.test(
+                "AI Studio generate path (verify source tagging)",
+                "POST",
+                "/admin/ai/generate-path",
+                200,
+                data={
+                    "topic": "Testing AI Path source tagging",
+                    "level": "Beginner",
+                    "tier": "free"
+                },
+                token=self.admin_token,
+                timeout=60
+            )
+            
+            if success and path_resp.get('outline'):
+                outline = path_resp['outline']
+                source = outline.get('source')
+                self.log(f"   ✓ Generated path outline: {outline.get('title')}")
+                if source == 'ai-studio':
+                    self.log(f"   ✓ Path correctly tagged with source='ai-studio'")
+                    self.log(f"   ℹ️  Note: When published, this path will appear in What's New feed")
+                else:
+                    self.log(f"   ⚠️  WARNING: Expected source='ai-studio', got '{source}'")
+            else:
+                self.log("   ⚠️  AI path generation failed")
         
         # Summary
         self.log("\n" + "=" * 60)

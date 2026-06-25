@@ -4,13 +4,14 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import Loader from "@/components/Loader";
 import TierBadge from "@/components/TierBadge";
-import { Flame, Sparkles, ArrowRight, Trophy, Layers, MessageSquare } from "lucide-react";
+import { Flame, Sparkles, ArrowRight, Trophy, Layers, MessageSquare, BookOpen, ChevronRight } from "lucide-react";
 
 export default function Dashboard() {
   const { user } = useAuth();
   const [progress, setProgress] = useState(null);
   const [paths, setPaths] = useState([]);
   const [certs, setCerts] = useState([]);
+  const [whatsNew, setWhatsNew] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -18,10 +19,12 @@ export default function Dashboard() {
       api.get("/progress"),
       api.get("/paths"),
       api.get("/certificates"),
-    ]).then(([p, ps, c]) => {
+      api.get("/whats-new?days=14&limit=6").catch(() => ({ items: [] })),
+    ]).then(([p, ps, c, wn]) => {
       setProgress(p);
       setPaths(ps.paths);
       setCerts(c.certificates);
+      setWhatsNew(wn.items || []);
     }).finally(() => setLoading(false));
   }, []);
 
@@ -82,6 +85,41 @@ export default function Dashboard() {
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
             {inProgress.map((p) => (
               <PathRowCard key={p.id} path={p} progress={progress.path_progress[p.id]} />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* What's New widget */}
+      {whatsNew.length > 0 && (
+        <section className="mt-10" data-testid="dashboard-whats-new">
+          <div className="flex items-end justify-between mb-4">
+            <div>
+              <div className="asc-kicker">New this week</div>
+              <h2 className="asc-h2 text-2xl mt-1">Fresh from the AI Studio</h2>
+            </div>
+            <Link to="/paths" className="text-sm text-[var(--asc-brand)] hover:underline">All paths →</Link>
+          </div>
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {whatsNew.slice(0, 6).map((it, idx) => (
+              <Link
+                key={`${it.type}-${it.path_id}-${it.lesson_id || idx}`}
+                to={it.type === "lesson" ? `/lessons/${it.lesson_id}` : `/paths/${it.path_id}`}
+                className="asc-card p-5 flex items-start gap-3 hover:border-[var(--asc-brand)] transition"
+                data-testid={`dashboard-whats-new-item-${it.lesson_id || it.path_id}`}
+              >
+                <div className="w-10 h-10 rounded-xl grid place-items-center shrink-0" style={{ background: it.type === "path" ? "rgba(124,58,237,0.18)" : "rgba(255,176,0,0.12)", border: `1px solid ${it.type === "path" ? "rgba(191,180,255,0.35)" : "rgba(255,176,0,0.35)"}` }}>
+                  {it.type === "path" ? <Layers size={16} color="#BFB4FF" /> : <BookOpen size={16} color="#FFB000" />}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <span className="asc-kicker text-[10px]" style={{ color: it.type === "path" ? "#BFB4FF" : "#FFB000" }}>{it.type === "path" ? "NEW PATH" : "NEW LESSON"}</span>
+                  <div className="asc-h2 text-base mt-1 truncate">{it.type === "path" ? it.path_title : it.lesson_title}</div>
+                  {it.type === "lesson" && (
+                    <div className="text-xs text-[var(--asc-text-dim)] truncate mt-0.5" style={{ color: it.path_color }}>{it.path_title}</div>
+                  )}
+                </div>
+                <ChevronRight size={16} className="text-[var(--asc-text-muted)] mt-1 shrink-0" />
+              </Link>
             ))}
           </div>
         </section>

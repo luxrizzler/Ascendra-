@@ -1,30 +1,34 @@
 [
   {
-    "content": "Explore backend: webhook handler, email_service, ai_studio, models — understand existing patterns",
+    "content": "Phase 5: Renewal reminders — COMPLETE",
     "status": "completed"
   },
   {
-    "content": "Phase 5a: Add `renewal_reminder` HTML email template in email_service.py",
+    "content": "Phase 6a: Backend — tag AI-generated paths/lessons with source='ai-studio' + generated_at timestamp",
     "status": "completed"
   },
   {
-    "content": "Phase 5b: Add `invoice.upcoming` Stripe webhook handler in server.py (primary trigger)",
+    "content": "Phase 6b: Backend — GET /api/admin/whats-new and GET /api/whats-new (user) endpoints",
     "status": "completed"
   },
   {
-    "content": "Phase 5c: Add daily fallback job: scan active subscriptions, send reminder when next_invoice is exactly 7 days away (idempotent via `last_renewal_reminder_at`)",
+    "content": "Phase 6c: Backend — GET /api/admin/subscribers endpoint (active subs list with plan, interval, status, renewal date)",
     "status": "completed"
   },
   {
-    "content": "Phase 5d: Add admin manual-trigger endpoint + email preview support for renewal_reminder template",
+    "content": "Phase 6d: Frontend — /admin/whats-new page (admin) + /admin/subscribers page",
     "status": "completed"
   },
   {
-    "content": "Phase 5e: Wire renewal_reminder into AdminEmail.js previewer + add a 'Run renewal reminders now' button",
+    "content": "Phase 6e: Frontend — Dashboard 'New this week' widget surfacing recent AI lessons to users",
     "status": "completed"
   },
   {
-    "content": "Phase 5f: Run testing_agent on renewal reminders",
+    "content": "Phase 6f: Link new pages from /admin index and wire routes",
+    "status": "completed"
+  },
+  {
+    "content": "Phase 6g: Run testing_agent on what's-new + subscribers",
     "status": "in_progress"
   }
 ]

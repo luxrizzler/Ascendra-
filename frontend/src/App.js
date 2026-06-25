@@ -28,6 +28,8 @@ import AdminCurriculum from "@/pages/AdminCurriculum";
 import AdminCurriculumEdit from "@/pages/AdminCurriculumEdit";
 import AdminStudio from "@/pages/AdminStudio";
 import AdminEmail from "@/pages/AdminEmail";
+import AdminWhatsNew from "@/pages/AdminWhatsNew";
+import AdminSubscribers from "@/pages/AdminSubscribers";
 import AuthCallback from "@/pages/AuthCallback";
 import NotFound from "@/pages/NotFound";
 import { api } from "@/lib/api";
@@ -75,6 +77,8 @@ function Shell() {
           <Route path="/admin/curriculum/:pathId" element={<RequireAuth admin><AdminCurriculumEdit /></RequireAuth>} />
           <Route path="/admin/studio" element={<RequireAuth admin><AdminStudio /></RequireAuth>} />
           <Route path="/admin/email" element={<RequireAuth admin><AdminEmail /></RequireAuth>} />
+          <Route path="/admin/whats-new" element={<RequireAuth admin><AdminWhatsNew /></RequireAuth>} />
+          <Route path="/admin/subscribers" element={<RequireAuth admin><AdminSubscribers /></RequireAuth>} />
           <Route path="/auth/callback" element={<AuthCallback />} />
           <Route path="*" element={<NotFound />} />
         </Routes>

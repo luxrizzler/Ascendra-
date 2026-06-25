@@ -201,6 +201,8 @@ async def add_lesson(db, path_id: str, module_id: str, lesson: dict) -> Optional
         "xp": int(lesson.get("xp", 50)),
         "cards": lesson.get("cards", []),
         "quiz": lesson.get("quiz") or {"question": "", "options": [], "answer_index": 0, "explanation": ""},
+        "source": lesson.get("source", "manual"),
+        "created_at": datetime.now(timezone.utc),
     }
     for i, m in enumerate(p["modules"]):
         if m["id"] == module_id:
@@ -221,7 +223,7 @@ async def update_lesson(db, path_id: str, module_id: str, lesson_id: str, patch:
         for j, lsn in enumerate(m.get("lessons", [])):
             if lsn["id"] != lesson_id:
                 continue
-            for k in ("title", "duration_min", "xp", "cards", "quiz"):
+            for k in ("title", "duration_min", "xp", "cards", "quiz", "source", "created_at"):
                 if k in patch:
                     lsn[k] = patch[k]
             m["lessons"][j] = lsn

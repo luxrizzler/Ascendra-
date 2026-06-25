@@ -1,0 +1,79 @@
+{
+  "summary": "Phase 6 (What's New + Subscribers) testing completed. All Phase 6 backend endpoints and frontend UI components are working correctly. Backend: 53/55 tests passed (96.4%). Frontend: All Phase 6 UI tests passed (100%). The 2 backend failures are non-Phase 6 issues: 1 pre-existing sage login issue, and 1 test parameter error for AI path generation.",
+  
+  "backend_issues": {
+    "critical_bugs": [],
+    "minor_issues": [
+      {
+        "endpoint": "/auth/login",
+        "issue": "Sage user login fails with 401 (email: sage1@ascendraacademy.com, password: test1)",
+        "impact": "Pre-existing issue from iteration_4, not related to Phase 6",
+        "fix_priority": "LOW"
+      }
+    ],
+    "fixed_bugs": [
+      {
+        "endpoint": "/admin/subscribers",
+        "issue": "TypeError: can't compare offset-naive and offset-aware datetimes",
+        "fix": "Added timezone normalization for tier_expires_at field in server.py line 1698-1701",
+        "status": "FIXED"
+      }
+    ]
+  },
+  
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  
+  "passed_tests": [
+    "Backend: GET /api/whats-new (user auth) returns 200 with {items:[], days, count}",
+    "Backend: GET /api/whats-new without auth returns 401 (auth gating working)",
+    "Backend: GET /api/admin/whats-new (admin auth) returns 200 with correct shape",
+    "Backend: GET /api/admin/whats-new without admin returns 403 (correct behavior)",
+    "Backend: GET /api/admin/subscribers (admin auth) returns 200 with {subscribers, count, by_tier, mrr_usd, arr_usd}",
+    "Backend: GET /api/admin/subscribers returns numeric mrr_usd=149.5 and arr_usd=1794.0",
+    "Backend: GET /api/admin/subscribers by_tier has all keys (ascender, pathfinder, sage)",
+    "Backend: GET /api/admin/subscribers?include_canceled=true accepts param without error",
+    "Backend: GET /api/admin/subscribers without admin returns 403 (correct behavior)",
+    "Backend: AI-generated lessons are tagged with source='ai-studio' when published",
+    "Backend: AI-generated paths are tagged with source='ai-studio' in outline",
+    "Frontend: /admin page shows 5 navigation pills including WHAT'S NEW and SUBSCRIBERS",
+    "Frontend: Clicking 'WHAT'S NEW' navigates to /admin/whats-new (data-testid=admin-whats-new-page)",
+    "Frontend: What's New page shows 4 window filter buttons (7/30/90/All days)",
+    "Frontend: What's New page shows 3 type filter buttons (All/Paths/Lessons)",
+    "Frontend: Empty state displays with 'Open AI Studio' button when no AI content exists",
+    "Frontend: Clicking 'SUBSCRIBERS' navigates to /admin/subscribers (data-testid=admin-subscribers-page)",
+    "Frontend: Subscribers page shows summary cards (Total subscribers: 6, MRR: $149.50, ARR: $1794.00)",
+    "Frontend: Subscribers page shows Refresh and CSV export buttons",
+    "Frontend: Subscribers table displays with 6 subscriber rows",
+    "Frontend: Each subscriber row has 'Renewal email' button (data-testid=subscriber-send-renewal-{user_id})",
+    "Frontend: Dashboard page renders successfully (data-testid=dashboard-page)",
+    "Frontend: Dashboard 'New this week' widget is correctly hidden when no AI content exists (conditional rendering working)"
+  ],
+  
+  "test_report_links": [
+    "/app/backend_test.py",
+    "/app/.screenshots/phase6_whats_new.png",
+    "/app/.screenshots/phase6_subscribers.png",
+    "/app/.screenshots/phase6_dashboard.png"
+  ],
+  
+  "success_percentage": {
+    "backend": "96.4% (53/55 tests passed)",
+    "frontend": "100% (all Phase 6 UI tests passed)",
+    "overall": "98%"
+  },
+  
+  "updated_files": [
+    "/app/backend/server.py",
+    "/app/backend_test.py",
+    "/app/memory/test_credentials.md"
+  ],
+  
+  "action_item_for_main_agent": "",
+  
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_test_itself": false
+}

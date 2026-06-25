@@ -1618,6 +1618,131 @@ async def admin_traffic(_admin=Depends(require_admin), days: int = 14):
     return {"daily": daily, "top_paths": top_paths, "days": days}
 
 
+# ─── What's New (recent AI-generated content) ───────────────────────────────
+def _collect_whats_new(paths: list, *, since: Optional[datetime] = None, limit: int = 30) -> list:
+    """Flatten paths/lessons into a single timeline of AI-generated items."""
+    items: list = []
+    for p in paths or []:
+        # The path itself
+        if (p.get("source") or "").lower() == "ai-studio":
+            created = p.get("created_at")
+            if not since or (created and created >= since):
+                items.append({
+                    "type": "path",
+                    "path_id": p["id"],
+                    "path_title": p["title"],
+                    "path_color": p.get("color", "#FFB000"),
+                    "module_id": None,
+                    "module_title": None,
+                    "lesson_id": None,
+                    "lesson_title": None,
+                    "image": p.get("image"),
+                    "tier": p.get("tier", "free"),
+                    "created_at": created,
+                })
+        for m in p.get("modules", []) or []:
+            for lsn in m.get("lessons", []) or []:
+                if (lsn.get("source") or "").lower() == "ai-studio":
+                    created = lsn.get("created_at")
+                    if not since or (created and created >= since):
+                        items.append({
+                            "type": "lesson",
+                            "path_id": p["id"],
+                            "path_title": p["title"],
+                            "path_color": p.get("color", "#FFB000"),
+                            "module_id": m["id"],
+                            "module_title": m["title"],
+                            "lesson_id": lsn["id"],
+                            "lesson_title": lsn["title"],
+                            "image": p.get("image"),
+                            "tier": p.get("tier", "free"),
+                            "created_at": created,
+                        })
+    items.sort(key=lambda x: (x.get("created_at") or datetime.min.replace(tzinfo=timezone.utc)), reverse=True)
+    return items[:limit]
+
+
+@api.get("/whats-new")
+async def whats_new(days: int = 14, limit: int = 12, user=Depends(current_user)):
+    """User-facing: recent AI-generated lessons/paths (default last 14 days)."""
+    paths = await _curric_list_paths(db)
+    since = datetime.now(timezone.utc) - timedelta(days=max(1, min(days, 90)))
+    items = _collect_whats_new(paths, since=since, limit=min(limit, 50))
+    return {"items": items, "days": days, "count": len(items)}
+
+
+@api.get("/admin/whats-new")
+async def admin_whats_new(_admin=Depends(require_admin), days: int = 30, limit: int = 100):
+    """Admin: more results, broader window."""
+    paths = await _curric_list_paths(db)
+    since = datetime.now(timezone.utc) - timedelta(days=max(1, min(days, 365)))
+    items = _collect_whats_new(paths, since=since, limit=min(limit, 500))
+    return {"items": items, "days": days, "count": len(items)}
+
+
+# ─── Subscribers (active billing) ───────────────────────────────────────────
+@api.get("/admin/subscribers")
+async def admin_subscribers(_admin=Depends(require_admin), include_canceled: bool = False, limit: int = 500):
+    """Admin: list of paying subscribers w/ plan, interval, status, renewal date."""
+    query: dict = {"tier": {"$in": ["ascender", "pathfinder", "sage"]}}
+    if not include_canceled:
+        # Show users currently with a non-free tier (active OR canceled-but-still-within-period).
+        # Exclude those who have been fully reverted to free already.
+        pass
+    cur = users_col.find(query, {"_id": 0}).sort("created_at", -1).limit(min(limit, 1000))
+    users = await cur.to_list(min(limit, 1000))
+    rows = []
+    now = datetime.now(timezone.utc)
+    # MRR estimate
+    mrr = 0.0
+    for u in users:
+        tier = u.get("tier")
+        interval = u.get("subscription_interval") or "monthly"
+        # Handle timezone-naive tier_expires_at
+        tier_exp = u.get("tier_expires_at")
+        if tier_exp and tier_exp.tzinfo is None:
+            tier_exp = tier_exp.replace(tzinfo=timezone.utc)
+        status = u.get("subscription_status") or ("active" if tier_exp and tier_exp > now else "unknown")
+        if not include_canceled and status not in ("active", "trialing", "past_due", "unknown"):
+            continue
+        price_monthly = 0.0
+        if tier in TIERS:
+            if interval == "annual":
+                price_monthly = float(TIERS[tier]["price_annual"]) / 12.0
+            elif interval == "monthly":
+                price_monthly = float(TIERS[tier]["price_monthly"])
+            else:  # trial
+                price_monthly = 0.0
+        if status in ("active", "trialing", "past_due"):
+            mrr += price_monthly
+        rows.append({
+            "user_id": u["id"],
+            "email": u["email"],
+            "name": u.get("name"),
+            "tier": tier,
+            "interval": interval,
+            "status": status,
+            "cancel_at_period_end": bool(u.get("subscription_cancel_at_period_end", False)),
+            "renews_at": u.get("tier_expires_at"),
+            "stripe_customer_id": u.get("stripe_customer_id"),
+            "stripe_subscription_id": u.get("stripe_subscription_id"),
+            "created_at": u.get("created_at"),
+            "auth_provider": u.get("auth_provider", "email"),
+        })
+    # Counts by tier for the header
+    by_tier = {"ascender": 0, "pathfinder": 0, "sage": 0}
+    for r in rows:
+        if r["tier"] in by_tier:
+            by_tier[r["tier"]] += 1
+    return {
+        "subscribers": rows,
+        "count": len(rows),
+        "by_tier": by_tier,
+        "mrr_usd": round(mrr, 2),
+        "arr_usd": round(mrr * 12, 2),
+    }
+
+
 # ─── Pydantic models for Curriculum CMS ─────────────────────────────────────
 class CardIn(BaseModel):
     title: str
@@ -1781,7 +1906,10 @@ async def admin_generate_lesson(body: LessonGenIn, _admin=Depends(require_admin)
         raise HTTPException(503, f"AI Studio unavailable: {str(e)[:160]}")
     inserted = None
     if body.publish and body.path_id and body.module_id:
-        inserted = await _curric_add_lesson(db, body.path_id, body.module_id, draft)
+        # tag this lesson as AI-generated for "What's New" surfacing
+        draft_for_insert = dict(draft)
+        draft_for_insert["source"] = "ai-studio"
+        inserted = await _curric_add_lesson(db, body.path_id, body.module_id, draft_for_insert)
         if not inserted:
             raise HTTPException(404, "Path/Module not found — could not publish")
     return {"draft": draft, "published": inserted}
@@ -1795,6 +1923,7 @@ async def admin_generate_path(body: PathGenIn, _admin=Depends(require_admin)):
         log.exception("generate-path failed")
         raise HTTPException(503, f"AI Studio unavailable: {str(e)[:160]}")
     outline["tier"] = body.tier
+    outline["source"] = "ai-studio"  # tag for What's New
     # Optionally generate cover
     if body.auto_cover:
         try:
@@ -1816,6 +1945,8 @@ async def admin_generate_path(body: PathGenIn, _admin=Depends(require_admin)):
                     # Keep original lesson id, replace contents
                     full["id"] = lsn["id"]
                     full["title"] = lsn["title"]
+                    full["source"] = "ai-studio"
+                    full["created_at"] = datetime.now(timezone.utc)
                     await _curric_update_lesson(db, created["id"], m["id"], lsn["id"], full)
                     generated_lessons += 1
                 except Exception as e:
