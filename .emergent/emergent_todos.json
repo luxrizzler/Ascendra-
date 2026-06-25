@@ -1,10 +1,26 @@
 [
   {
-    "content": "Phase 5: Renewal reminders — COMPLETE",
+    "content": "Phase 7a-d: Backend SEO Studio (schema, public/admin endpoints, sitemap, robots) — COMPLETE",
     "status": "completed"
   },
   {
-    "content": "Phase 6: What's New + Subscribers — COMPLETE (98% test pass)",
+    "content": "Phase 7e: Frontend — /learn/:modelSlug and /learn/:modelSlug/:useCaseSlug routes with SEO meta + JSON-LD — COMPLETE",
     "status": "completed"
+  },
+  {
+    "content": "Phase 7f: Frontend — /admin/seo page (list, generate, publish/archive/delete) — COMPLETE",
+    "status": "completed"
+  },
+  {
+    "content": "Phase 7g: Seed 8 SEO pages (6 hubs + 2 use-cases) — COMPLETE",
+    "status": "completed"
+  },
+  {
+    "content": "Phase 7g+: Link learn hubs from Landing page models section — COMPLETE",
+    "status": "completed"
+  },
+  {
+    "content": "Phase 7h: Run testing_agent on SEO routes + admin studio + sitemap",
+    "status": "in_progress"
   }
 ]

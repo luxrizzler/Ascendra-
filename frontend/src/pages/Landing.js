@@ -44,9 +44,11 @@ const FALLBACK_TIERS = [
 export default function Landing() {
   const nav = useNavigate();
   const [tiers, setTiers] = useState(FALLBACK_TIERS);
+  const [seoPages, setSeoPages] = useState([]);
 
   useEffect(() => {
     api.get("/pricing").then((r) => { if (r?.tiers?.length) setTiers(r.tiers); }).catch(() => {});
+    api.get("/seo/published").then((r) => { setSeoPages((r.pages || []).filter((p) => p.kind === "hub")); }).catch(() => {});
   }, []);
 
   return (
@@ -103,6 +105,19 @@ export default function Landing() {
             ))}
           </div>
         </div>
+        {seoPages.length > 0 && (
+          <div className="max-w-6xl mx-auto px-5 sm:px-8 mt-7 text-center" data-testid="landing-seo-links">
+            <div className="asc-label mb-3">Explore the AI models we teach</div>
+            <div className="flex flex-wrap justify-center gap-2">
+              {seoPages.slice(0, 12).map((p) => (
+                <Link key={p.id} to={`/learn/${p.model_slug}`} data-testid={`landing-seo-link-${p.model_slug}`}
+                  className="px-3 py-1.5 rounded-full text-xs font-bold border border-[var(--asc-border)] text-[var(--asc-text-dim)] hover:text-white hover:border-[var(--asc-brand)] transition">
+                  {p.model_name || p.model_slug}
+                </Link>
+              ))}
+            </div>
+          </div>
+        )}
       </section>
 
       {/* PILLARS */}

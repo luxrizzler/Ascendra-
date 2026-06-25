@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
 import { useEffect } from "react";
 import { Toaster } from "sonner";
+import { HelmetProvider } from "react-helmet-async";
 import "@/index.css";
 import { AuthProvider } from "@/context/AuthContext";
 import WebNav from "@/components/WebNav";
@@ -30,6 +31,8 @@ import AdminStudio from "@/pages/AdminStudio";
 import AdminEmail from "@/pages/AdminEmail";
 import AdminWhatsNew from "@/pages/AdminWhatsNew";
 import AdminSubscribers from "@/pages/AdminSubscribers";
+import AdminSeoStudio from "@/pages/AdminSeoStudio";
+import LearnHub from "@/pages/LearnHub";
 import AuthCallback from "@/pages/AuthCallback";
 import NotFound from "@/pages/NotFound";
 import { api } from "@/lib/api";
@@ -79,6 +82,9 @@ function Shell() {
           <Route path="/admin/email" element={<RequireAuth admin><AdminEmail /></RequireAuth>} />
           <Route path="/admin/whats-new" element={<RequireAuth admin><AdminWhatsNew /></RequireAuth>} />
           <Route path="/admin/subscribers" element={<RequireAuth admin><AdminSubscribers /></RequireAuth>} />
+          <Route path="/admin/seo" element={<RequireAuth admin><AdminSeoStudio /></RequireAuth>} />
+          <Route path="/learn/:modelSlug" element={<LearnHub />} />
+          <Route path="/learn/:modelSlug/:useCaseSlug" element={<LearnHub />} />
           <Route path="/auth/callback" element={<AuthCallback />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
@@ -90,13 +96,15 @@ function Shell() {
 
 export default function App() {
   return (
-    <BrowserRouter>
-      <AuthProvider>
-        <ScrollToTop />
-        <PageviewTracker />
-        <Toaster theme="dark" position="top-right" toastOptions={{ style: { background: "#15102B", color: "#fff", border: "1px solid rgba(191,180,255,0.18)" } }} />
-        <Shell />
-      </AuthProvider>
-    </BrowserRouter>
+    <HelmetProvider>
+      <BrowserRouter>
+        <AuthProvider>
+          <ScrollToTop />
+          <PageviewTracker />
+          <Toaster theme="dark" position="top-right" toastOptions={{ style: { background: "#15102B", color: "#fff", border: "1px solid rgba(191,180,255,0.18)" } }} />
+          <Shell />
+        </AuthProvider>
+      </BrowserRouter>
+    </HelmetProvider>
   );
 }

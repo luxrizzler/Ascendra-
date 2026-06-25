@@ -20,6 +20,7 @@ import httpx
 import jwt
 from dotenv import load_dotenv
 from fastapi import FastAPI, APIRouter, Depends, HTTPException, Request, Header
+from fastapi.responses import Response, PlainTextResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, EmailStr, Field
@@ -49,6 +50,7 @@ from curriculum_db import (
 )
 from curriculum import AI_MODELS
 import ai_studio
+import seo_studio
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
@@ -1300,6 +1302,160 @@ async def admin_send_renewal_reminder_for_user(body: RenewalReminderSendIn, _adm
     if not result.get("ok"):
         raise HTTPException(400, result.get("reason", "Could not send reminder") + (f": {result.get('error','')}" if result.get('error') else ""))
     return result
+
+
+# ─── SEO Studio (Programmatic Landing Pages) ────────────────────────────────
+class SeoHubGenIn(BaseModel):
+    model_name: str
+    model_slug: Optional[str] = None
+    publish: bool = False
+
+
+class SeoUseCaseGenIn(BaseModel):
+    model_name: str
+    use_case: str
+    model_slug: Optional[str] = None
+    use_case_slug: Optional[str] = None
+    publish: bool = False
+
+
+class SeoStatusIn(BaseModel):
+    status: Literal["draft", "published", "archived"]
+
+
+@api.get("/seo/page/{model_slug}")
+async def seo_get_page(model_slug: str):
+    page = await seo_studio.get_page(db, model_slug, None)
+    if not page or page.get("status") != "published":
+        raise HTTPException(404, "Page not found")
+    return page
+
+
+@api.get("/seo/page/{model_slug}/{use_case_slug}")
+async def seo_get_usecase_page(model_slug: str, use_case_slug: str):
+    page = await seo_studio.get_page(db, model_slug, use_case_slug)
+    if not page or page.get("status") != "published":
+        raise HTTPException(404, "Page not found")
+    return page
+
+
+@api.get("/seo/published")
+async def seo_list_published(limit: int = 200):
+    """Public: enumerate published SEO pages (used by frontend index + sitemap)."""
+    pages = await seo_studio.list_pages(db, status="published", limit=min(limit, 500))
+    # Slim payload — exclude long body text
+    slim = []
+    for p in pages:
+        slim.append({
+            "id": p["id"],
+            "kind": p.get("kind"),
+            "title": p.get("title"),
+            "meta_title": p.get("meta_title"),
+            "meta_description": p.get("meta_description"),
+            "model_slug": p["model_slug"],
+            "model_name": p.get("model_name"),
+            "use_case_slug": p.get("use_case_slug"),
+            "use_case_name": p.get("use_case_name"),
+            "published_at": p.get("published_at"),
+            "updated_at": p.get("updated_at"),
+        })
+    return {"pages": slim, "count": len(slim)}
+
+
+@api.get("/seo/sitemap.xml", response_class=Response)
+async def seo_sitemap():
+    pages = await seo_studio.list_pages(db, status="published", limit=2000)
+    base = _public_web_url()
+    xml = seo_studio.render_sitemap_xml(
+        public_base=base,
+        pages=pages,
+        extra_paths=["/", "/pricing", "/signup", "/login", "/paths", "/models", "/tutor"],
+    )
+    return Response(content=xml, media_type="application/xml")
+
+
+@api.get("/seo/robots.txt", response_class=PlainTextResponse)
+async def seo_robots():
+    base = _public_web_url()
+    return PlainTextResponse(seo_studio.render_robots_txt(base))
+
+
+@api.get("/admin/seo/pages")
+async def admin_seo_list(_admin=Depends(require_admin), status: Optional[str] = None, limit: int = 500):
+    pages = await seo_studio.list_pages(db, status=status, limit=min(limit, 1000))
+    return {"pages": pages, "count": len(pages)}
+
+
+@api.get("/admin/seo/page/{model_slug}")
+async def admin_seo_get(model_slug: str, _admin=Depends(require_admin)):
+    page = await seo_studio.get_page(db, model_slug, None)
+    if not page:
+        raise HTTPException(404, "Page not found")
+    return page
+
+
+@api.get("/admin/seo/page/{model_slug}/{use_case_slug}")
+async def admin_seo_get_usecase(model_slug: str, use_case_slug: str, _admin=Depends(require_admin)):
+    page = await seo_studio.get_page(db, model_slug, use_case_slug)
+    if not page:
+        raise HTTPException(404, "Page not found")
+    return page
+
+
+@api.post("/admin/seo/generate-hub")
+async def admin_seo_generate_hub(body: SeoHubGenIn, _admin=Depends(require_admin)):
+    try:
+        page = await seo_studio.generate_hub_page(body.model_name, body.model_slug)
+    except Exception as e:
+        log.exception("seo hub gen failed")
+        raise HTTPException(503, f"AI generation failed: {str(e)[:160]}")
+    saved = await seo_studio.upsert_page(db, page, published=body.publish)
+    return {"page": saved, "generated": True, "published": body.publish}
+
+
+@api.post("/admin/seo/generate-usecase")
+async def admin_seo_generate_usecase(body: SeoUseCaseGenIn, _admin=Depends(require_admin)):
+    try:
+        page = await seo_studio.generate_usecase_page(
+            body.model_name, body.use_case, body.model_slug, body.use_case_slug,
+        )
+    except Exception as e:
+        log.exception("seo usecase gen failed")
+        raise HTTPException(503, f"AI generation failed: {str(e)[:160]}")
+    saved = await seo_studio.upsert_page(db, page, published=body.publish)
+    return {"page": saved, "generated": True, "published": body.publish}
+
+
+@api.post("/admin/seo/page/{model_slug}/status")
+async def admin_seo_set_status(model_slug: str, body: SeoStatusIn, _admin=Depends(require_admin)):
+    page = await seo_studio.set_status(db, model_slug, None, body.status)
+    if not page:
+        raise HTTPException(404, "Page not found")
+    return page
+
+
+@api.post("/admin/seo/page/{model_slug}/{use_case_slug}/status")
+async def admin_seo_set_status_usecase(model_slug: str, use_case_slug: str, body: SeoStatusIn, _admin=Depends(require_admin)):
+    page = await seo_studio.set_status(db, model_slug, use_case_slug, body.status)
+    if not page:
+        raise HTTPException(404, "Page not found")
+    return page
+
+
+@api.delete("/admin/seo/page/{model_slug}")
+async def admin_seo_delete(model_slug: str, _admin=Depends(require_admin)):
+    ok = await seo_studio.delete_page(db, model_slug, None)
+    if not ok:
+        raise HTTPException(404, "Page not found")
+    return {"ok": True}
+
+
+@api.delete("/admin/seo/page/{model_slug}/{use_case_slug}")
+async def admin_seo_delete_usecase(model_slug: str, use_case_slug: str, _admin=Depends(require_admin)):
+    ok = await seo_studio.delete_page(db, model_slug, use_case_slug)
+    if not ok:
+        raise HTTPException(404, "Page not found")
+    return {"ok": True}
 
 
 # ─── Health ─────────────────────────────────────────────────────────────────
