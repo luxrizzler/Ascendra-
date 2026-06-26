@@ -1,18 +1,34 @@
 [
   {
-    "content": "Phase 7 — Programmatic SEO Studio (96% pass) — COMPLETE",
+    "content": "Phase 7 — Programmatic SEO Studio (96%) — COMPLETE",
     "status": "completed"
   },
   {
-    "content": "Phase 8a-e: Backend auto-pilot (scheduler, queue, quality gate, runs log, digest, admin endpoints) — COMPLETE",
+    "content": "Phase 8 — Auto-Pilot Content Engine (100% backend) — COMPLETE",
     "status": "completed"
   },
   {
-    "content": "Phase 8f: Frontend /admin/auto-content page — queue manager + recent runs + pause switch + manual run",
+    "content": "Phase 9a: Backend — lead capture endpoint (POST /api/leads) + leads collection + welcome drip scheduler integration",
     "status": "in_progress"
   },
   {
-    "content": "Phase 8g: Run testing_agent on auto-pilot + force a manual run end-to-end",
+    "content": "Phase 9b: Backend — 5-step welcome drip emails (Day 0 lead-magnet, Day 2 value, Day 5 trial-CTA, Day 10 testimonial, Day 14 urgency)",
+    "status": "pending"
+  },
+  {
+    "content": "Phase 9c: Frontend — Landing page email-capture modal + dedicated /resources/ai-roadmap landing page",
+    "status": "pending"
+  },
+  {
+    "content": "Phase 9d: Generate the actual 'AI Roadmap' PDF on-demand (or HTML email-friendly format) via AI",
+    "status": "pending"
+  },
+  {
+    "content": "Phase 10a-d: Lifecycle emails — trial-ending, winback (7d after cancel), streak-saver (14d no login), annual-upsell (monthly user @ 90d)",
+    "status": "pending"
+  },
+  {
+    "content": "Phase 11: Social content pipeline (free) — tweets, carousels, silent slideshow MP4 — generation only, posting gated on user-supplied API keys",
     "status": "pending"
   }
 ]

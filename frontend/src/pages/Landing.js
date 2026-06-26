@@ -1,7 +1,8 @@
 import { Link, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
-import { Sparkles, ArrowRight, Rocket, TrendingUp, Compass, Users, CheckCircle2, Infinity as InfinityIcon, Sun } from "lucide-react";
+import { Sparkles, ArrowRight, Rocket, TrendingUp, Compass, Users, CheckCircle2, Infinity as InfinityIcon, Sun, Gift } from "lucide-react";
 import { api } from "@/lib/api";
+import LeadCaptureModal from "@/components/LeadCaptureModal";
 
 const HERO_IMG = "https://customer-assets.emergentagent.com/job_ai-business-academy-2/artifacts/c1jkvwwp_4185C05A-6A9A-42F7-A146-9109CF6F03DD.png";
 
@@ -45,6 +46,7 @@ export default function Landing() {
   const nav = useNavigate();
   const [tiers, setTiers] = useState(FALLBACK_TIERS);
   const [seoPages, setSeoPages] = useState([]);
+  const [leadOpen, setLeadOpen] = useState(false);
 
   useEffect(() => {
     api.get("/pricing").then((r) => { if (r?.tiers?.length) setTiers(r.tiers); }).catch(() => {});
@@ -78,9 +80,14 @@ export default function Landing() {
               </button>
               <button onClick={() => nav("/pricing")} className="asc-btn-secondary text-base" data-testid="hero-pricing-btn">See pricing</button>
             </div>
+            <button onClick={() => setLeadOpen(true)} className="mt-5 inline-flex items-center gap-2 text-sm text-[var(--asc-brand)] hover:underline font-bold" data-testid="hero-lead-magnet-btn">
+              <Gift size={14} /> Or grab the free AI Roadmap (no signup)
+            </button>
           </div>
         </div>
       </section>
+
+      <LeadCaptureModal open={leadOpen} onClose={() => setLeadOpen(false)} source="landing_hero" />
 
       {/* MISSION */}
       <section className="px-6 py-16">

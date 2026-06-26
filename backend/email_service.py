@@ -114,6 +114,210 @@ def _shell(title: str, preheader: str, body_html: str) -> str:
 # ──────────────────────────────────────────────────────────────────────
 # Public sending functions
 # ──────────────────────────────────────────────────────────────────────
+def _build_marketing_email(*, to: str, subject: str, preheader: str, headline: str,
+                            body_paragraphs: list, cta_label: str, cta_url: str,
+                            ps_text: Optional[str] = None) -> dict:
+    """Shared scaffolding for marketing/lifecycle emails (lead magnet, drip, winback, etc)."""
+    paras = "".join([
+        f'<p style="margin:0 0 14px 0;color:#B8B8C2;font-size:15px;line-height:23px;">{p}</p>'
+        for p in body_paragraphs
+    ])
+    ps = (
+        f'<p style="margin:22px 0 0 0;color:#7a7a85;font-size:13px;line-height:19px;font-style:italic;">PS &mdash; {ps_text}</p>'
+        if ps_text else ""
+    )
+    body_html = f"""
+      <h1 style="margin:0 0 14px 0;color:#FFFFFF;font-size:28px;line-height:34px;letter-spacing:-0.5px;font-weight:900;">{headline}</h1>
+      {paras}
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:18px 0 22px 0;">
+        <tr>
+          <td bgcolor="#FFB000" style="border-radius:12px;">
+            <a href="{cta_url}" style="display:inline-block;padding:14px 26px;color:#000000;font-weight:800;font-size:15px;text-decoration:none;border-radius:12px;">{cta_label} &rarr;</a>
+          </td>
+        </tr>
+      </table>
+      {ps}
+    """
+    # Plain-text fallback (strip HTML hints from paragraphs)
+    import re as _re
+    plain_paras = [_re.sub(r"<[^>]+>", "", p) for p in body_paragraphs]
+    text = headline + "\n\n" + "\n\n".join(plain_paras) + f"\n\n{cta_label}: {cta_url}\n"
+    if ps_text:
+        text += f"\nPS — {_re.sub(r'<[^>]+>', '', ps_text)}\n"
+    return _send(to, subject, _shell(subject, preheader, body_html), text)
+
+
+def send_lead_magnet(to: str, name: Optional[str], roadmap_url: str, signup_url: str) -> dict:
+    display = name or to.split("@")[0]
+    return _build_marketing_email(
+        to=to,
+        subject="Your free AI Roadmap (and what to do with it)",
+        preheader="The 5 phases - where most people get stuck - how to skip them",
+        headline=f"Welcome, {display}. Here's your AI Roadmap.",
+        body_paragraphs=[
+            "Most people learning AI today get stuck in the same place: a graveyard of half-watched YouTube videos and 47 saved tabs.",
+            "Your roadmap fixes that. It's the exact 5-phase path we walk every learner through at Ascendra - from curious beginner to actually shipping work with AI.",
+            "Tap below to read it (no download needed - works on your phone).",
+        ],
+        cta_label="Open my AI Roadmap",
+        cta_url=roadmap_url,
+        ps_text=f'When you are ready to actually do the work, <a href="{signup_url}" style="color:#FFB000;">your free Ascendra account</a> takes 30 seconds.',
+    )
+
+
+def send_welcome_d2(to: str, name: Optional[str], lesson_url: str) -> dict:
+    display = name or to.split("@")[0]
+    return _build_marketing_email(
+        to=to,
+        subject="The one prompt structure that 10x'd my output",
+        preheader="A 60-second value drop - no signup required to read.",
+        headline="Day 2: the prompt structure that actually works",
+        body_paragraphs=[
+            f"Hey {display},",
+            "Yesterday we talked about <em>where</em> to learn AI. Today: <em>how</em> to actually use it.",
+            "<strong style='color:#FFB000;'>The structure:</strong> Role &rarr; Context &rarr; Task &rarr; Constraints &rarr; Output format.",
+            'Example: "You are a senior copywriter (role). I am launching a B2B SaaS (context). Write 5 cold-email subject lines (task). Each &le; 8 words, no cliches (constraints). Return as a numbered list (output format)."',
+            "That tiny formula will improve your AI results more than any new model. We teach 40+ of these patterns inside Ascendra - but you can start with just this one today.",
+        ],
+        cta_label="See a full prompt-engineering lesson",
+        cta_url=lesson_url,
+    )
+
+
+def send_welcome_d5(to: str, name: Optional[str], pricing_url: str) -> dict:
+    display = name or to.split("@")[0]
+    return _build_marketing_email(
+        to=to,
+        subject=f"{display}, what's holding you back?",
+        preheader="$2.99 to try Pathfinder for a full week. Zero risk.",
+        headline="A small offer (no pressure)",
+        body_paragraphs=[
+            f"Hey {display},",
+            "You have been reading the roadmap and value emails this week. The natural next step is to actually <em>start</em>.",
+            "We made it almost-free to try: <strong style='color:#FFB000;'>$2.99 for 7 days of Pathfinder</strong> - full access to the AI Fundamentals path, Prompt Engineering Mastery, your AI Tutor, the works.",
+            "Cancel anytime, no questions asked. Stripe handles the trial; we just teach.",
+        ],
+        cta_label="Start my $2.99 week",
+        cta_url=pricing_url,
+        ps_text="Or just keep using the free tier. We are still glad you are here.",
+    )
+
+
+def send_welcome_d10(to: str, name: Optional[str], dashboard_url: str) -> dict:
+    display = name or to.split("@")[0]
+    return _build_marketing_email(
+        to=to,
+        subject="The 3 lessons that change how people use AI forever",
+        preheader="Our most-completed lessons - and why they stick.",
+        headline="Day 10: the 3 lessons that change everything",
+        body_paragraphs=[
+            f"Hey {display},",
+            "Across thousands of completions, three lessons stand out:",
+            "<strong style='color:#FFB000;'>1.</strong> Prompt Engineering Basics - most people don't realize how much they're leaving on the table.",
+            "<strong style='color:#FFB000;'>2.</strong> Using Claude vs GPT vs Gemini - when to pick which (it's not always the newest).",
+            "<strong style='color:#FFB000;'>3.</strong> Building Your AI Workflow - turning one-off magic into a repeatable system.",
+            "If you have been hovering on the fence, do these three. They take 90 minutes total and they will change how you think about AI for the next decade.",
+        ],
+        cta_label="Open my dashboard",
+        cta_url=dashboard_url,
+    )
+
+
+def send_welcome_d14(to: str, name: Optional[str], pricing_url: str) -> dict:
+    display = name or to.split("@")[0]
+    return _build_marketing_email(
+        to=to,
+        subject="Last note from us (for a while)",
+        preheader="No more welcome emails after this one.",
+        headline="One last note",
+        body_paragraphs=[
+            f"Hey {display},",
+            "This is the last email in our welcome series. After this we will only email you when something new ships in your queue or your account needs attention.",
+            "If Ascendra is not your speed, no hard feelings - the roadmap is yours to keep.",
+            "If it <em>is</em> your speed, here is the easiest way to commit: <strong style='color:#FFB000;'>save 17% with annual</strong>. Same access, fewer billing emails, locked-in price.",
+        ],
+        cta_label="See annual pricing",
+        cta_url=pricing_url,
+        ps_text="Reply to this email if you have any questions. A real human reads them.",
+    )
+
+
+def send_trial_ending(to: str, name: Optional[str], tier: str, charge_date_str: str, amount_usd: float, portal_url: str) -> dict:
+    display = name or to.split("@")[0]
+    tier_upper = (tier or "ascender").upper()
+    return _build_marketing_email(
+        to=to,
+        subject=f"Your trial ends tomorrow - heads up on the ${amount_usd:.2f} charge",
+        preheader=f"Trial ends {charge_date_str} - ${amount_usd:.2f} {tier_upper}",
+        headline="Heads up: your trial is ending",
+        body_paragraphs=[
+            f"Hey {display},",
+            f"Quick courtesy email: your {tier_upper} trial ends on <strong style='color:#EDEDED;'>{charge_date_str}</strong> and Stripe will charge <strong style='color:#FFB000;'>${amount_usd:.2f}</strong> the same day.",
+            "No action needed if you would like to keep climbing. But if you want to cancel, downgrade, or change cards, you can do all of that in one click:",
+        ],
+        cta_label="Manage billing",
+        cta_url=portal_url,
+        ps_text="Genuine question: what would have made the trial more useful? Hit reply - I read every one.",
+    )
+
+
+def send_winback(to: str, name: Optional[str], tier: str, signup_url: str) -> dict:
+    display = name or to.split("@")[0]
+    return _build_marketing_email(
+        to=to,
+        subject=f"{display}, we miss you",
+        preheader="No discount, just an honest note.",
+        headline="Curious what changed",
+        body_paragraphs=[
+            f"Hey {display},",
+            f"You canceled your Ascendra {tier.upper() if tier else 'plan'} a week ago. No pressure, no upsell - I just wanted to ask:",
+            "<strong style='color:#FFB000;'>what made you leave?</strong>",
+            "Was the content not what you expected? Pace too fast or slow? Found something better? Just need a break? Replying with even one sentence helps us build a better product.",
+            "And if it was just timing - your account is still here, paid or free, whenever you are ready.",
+        ],
+        cta_label="Re-open my account",
+        cta_url=signup_url,
+    )
+
+
+def send_streak_saver(to: str, name: Optional[str], days_away: int, dashboard_url: str) -> dict:
+    display = name or to.split("@")[0]
+    return _build_marketing_email(
+        to=to,
+        subject=f"You are {days_away} days into a streak break",
+        preheader="One 5-minute lesson is enough to restart.",
+        headline="Your AI streak is dimming",
+        body_paragraphs=[
+            f"Hey {display},",
+            f"It has been {days_away} days since your last lesson. No judgment - life happens. But you know what restarts faster than starting from scratch?",
+            "<strong style='color:#FFB000;'>One 5-minute lesson.</strong>",
+            "That is all. One lesson, one quiz, one tiny win. Momentum compounds.",
+        ],
+        cta_label="Open my dashboard",
+        cta_url=dashboard_url,
+    )
+
+
+def send_annual_upsell(to: str, name: Optional[str], tier: str, monthly_price: float, annual_price: float, savings_usd: float, pricing_url: str) -> dict:
+    display = name or to.split("@")[0]
+    tier_upper = (tier or "pathfinder").upper()
+    return _build_marketing_email(
+        to=to,
+        subject=f"You would save ${savings_usd:.0f}/year on {tier_upper}",
+        preheader="Same access, paid annually. Save 2 months.",
+        headline="You have been paying monthly for 3 months",
+        body_paragraphs=[
+            f"Hey {display},",
+            f"At your current pace, you are spending <strong style='color:#EDEDED;'>${monthly_price * 12:.2f}/year</strong> on {tier_upper}.",
+            f"If you flipped to annual: <strong style='color:#FFB000;'>${annual_price:.2f}/year</strong>. That is two months free - about <strong style='color:#FFB000;'>${savings_usd:.0f}</strong> back in your pocket.",
+            "Same access, same everything, just paid once instead of twelve times.",
+        ],
+        cta_label="Switch to annual",
+        cta_url=pricing_url,
+        ps_text="If you ever cancel mid-year, the unused months are pro-rated and refunded automatically.",
+    )
+
+
 def send_password_reset(to: str, name: Optional[str], reset_url: str, expires_minutes: int = 60) -> dict:
     """Magic link to reset password."""
     display = name or to.split("@")[0]

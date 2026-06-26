@@ -33,6 +33,8 @@ import AdminWhatsNew from "@/pages/AdminWhatsNew";
 import AdminSubscribers from "@/pages/AdminSubscribers";
 import AdminSeoStudio from "@/pages/AdminSeoStudio";
 import AdminAutoContent from "@/pages/AdminAutoContent";
+import AdminSocial from "@/pages/AdminSocial";
+import AiRoadmap from "@/pages/AiRoadmap";
 import LearnHub from "@/pages/LearnHub";
 import AuthCallback from "@/pages/AuthCallback";
 import NotFound from "@/pages/NotFound";
@@ -85,8 +87,10 @@ function Shell() {
           <Route path="/admin/subscribers" element={<RequireAuth admin><AdminSubscribers /></RequireAuth>} />
           <Route path="/admin/seo" element={<RequireAuth admin><AdminSeoStudio /></RequireAuth>} />
           <Route path="/admin/auto-content" element={<RequireAuth admin><AdminAutoContent /></RequireAuth>} />
+          <Route path="/admin/social" element={<RequireAuth admin><AdminSocial /></RequireAuth>} />
           <Route path="/learn/:modelSlug" element={<LearnHub />} />
           <Route path="/learn/:modelSlug/:useCaseSlug" element={<LearnHub />} />
+          <Route path="/resources/ai-roadmap" element={<AiRoadmap />} />
           <Route path="/auth/callback" element={<AuthCallback />} />
           <Route path="*" element={<NotFound />} />
         </Routes>

@@ -52,6 +52,8 @@ from curriculum import AI_MODELS
 import ai_studio
 import seo_studio
 import auto_content
+import lifecycle
+import social_studio
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
@@ -1569,6 +1571,131 @@ async def admin_auto_get_queue_item(queue_id: str, _admin=Depends(require_admin)
     return q
 
 
+# ─── Lead capture + Lifecycle ─────────────────────────────────────────────
+class LeadCaptureIn(BaseModel):
+    email: EmailStr
+    name: Optional[str] = None
+    source: Optional[str] = "landing"
+
+
+class LifecycleRunIn(BaseModel):
+    kind: Literal["drip", "trial_ending", "winback", "streak_saver", "annual_upsell", "all"] = "all"
+
+
+@api.post("/leads")
+async def capture_lead(body: LeadCaptureIn):
+    """Public: capture a lead email + send the lead magnet immediately."""
+    lead = await lifecycle.capture_lead(db, body.email, body.name, body.source)
+    # Fire-and-forget lead-magnet send
+    try:
+        await lifecycle.send_lead_magnet_email(db, body.email, body.name)
+    except Exception as e:
+        log.exception(f"lead magnet send failed: {e}")
+    return {"ok": True, "lead_id": lead["id"], "email": lead["email"]}
+
+
+@api.get("/admin/leads")
+async def admin_list_leads(_admin=Depends(require_admin), limit: int = 500):
+    col = db["leads"]
+    cur = col.find({}, {"_id": 0}).sort("created_at", -1).limit(min(limit, 1000))
+    leads = await cur.to_list(min(limit, 1000))
+    return {"leads": leads, "count": len(leads)}
+
+
+@api.post("/admin/lifecycle/run")
+async def admin_run_lifecycle(body: LifecycleRunIn, _admin=Depends(require_admin)):
+    """Manually trigger lifecycle email scans (normally runs daily at 09:00 UTC)."""
+    if body.kind == "all":
+        return await lifecycle.run_all_lifecycle(db)
+    if body.kind == "drip":
+        return await lifecycle.scan_welcome_drip(db)
+    if body.kind == "trial_ending":
+        return await lifecycle.scan_trial_ending(db)
+    if body.kind == "winback":
+        return await lifecycle.scan_winback(db)
+    if body.kind == "streak_saver":
+        return await lifecycle.scan_streak_saver(db)
+    if body.kind == "annual_upsell":
+        return await lifecycle.scan_annual_upsell(db)
+    raise HTTPException(400, "Unknown kind")
+
+
+# ─── Social Studio (Phase 11) ───────────────────────────────────────────────
+class SocialGenerateIn(BaseModel):
+    path_id: str
+    module_id: str
+    lesson_id: str
+    include_video: bool = True
+
+
+@api.get("/admin/social/posts")
+async def admin_list_social_posts(_admin=Depends(require_admin), status: Optional[str] = None, limit: int = 100):
+    posts = await social_studio.list_posts(db, status=status, limit=limit)
+    return {"posts": posts, "count": len(posts)}
+
+
+@api.get("/admin/social/post/{post_id}")
+async def admin_get_social_post(post_id: str, _admin=Depends(require_admin)):
+    p = await social_studio.get_post(db, post_id)
+    if not p:
+        raise HTTPException(404, "Post not found")
+    # Strip binary blobs from response
+    p.pop("slide_png_bytes", None)
+    p.pop("mp4_bytes", None)
+    return p
+
+
+@api.get("/admin/social/post/{post_id}/slide/{slide_idx}.png", response_class=Response)
+async def admin_get_social_slide(post_id: str, slide_idx: int, _admin=Depends(require_admin)):
+    png = await social_studio.get_slide_bytes(db, post_id, slide_idx)
+    if not png:
+        raise HTTPException(404, "Slide not found")
+    return Response(content=png, media_type="image/png")
+
+
+@api.get("/admin/social/post/{post_id}/video.mp4", response_class=Response)
+async def admin_get_social_mp4(post_id: str, _admin=Depends(require_admin)):
+    mp4 = await social_studio.get_mp4_bytes(db, post_id)
+    if not mp4:
+        raise HTTPException(404, "Video not found for this post")
+    return Response(content=mp4, media_type="video/mp4")
+
+
+@api.post("/admin/social/generate")
+async def admin_generate_social(body: SocialGenerateIn, _admin=Depends(require_admin)):
+    """Generate social content (tweets + carousel + MP4) for a specific lesson."""
+    path = await _curric_get_path(db, body.path_id)
+    if not path:
+        raise HTTPException(404, "Path not found")
+    lesson = None
+    for m in path.get("modules", []):
+        if m["id"] == body.module_id:
+            for lsn in m.get("lessons", []):
+                if lsn["id"] == body.lesson_id:
+                    lesson = lsn
+                    break
+    if not lesson:
+        raise HTTPException(404, "Lesson not found")
+    try:
+        post = await social_studio.generate_post_for_lesson(
+            db, lesson, path_title=path.get("title"),
+            path_id=body.path_id, lesson_id=body.lesson_id,
+            include_video=body.include_video,
+        )
+        return {"post": post, "ok": True}
+    except Exception as e:
+        log.exception("social generate failed")
+        raise HTTPException(503, f"Generation failed: {str(e)[:160]}")
+
+
+@api.delete("/admin/social/post/{post_id}")
+async def admin_delete_social_post(post_id: str, _admin=Depends(require_admin)):
+    ok = await social_studio.delete_post(db, post_id)
+    if not ok:
+        raise HTTPException(404, "Post not found")
+    return {"ok": True}
+
+
 # ─── Health ─────────────────────────────────────────────────────────────────
 @api.get("/")
 async def root():
@@ -2304,7 +2431,12 @@ async def startup():
     try:
         await auto_content.seed_default_queue(db)
         await auto_content.get_settings(db)  # ensure settings doc exists
-        auto_content.start_scheduler(db)
+        sched = auto_content.start_scheduler(db)
+        # Register lifecycle scan on the same scheduler
+        try:
+            lifecycle.register_jobs(sched, db)
+        except Exception as e:
+            log.exception(f"Lifecycle scheduler registration failed: {e}")
     except Exception as e:
         log.exception(f"Auto-content scheduler failed to start: {e}")
 
