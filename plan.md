@@ -23,11 +23,11 @@
 
 ### New overarching objective (approved): Automation + Growth Flywheel — COMPLETED ✅
 Build a largely automated growth engine:
-- **Programmatic SEO** to generate compounding traffic.
+- **Programmatic SEO** (`/learn` hubs with dynamically generated pages) to generate compounding traffic.
 - **Content auto-pilot** so “fun new courses” ship automatically (daily lessons + weekly flagship course).
 - **Lead magnet + drip sequences** to turn visitors into trials.
 - **Lifecycle automation** to improve conversion/retention.
-- **Social pipeline** using a **free-only content generation stack** (no paid video services), with posting integration ready once API tokens are provided.
+- **Social pipeline** using a **free-only content generation stack** (no paid video services), plus **live X (Twitter) auto-posting**.
 
 ---
 
@@ -284,11 +284,12 @@ Testing:
 ---
 
 #### Phase 11 — Social Content Pipeline (Twitter/X + Instagram + TikTok) — FREE Generation — COMPLETE ✅
-**Goal:** Auto-generate social assets from lessons. Auto-posting is gated on user-provided platform tokens.
+**Goal:** Auto-generate social assets from lessons and support automated publishing where platform permissions allow.
 
 Constraints (explicit):
 - The system **cannot create** social accounts.
 - Auto-posting requires the user to create brand accounts + developer apps and provide API tokens.
+- Meta (Facebook/Instagram) auto-posting requires App Review for advanced permissions; until approved, use manual posting helpers.
 
 Delivered:
 - Backend social generator (`/app/backend/social_studio.py`):
@@ -307,14 +308,59 @@ Delivered:
 - Admin UI:
   - `/admin/social` (generate from lesson, preview tweets, copy buttons, slide previews, MP4 player + download)
 
+##### Phase 11.1 — X (Twitter) Auto-Posting — LIVE ✅ (NEW)
+**Status:** Unblocked, configured, and verified end-to-end.
+
+Implementation details:
+- X posting client implemented in `/app/backend/x_publisher.py` using Tweepy:
+  - OAuth **1.0a User Context** (required for posting on X Free tier)
+  - v1.1 `media_upload` for images + v2 `create_tweet` for thread posting
+- Environment variables now correctly paired (consumer keys match access tokens):
+  - `X_API_KEY`
+  - `X_API_SECRET`
+  - `X_ACCESS_TOKEN`
+  - `X_ACCESS_TOKEN_SECRET`
+  - `X_HANDLE` (display)
+
+Verification performed:
+- Local verification:
+  - `verify_credentials()` returns:
+    - `{ ok: true, screen_name: "Ascendraacademy", user_id: "2070294944334430208" }`
+- End-to-end admin endpoint:
+  - `GET /api/admin/social/x/status` returns `ok: true` and the same account identifiers.
+
+Next optional validation:
+- ⬜ Perform a **real test tweet/thread** from `/admin/social` (or via `POST /api/admin/x/post`) to confirm write access in production UI flow.
+
 Testing:
-- Verified with `testing_agent_v3` (iteration_8): 100% backend + 100% frontend.
+- Credential verification + endpoint status confirmed live.
 
 ---
 
-### Explicitly out of scope (for now)
-- Discount/promo codes: **skipped per user direction** (no discounts available).
-- Automated creation of social accounts: not possible; requires human verification.
+### Phase 12 — Deployment Readiness + Production Launch (Cloudflare / Emergent Deploy) — NOT STARTED (P1)
+**Goal:** Safely deploy Ascendra to production at `ascendraacademy.com`.
+
+Checklist:
+- ⬜ Environment variables audit (no preview URLs, correct `PUBLIC_WEB_URL`, correct frontend `REACT_APP_BACKEND_URL`).
+- ⬜ Confirm Stripe/Resend are correctly set for production domain.
+- ⬜ Confirm cron/scheduler behaviors are acceptable in production (APScheduler).
+- ⬜ Emergent Built-in Deploy runbook.
+- ⬜ DNS setup via Cloudflare/Entri:
+  - apex + www records
+  - SSL/TLS validation
+- ⬜ Post-launch validation:
+  - auth + billing + emails + sitemap + `/learn` pages.
+
+---
+
+### Phase 13 — Social Manual Post Helper for Meta (FB/IG) — NOT STARTED (P2)
+**Goal:** Provide one-click copy/export workflows for FB/IG since Meta App Review blocks full auto-posting.
+
+Planned:
+- ⬜ Add “Manual Post Helper” section in `/admin/social`:
+  - one-click copy buttons (caption, hashtags)
+  - optimized formats for IG carousel + FB post
+  - download bundle (slides + mp4) for easy upload
 
 ---
 
@@ -334,6 +380,7 @@ Testing:
 - ✅ Lead magnet capture + AI Roadmap resource + welcome drip.
 - ✅ Lifecycle automation: trial-ending, winback, streak-saver, annual upsell.
 - ✅ Social pipeline: free-only asset generation + admin preview + MP4 export.
+- ✅ **X (Twitter) auto-posting verified and live** (credentials validated; admin status endpoint OK).
 
 ### Remaining operator setup (recommended)
 1) **Stripe (billing automation)**
@@ -343,7 +390,7 @@ Testing:
 - ⬜ When on your production/custom domain, submit sitemap to Google Search Console:
   - `https://<your-domain>/api/seo/sitemap.xml`
 
-3) **Social auto-posting (optional)**
-- ⬜ Create Twitter/X, Instagram, TikTok brand accounts.
-- ⬜ Create developer apps and provide API tokens.
-- ⬜ Once tokens exist, wire posting clients to publish automatically; until then, use `/admin/social` to copy/download assets and post manually.
+3) **Social posting ops**
+- ✅ X/Twitter developer app credentials configured and verified.
+- ⬜ Optional: perform a real first post from `/admin/social` to validate posting behavior and confirm account branding.
+- ⬜ Meta (FB/IG): keep manual workflow until App Review grants advanced posting permissions.

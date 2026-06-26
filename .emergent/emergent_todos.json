@@ -13,14 +13,22 @@
   },
   {
     "content": "Diagnose 401 - confirm token/consumer-key app pairing with user",
+    "status": "completed"
+  },
+  {
+    "content": "Update consumer keys (API_KEY/API_SECRET) to matching pair",
+    "status": "completed"
+  },
+  {
+    "content": "Test /api/admin/social/x/status endpoint end-to-end",
+    "status": "completed"
+  },
+  {
+    "content": "Update plan.md with X integration LIVE status",
+    "status": "completed"
+  },
+  {
+    "content": "Decide next: real test tweet vs deployment readiness check",
     "status": "in_progress"
-  },
-  {
-    "content": "Test /api/admin/x/verify endpoint end-to-end (after auth fixed)",
-    "status": "pending"
-  },
-  {
-    "content": "Report results & next steps to user",
-    "status": "pending"
   }
 ]
