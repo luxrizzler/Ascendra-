@@ -54,6 +54,7 @@ import seo_studio
 import auto_content
 import lifecycle
 import social_studio
+import x_publisher
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
@@ -1694,6 +1695,49 @@ async def admin_delete_social_post(post_id: str, _admin=Depends(require_admin)):
     if not ok:
         raise HTTPException(404, "Post not found")
     return {"ok": True}
+
+
+# ─── X (Twitter) auto-posting ─────────────────────────────────────────────
+@api.get("/admin/social/x/status")
+async def admin_x_status(_admin=Depends(require_admin)):
+    """Verify the X credentials work + show which account they belong to."""
+    return {**x_publisher.verify_credentials(), "handle": x_publisher.handle(),
+            "configured": x_publisher.is_configured()}
+
+
+@api.post("/admin/social/post/{post_id}/post-to-x")
+async def admin_post_to_x(post_id: str, _admin=Depends(require_admin)):
+    """Post the saved tweet thread + slide images to X."""
+    post = await social_studio.get_post(db, post_id)
+    if not post:
+        raise HTTPException(404, "Post not found")
+    tweets = post.get("tweets") or []
+    if not tweets:
+        raise HTTPException(400, "No tweets in this post")
+    if post.get("platforms", {}).get("twitter") == "posted":
+        raise HTTPException(400, "Already posted to X. Delete the post first to re-post.")
+    # Pull image bytes (first 4 slides — X limit)
+    image_bytes = []
+    for i in range(min(4, post.get("slide_count") or 0)):
+        b = await social_studio.get_slide_bytes(db, post_id, i)
+        if b:
+            image_bytes.append(b)
+    result = x_publisher.post_thread(
+        tweets=tweets,
+        image_bytes_list=image_bytes,
+        hashtags=post.get("hashtags") or [],
+    )
+    if not result.get("ok"):
+        raise HTTPException(502, result.get("error", "X posting failed"))
+    # Mark posted
+    col = await social_studio._col(db)
+    await col.update_one({"id": post_id}, {"$set": {
+        "platforms.twitter": "posted",
+        "x_tweet_ids": result["tweet_ids"],
+        "x_first_url": result["first_url"],
+        "x_posted_at": datetime.now(timezone.utc),
+    }})
+    return result
 
 
 # ─── Health ─────────────────────────────────────────────────────────────────
