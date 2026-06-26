@@ -1918,8 +1918,12 @@ async def admin_stats(_admin=Depends(require_admin)):
     arr_estimate = monthly_rev * 12 + annual_rev
 
     lessons_completed = 0
-    async for p in progress_col.find({}, {"completed_lesson_ids": 1}):
-        lessons_completed += len(p.get("completed_lesson_ids", []))
+    _lc_pipeline = [
+        {"$project": {"_id": 0, "count": {"$size": {"$ifNull": ["$completed_lesson_ids", []]}}}},
+        {"$group": {"_id": None, "total": {"$sum": "$count"}}},
+    ]
+    _lc_doc = await progress_col.aggregate(_lc_pipeline).to_list(1)
+    lessons_completed = _lc_doc[0]["total"] if _lc_doc else 0
     certs_issued = await certs_col.count_documents({})
     dau = await progress_col.count_documents({"last_active_date": now.date().isoformat()})
     wau = await progress_col.count_documents({
