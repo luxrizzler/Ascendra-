@@ -1,34 +1,22 @@
 [
   {
-    "content": "Update /app/backend/.env with new X_ACCESS_TOKEN and X_ACCESS_TOKEN_SECRET",
-    "status": "completed"
-  },
-  {
-    "content": "Restart backend to load new env vars",
-    "status": "completed"
-  },
-  {
-    "content": "Verify credentials via x_publisher.verify_credentials()",
-    "status": "completed"
-  },
-  {
-    "content": "Diagnose 401 - confirm token/consumer-key app pairing with user",
-    "status": "completed"
-  },
-  {
-    "content": "Update consumer keys (API_KEY/API_SECRET) to matching pair",
-    "status": "completed"
-  },
-  {
-    "content": "Test /api/admin/social/x/status endpoint end-to-end",
-    "status": "completed"
-  },
-  {
-    "content": "Update plan.md with X integration LIVE status",
-    "status": "completed"
-  },
-  {
-    "content": "Decide next: real test tweet vs deployment readiness check",
+    "content": "Fix auto_content.py asyncio.create_task RuntimeError (non-blocking scheduler bug)",
     "status": "in_progress"
+  },
+  {
+    "content": "Wire up /api/admin/x/test-post endpoint for safe one-off test tweet",
+    "status": "pending"
+  },
+  {
+    "content": "Send a real test tweet end-to-end & verify on X",
+    "status": "pending"
+  },
+  {
+    "content": "Run deployment_agent for Phase 12 readiness audit",
+    "status": "pending"
+  },
+  {
+    "content": "Walk user through Emergent Built-in Deploy + Entri/Cloudflare DNS",
+    "status": "pending"
   }
 ]

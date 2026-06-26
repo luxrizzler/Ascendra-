@@ -440,18 +440,18 @@ def start_scheduler(db) -> AsyncIOScheduler:
     sched = AsyncIOScheduler(timezone=SCHEDULE_TZ)
 
     sched.add_job(
-        lambda: asyncio.create_task(run_daily_lesson(db)),
-        CronTrigger(hour=DAILY_LESSON_HOUR, minute=0, timezone=SCHEDULE_TZ),
+        run_daily_lesson, args=[db],
+        trigger=CronTrigger(hour=DAILY_LESSON_HOUR, minute=0, timezone=SCHEDULE_TZ),
         id="daily_lesson", replace_existing=True,
     )
     sched.add_job(
-        lambda: asyncio.create_task(run_monday_path(db)),
-        CronTrigger(day_of_week="mon", hour=MONDAY_PATH_HOUR, minute=0, timezone=SCHEDULE_TZ),
+        run_monday_path, args=[db],
+        trigger=CronTrigger(day_of_week="mon", hour=MONDAY_PATH_HOUR, minute=0, timezone=SCHEDULE_TZ),
         id="monday_path", replace_existing=True,
     )
     sched.add_job(
-        lambda: asyncio.create_task(send_daily_digest(db)),
-        CronTrigger(hour=DAILY_DIGEST_HOUR, minute=0, timezone=SCHEDULE_TZ),
+        send_daily_digest, args=[db],
+        trigger=CronTrigger(hour=DAILY_DIGEST_HOUR, minute=0, timezone=SCHEDULE_TZ),
         id="daily_digest", replace_existing=True,
     )
 

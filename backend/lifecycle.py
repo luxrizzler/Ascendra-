@@ -323,10 +323,9 @@ async def run_all_lifecycle(db) -> dict:
 
 def register_jobs(scheduler, db) -> None:
     """Register the daily lifecycle scan on an existing AsyncIOScheduler."""
-    import asyncio as _asyncio
     scheduler.add_job(
-        lambda: _asyncio.create_task(run_all_lifecycle(db)),
-        CronTrigger(hour=9, minute=0, timezone="UTC"),
+        run_all_lifecycle, args=[db],
+        trigger=CronTrigger(hour=9, minute=0, timezone="UTC"),
         id="lifecycle_daily_scan", replace_existing=True,
     )
     log.info("lifecycle scheduler registered (daily 09:00 UTC)")
