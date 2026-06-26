@@ -8,19 +8,27 @@
     "status": "completed"
   },
   {
-    "content": "Send a real test tweet end-to-end & verify on X",
-    "status": "in_progress"
+    "content": "Fix unbounded MongoDB query in /api/admin/stats (aggregation pipeline)",
+    "status": "completed"
   },
   {
-    "content": "BLOCKER: User must attach the X Developer App to a Project (v2 'client-not-enrolled')",
-    "status": "in_progress"
+    "content": "Fix unquoted META_FB_PAGE_NAME env var",
+    "status": "completed"
   },
   {
-    "content": "Run deployment_agent for Phase 12 readiness audit",
-    "status": "pending"
+    "content": "Run deployment_agent for Phase 12 readiness audit (3 passes)",
+    "status": "completed"
+  },
+  {
+    "content": "Send a real test tweet end-to-end (blocked: user must attach X App to a Project)",
+    "status": "in_progress"
   },
   {
     "content": "Walk user through Emergent Built-in Deploy + Entri/Cloudflare DNS",
+    "status": "in_progress"
+  },
+  {
+    "content": "Optional post-launch: Refactor get_lesson to direct lookup (WARN)",
     "status": "pending"
   }
 ]

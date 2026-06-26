@@ -27,7 +27,7 @@ Build a largely automated growth engine:
 - **Content auto-pilot** so “fun new courses” ship automatically (daily lessons + weekly flagship course).
 - **Lead magnet + drip sequences** to turn visitors into trials.
 - **Lifecycle automation** to improve conversion/retention.
-- **Social pipeline** using a **free-only content generation stack** (no paid video services), plus **live X (Twitter) auto-posting**.
+- **Social pipeline** using a **free-only content generation stack** (no paid video services), plus X/Twitter integration readiness.
 
 ---
 
@@ -245,6 +245,11 @@ Delivered:
 Testing:
 - Verified with `testing_agent_v3` (iteration_7): backend 100%, frontend 95% (non-critical modal interaction variance).
 
+**Scheduler stability update (NEW) — COMPLETE ✅**
+- Fixed scheduler job registration to avoid `RuntimeError: no running event loop` by passing coroutine functions directly to `AsyncIOScheduler`.
+- Also fixed lifecycle scheduler job registration.
+- Verified by `testing_agent_v3` (iteration_9): **backend 100%**, **scheduler 100%**, **regressions 100%**.
+
 ---
 
 #### Phase 9 — Lead Magnet + Welcome Drip — COMPLETE ✅
@@ -308,44 +313,49 @@ Delivered:
 - Admin UI:
   - `/admin/social` (generate from lesson, preview tweets, copy buttons, slide previews, MP4 player + download)
 
-##### Phase 11.1 — X (Twitter) Auto-Posting — LIVE ✅ (NEW)
-**Status:** Unblocked, configured, and verified end-to-end.
+##### Phase 11.1 — X (Twitter) Integration — PARTIALLY COMPLETE ✅ / BLOCKED ⛔ (NEW)
+**What is working:**
+- OAuth 1.0a credentials validate successfully.
+  - `verify_credentials()` OK for `@Ascendraacademy`.
+  - `GET /api/admin/social/x/status` returns `ok: true`.
 
-Implementation details:
-- X posting client implemented in `/app/backend/x_publisher.py` using Tweepy:
-  - OAuth **1.0a User Context** (required for posting on X Free tier)
-  - v1.1 `media_upload` for images + v2 `create_tweet` for thread posting
-- Environment variables now correctly paired (consumer keys match access tokens):
-  - `X_API_KEY`
-  - `X_API_SECRET`
-  - `X_ACCESS_TOKEN`
-  - `X_ACCESS_TOKEN_SECRET`
-  - `X_HANDLE` (display)
+**What is blocked (X-side):**
+- Posting via v2 `create_tweet` returns:
+  - `403 Forbidden` with reason `client-not-enrolled`.
+  - Message: App must be attached to a **Project** in X Developer Portal.
 
-Verification performed:
-- Local verification:
-  - `verify_credentials()` returns:
-    - `{ ok: true, screen_name: "Ascendraacademy", user_id: "2070294944334430208" }`
-- End-to-end admin endpoint:
-  - `GET /api/admin/social/x/status` returns `ok: true` and the same account identifiers.
+**Backend additions (NEW):**
+- Added safe test endpoint:
+  - `POST /api/admin/social/x/test-post` with `{text, dry_run}`
+  - `dry_run=true` verifies creds without posting.
 
-Next optional validation:
-- ⬜ Perform a **real test tweet/thread** from `/admin/social` (or via `POST /api/admin/x/post`) to confirm write access in production UI flow.
-
-Testing:
-- Credential verification + endpoint status confirmed live.
+**Next steps to complete X auto-posting:**
+- ⬜ Operator: Attach the X Developer App to a **Project** in the X Developer Portal (Projects & Apps).
+- ⬜ Retry: `POST /api/admin/social/x/test-post` with `dry_run=false`.
+- ⬜ Then validate full thread+media posting from `/admin/social` using `POST /admin/social/post/{post_id}/post-to-x`.
 
 ---
 
-### Phase 12 — Deployment Readiness + Production Launch (Cloudflare / Emergent Deploy) — NOT STARTED (P1)
+### Phase 12 — Deployment Readiness + Production Launch (Cloudflare / Emergent Deploy) — COMPLETE ✅ (NEW)
 **Goal:** Safely deploy Ascendra to production at `ascendraacademy.com`.
 
-Checklist:
-- ⬜ Environment variables audit (no preview URLs, correct `PUBLIC_WEB_URL`, correct frontend `REACT_APP_BACKEND_URL`).
-- ⬜ Confirm Stripe/Resend are correctly set for production domain.
-- ⬜ Confirm cron/scheduler behaviors are acceptable in production (APScheduler).
-- ⬜ Emergent Built-in Deploy runbook.
-- ⬜ DNS setup via Cloudflare/Entri:
+Deployment readiness audit (deployment_agent) — 3 passes:
+1) **Pass 1 (BLOCKER found → fixed):**
+   - Unbounded admin stats scan in `/app/backend/server.py`:
+     - Replaced `progress_col.find({})` loop with aggregation pipeline (`$project` + `$size` + `$sum` + `$group`).
+   - Verified by calling `/api/admin/stats` (returned correct `lessons_completed` = 10).
+
+2) **Pass 2 (BLOCKER found → fixed):**
+   - `.env` parsing issue:
+     - `META_FB_PAGE_NAME=Ascendra Academy` → fixed to `META_FB_PAGE_NAME="Ascendra Academy"`.
+
+3) **Pass 3 (PASS with WARN):**
+   - Only warning: `curriculum_db.get_lesson` does an in-memory scan over paths to locate a lesson.
+   - Recommendation: deploy as-is, optimize post-launch.
+
+**Remaining go-live operator steps:**
+- ⬜ Run Emergent Built-in Deploy.
+- ⬜ DNS setup via Entri/Cloudflare:
   - apex + www records
   - SSL/TLS validation
 - ⬜ Post-launch validation:
@@ -380,7 +390,6 @@ Planned:
 - ✅ Lead magnet capture + AI Roadmap resource + welcome drip.
 - ✅ Lifecycle automation: trial-ending, winback, streak-saver, annual upsell.
 - ✅ Social pipeline: free-only asset generation + admin preview + MP4 export.
-- ✅ **X (Twitter) auto-posting verified and live** (credentials validated; admin status endpoint OK).
 
 ### Remaining operator setup (recommended)
 1) **Stripe (billing automation)**
@@ -390,7 +399,12 @@ Planned:
 - ⬜ When on your production/custom domain, submit sitemap to Google Search Console:
   - `https://<your-domain>/api/seo/sitemap.xml`
 
-3) **Social posting ops**
-- ✅ X/Twitter developer app credentials configured and verified.
-- ⬜ Optional: perform a real first post from `/admin/social` to validate posting behavior and confirm account branding.
-- ⬜ Meta (FB/IG): keep manual workflow until App Review grants advanced posting permissions.
+3) **X/Twitter publishing**
+- ✅ Credentials configured and verified.
+- ⬜ Attach X App to a Project (fix `client-not-enrolled`), then run a real post test.
+
+4) **Post-launch performance improvements**
+- ⬜ Optimize `curriculum_db.get_lesson` to direct MongoDB lookup / denormalized lesson collection.
+
+5) **Meta (FB/IG)**
+- ⬜ Keep manual workflow until App Review grants advanced posting permissions.
