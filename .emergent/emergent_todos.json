@@ -1,22 +1,26 @@
 [
   {
-    "content": "Phase 7 — Programmatic SEO Studio — COMPLETE (96%)",
+    "content": "Update /app/backend/.env with new X_ACCESS_TOKEN and X_ACCESS_TOKEN_SECRET",
     "status": "completed"
   },
   {
-    "content": "Phase 8 — Auto-Pilot Content Engine — COMPLETE (100%)",
+    "content": "Restart backend to load new env vars",
     "status": "completed"
   },
   {
-    "content": "Phase 9 — Lead Magnet + Welcome Drip — COMPLETE (100%)",
+    "content": "Verify credentials via x_publisher.verify_credentials()",
     "status": "completed"
   },
   {
-    "content": "Phase 10 — Lifecycle Emails — COMPLETE (100%)",
-    "status": "completed"
+    "content": "Diagnose 401 - confirm token/consumer-key app pairing with user",
+    "status": "in_progress"
   },
   {
-    "content": "Phase 11 — Social Content Pipeline (free, generation-only) — COMPLETE (100%)",
-    "status": "completed"
+    "content": "Test /api/admin/x/verify endpoint end-to-end (after auth fixed)",
+    "status": "pending"
+  },
+  {
+    "content": "Report results & next steps to user",
+    "status": "pending"
   }
 ]
