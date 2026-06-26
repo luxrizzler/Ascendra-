@@ -1,15 +1,19 @@
 [
   {
-    "content": "Fix auto_content.py asyncio.create_task RuntimeError (non-blocking scheduler bug)",
-    "status": "in_progress"
+    "content": "Fix auto_content.py asyncio.create_task RuntimeError (verified by testing_agent)",
+    "status": "completed"
   },
   {
     "content": "Wire up /api/admin/x/test-post endpoint for safe one-off test tweet",
-    "status": "pending"
+    "status": "completed"
   },
   {
     "content": "Send a real test tweet end-to-end & verify on X",
-    "status": "pending"
+    "status": "in_progress"
+  },
+  {
+    "content": "BLOCKER: User must attach the X Developer App to a Project (v2 'client-not-enrolled')",
+    "status": "in_progress"
   },
   {
     "content": "Run deployment_agent for Phase 12 readiness audit",

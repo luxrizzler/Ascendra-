@@ -1705,6 +1705,30 @@ async def admin_x_status(_admin=Depends(require_admin)):
             "configured": x_publisher.is_configured()}
 
 
+class XTestPostIn(BaseModel):
+    text: str = Field(..., min_length=1, max_length=270)
+    dry_run: bool = False
+
+
+@api.post("/admin/social/x/test-post")
+async def admin_x_test_post(body: XTestPostIn, _admin=Depends(require_admin)):
+    """Post a single canned tweet for verification. No media, no thread.
+    Pass dry_run=true to only verify credentials without actually posting.
+    """
+    if not x_publisher.is_configured():
+        raise HTTPException(400, "X is not configured. Add credentials to .env first.")
+    if body.dry_run:
+        v = x_publisher.verify_credentials()
+        if not v.get("ok"):
+            raise HTTPException(502, f"Credentials invalid: {v.get('error')}")
+        return {"ok": True, "dry_run": True, "would_post": body.text,
+                "as": v.get("screen_name"), "verified": True}
+    result = x_publisher.post_thread(tweets=[body.text], image_bytes_list=None, hashtags=None)
+    if not result.get("ok"):
+        raise HTTPException(502, result.get("error", "X posting failed"))
+    return result
+
+
 @api.post("/admin/social/post/{post_id}/post-to-x")
 async def admin_post_to_x(post_id: str, _admin=Depends(require_admin)):
     """Post the saved tweet thread + slide images to X."""
