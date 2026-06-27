@@ -8,6 +8,7 @@ Ascendra Academy backend (web edition).
 - Admin endpoints (stats, users, sales, traffic)
 """
 import os
+import asyncio
 import logging
 import uuid
 import hashlib
@@ -2537,51 +2538,70 @@ async def admin_generate_cover(body: CoverGenIn, _admin=Depends(require_admin)):
     return {"url": url}
 
 
-# ─── Interactive-cards migration ──────────────────────────────────────────
-@api.post("/admin/curriculum/migrate-interactive")
-async def admin_migrate_interactive(_admin=Depends(require_admin)):
-    """Upserts the new interactive cards (knowledge_check, fill_blank, playground)
-    into existing curriculum lessons in MongoDB. Idempotent.
+# ─── Interactive-cards auto-generation (Claude) ────────────────────────────
+import interactive_generator as _ig
+
+_INTERACTIVE_PROGRESS = {"running": False, "upgraded": 0, "failed": 0, "total": 0,
+                         "last_run_at": None, "last_result": None}
+
+
+async def _run_interactive_upgrade(force: bool = False) -> dict:
+    """Background-safe wrapper. Updates module-level progress state."""
+    if _INTERACTIVE_PROGRESS["running"]:
+        return {"already_running": True}
+    _INTERACTIVE_PROGRESS["running"] = True
+    _INTERACTIVE_PROGRESS["upgraded"] = 0
+    _INTERACTIVE_PROGRESS["failed"] = 0
+    _INTERACTIVE_PROGRESS["total"] = 0
+    try:
+        def _on_prog(_lid, done, total):
+            _INTERACTIVE_PROGRESS["upgraded"] = done
+            _INTERACTIVE_PROGRESS["total"] = total
+        result = await _ig.upgrade_all_lessons(db, force=force, on_progress=_on_prog)
+        _INTERACTIVE_PROGRESS["last_result"] = result
+        _INTERACTIVE_PROGRESS["last_run_at"] = datetime.now(timezone.utc).isoformat()
+        _INTERACTIVE_PROGRESS["upgraded"] = len(result["upgraded"])
+        _INTERACTIVE_PROGRESS["failed"] = len(result["failed"])
+        _INTERACTIVE_PROGRESS["total"] = result["total_attempted"]
+        log.info(f"interactive upgrade: {len(result['upgraded'])}/{result['total_attempted']} upgraded "
+                 f"({len(result['failed'])} failed, {len(result['skipped'])} skipped)")
+        return result
+    finally:
+        _INTERACTIVE_PROGRESS["running"] = False
+
+
+@api.post("/admin/curriculum/generate-interactive")
+async def admin_generate_interactive(force: bool = False, _admin=Depends(require_admin)):
+    """Trigger the Claude-powered interactive-card generator for all lessons
+    that don't yet have `interactive_v: 1`. Pass `?force=true` to regenerate
+    even already-upgraded lessons.
+
+    This runs in the background — poll GET /admin/curriculum/interactive-status
+    to see progress. Returns immediately with the current status.
     """
-    from curriculum import PATHS as SEED_PATHS
-    updated = []
-    skipped = []
-    UPGRADED_LESSONS = {"f1l1"}
-    for sp in SEED_PATHS:
-        for m in sp.get("modules", []):
+    if _INTERACTIVE_PROGRESS["running"]:
+        return {"status": "already_running", **_INTERACTIVE_PROGRESS}
+    asyncio.create_task(_run_interactive_upgrade(force=force))
+    return {"status": "started", "force": force}
+
+
+@api.get("/admin/curriculum/interactive-status")
+async def admin_interactive_status(_admin=Depends(require_admin)):
+    """Returns progress of the most recent interactive-card upgrade run."""
+    # Add counts from DB so the admin can see current coverage at a glance
+    total_lessons = 0
+    interactive_lessons = 0
+    async for p in db["curriculum_paths"].find({}, {"modules": 1}):
+        for m in p.get("modules", []):
             for lsn in m.get("lessons", []):
-                if lsn.get("id") not in UPGRADED_LESSONS:
-                    continue
-                live = await db["curriculum_paths"].find_one({"id": sp["id"]})
-                if not live:
-                    skipped.append({"lesson_id": lsn["id"], "reason": "path missing"})
-                    continue
-                live_mods = live.get("modules", [])
-                found = False
-                for lm in live_mods:
-                    if lm.get("id") != m["id"]:
-                        continue
-                    for i, ll in enumerate(lm.get("lessons", [])):
-                        if ll.get("id") == lsn["id"]:
-                            lm["lessons"][i] = {
-                                **ll,
-                                "cards": lsn["cards"],
-                                "quiz": lsn.get("quiz", ll.get("quiz")),
-                                "duration_min": lsn.get("duration_min", ll.get("duration_min")),
-                                "xp": lsn.get("xp", ll.get("xp")),
-                            }
-                            found = True
-                            break
-                if found:
-                    await db["curriculum_paths"].update_one(
-                        {"id": sp["id"]},
-                        {"$set": {"modules": live_mods,
-                                  "updated_at": datetime.now(timezone.utc)}},
-                    )
-                    updated.append(lsn["id"])
-                else:
-                    skipped.append({"lesson_id": lsn["id"], "reason": "module/lesson not found in DB"})
-    return {"updated": updated, "skipped": skipped, "count": len(updated)}
+                total_lessons += 1
+                if int(lsn.get("interactive_v") or 0) >= 1 or any(
+                    c.get("kind") in ("knowledge_check", "fill_blank", "playground")
+                    for c in lsn.get("cards", [])
+                ):
+                    interactive_lessons += 1
+    return {**_INTERACTIVE_PROGRESS,
+            "coverage": {"interactive": interactive_lessons, "total": total_lessons}}
 
 
 app.include_router(api)
@@ -2621,6 +2641,21 @@ async def startup():
             log.exception(f"Lifecycle scheduler registration failed: {e}")
     except Exception as e:
         log.exception(f"Auto-content scheduler failed to start: {e}")
+
+    # Background auto-upgrade: insert interactive cards into any text-only lessons.
+    # Runs ONCE on startup, never blocks boot, idempotent (skips lessons already done).
+    async def _bg_interactive_upgrade():
+        await asyncio.sleep(8)  # let the app fully come up first
+        try:
+            res = await _run_interactive_upgrade(force=False)
+            if res and not res.get("already_running"):
+                log.info(f"startup interactive upgrade: {res}")
+        except Exception as e:
+            log.exception(f"startup interactive upgrade failed: {e}")
+    try:
+        asyncio.create_task(_bg_interactive_upgrade())
+    except Exception as e:
+        log.warning(f"could not schedule interactive upgrade task: {e}")
 
 
 @app.on_event("shutdown")

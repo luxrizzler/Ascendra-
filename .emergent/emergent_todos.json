@@ -1,34 +1,30 @@
 [
   {
-    "content": "Backend: Add /api/playground/run LLM endpoint",
+    "content": "Build interactive_generator.py (Claude-powered card generator)",
     "status": "completed"
   },
   {
-    "content": "Backend: Update curriculum.py with helpers + f1l1 interactive cards",
+    "content": "Wire auto-generation into startup background task + admin manual trigger",
     "status": "completed"
   },
   {
-    "content": "Backend: Add admin migration endpoint to push new cards to existing DB lessons",
+    "content": "Remove old manual migrate-interactive endpoint (superseded)",
     "status": "completed"
   },
   {
-    "content": "Frontend: TTS controller (speechSynthesis + Media Session + Wake Lock)",
+    "content": "Run generator on all 39 lessons in preview — 100% coverage, 0 failures",
     "status": "completed"
   },
   {
-    "content": "Frontend: 4 card components (Text, KnowledgeCheck, FillBlank, Playground)",
+    "content": "Verified auto-generated lesson b1l1 renders correctly in browser",
     "status": "completed"
   },
   {
-    "content": "Frontend: Refactor LessonPlayer.js to use CardRouter + play-all mode",
-    "status": "completed"
-  },
-  {
-    "content": "testing_agent verified 100% backend (12/12) + 100% frontend",
-    "status": "completed"
-  },
-  {
-    "content": "User: redeploy to production + run /api/admin/curriculum/migrate-interactive on prod",
+    "content": "testing_agent verification (regression + new generator)",
     "status": "in_progress"
+  },
+  {
+    "content": "User: redeploy to push to production (auto-migration happens on boot)",
+    "status": "pending"
   }
 ]
