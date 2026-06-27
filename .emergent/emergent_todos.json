@@ -16,19 +16,23 @@
     "status": "completed"
   },
   {
-    "content": "Run deployment_agent for Phase 12 readiness audit (3 passes)",
-    "status": "completed"
-  },
-  {
-    "content": "Send a real test tweet end-to-end (blocked: user must attach X App to a Project)",
+    "content": "Optimize curriculum_db.get_lesson to direct MongoDB query",
     "status": "in_progress"
   },
   {
-    "content": "Walk user through Emergent Built-in Deploy + Entri/Cloudflare DNS",
-    "status": "in_progress"
+    "content": "Verify optimization with testing_agent (no regressions)",
+    "status": "pending"
   },
   {
-    "content": "Optional post-launch: Refactor get_lesson to direct lookup (WARN)",
+    "content": "Final deployment audit pass",
+    "status": "pending"
+  },
+  {
+    "content": "Wait for X Project enrollment, then send real test tweet",
+    "status": "pending"
+  },
+  {
+    "content": "Launch via Emergent Built-in Deploy + DNS",
     "status": "pending"
   }
 ]

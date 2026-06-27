@@ -44,6 +44,8 @@ async def ensure_seeded(db: AsyncIOMotorDatabase) -> None:
     # Indexes
     await coll.create_index("id", unique=True)
     await coll.create_index("order")
+    # Multikey index for O(log N) lesson lookup by id across nested arrays
+    await coll.create_index("modules.lessons.id")
 
 
 # ─── Reads ──────────────────────────────────────────────────────────────────
@@ -58,12 +60,39 @@ async def get_path(db, path_id: str) -> Optional[dict]:
 
 
 async def get_lesson(db, lesson_id: str) -> Optional[dict]:
-    """Find a lesson + its path/module context. Mirrors the file-based helper."""
+    """Find a lesson + its path/module context.
+    Uses a direct, indexed MongoDB lookup (multikey index on `modules.lessons.id`)
+    to fetch only the single path doc that contains the lesson, then walks
+    that one doc's modules/lessons (O(modules*lessons) within one path).
+    Falls back to the legacy in-memory scan only if the index is missing
+    (e.g., right after seeding before indexes are built).
+    """
+    if not lesson_id:
+        return None
+    p = await db[PATHS_COLL].find_one(
+        {"modules.lessons.id": lesson_id},
+        {"_id": 0},
+    )
+    if p:
+        p = _norm_path(p)
+        for m in p.get("modules", []):
+            for lsn in m.get("lessons", []):
+                if lsn.get("id") == lesson_id:
+                    return {
+                        **lsn,
+                        "path_id": p["id"],
+                        "path_title": p["title"],
+                        "path_color": p["color"],
+                        "path_tier": p.get("tier", "free"),
+                        "module_id": m["id"],
+                        "module_title": m["title"],
+                    }
+    # Defensive fallback (should be unreachable if index exists)
     paths = await list_paths(db)
     for p in paths:
         for m in p.get("modules", []):
             for lsn in m.get("lessons", []):
-                if lsn["id"] == lesson_id:
+                if lsn.get("id") == lesson_id:
                     return {
                         **lsn,
                         "path_id": p["id"],
