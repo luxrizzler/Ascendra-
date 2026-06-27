@@ -8,23 +8,15 @@
     "status": "completed"
   },
   {
-    "content": "Remove old manual migrate-interactive endpoint (superseded)",
-    "status": "completed"
-  },
-  {
     "content": "Run generator on all 39 lessons in preview — 100% coverage, 0 failures",
     "status": "completed"
   },
   {
-    "content": "Verified auto-generated lesson b1l1 renders correctly in browser",
+    "content": "testing_agent verified 100% (105/105 backend, all frontend flows)",
     "status": "completed"
   },
   {
-    "content": "testing_agent verification (regression + new generator)",
+    "content": "User: redeploy to push to production (auto-migration runs on boot)",
     "status": "in_progress"
-  },
-  {
-    "content": "User: redeploy to push to production (auto-migration happens on boot)",
-    "status": "pending"
   }
 ]
