@@ -8,15 +8,19 @@
     "status": "completed"
   },
   {
-    "content": "P0 SECURITY: Fix webhook signature bypass in /api/billing/webhook",
+    "content": "P0 SECURITY: Fix webhook signature bypass in /api/billing/webhook (verified by testing_agent iter 12)",
+    "status": "completed"
+  },
+  {
+    "content": "User: REDEPLOY to push security fix to production",
     "status": "in_progress"
   },
   {
-    "content": "Verify fix with testing_agent (both rejected-unsigned + accepted-signed)",
-    "status": "pending"
+    "content": "User: confirm STRIPE_WEBHOOK_SECRET is set in Emergent production env vars",
+    "status": "in_progress"
   },
   {
-    "content": "User: redeploy to production + verify production webhook secret is set",
+    "content": "Optional: fix Pathfinder $19.98 vs $19.99 1-cent discrepancy (low priority)",
     "status": "pending"
   }
 ]
