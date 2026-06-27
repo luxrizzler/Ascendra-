@@ -284,6 +284,43 @@ def _card(title, body, kind="text"):
     return {"kind": kind, "title": title, "body": body}
 
 
+def _check(title, question, options, answer_index, explanation=""):
+    """Inline multiple-choice knowledge check (mid-lesson)."""
+    return {
+        "kind": "knowledge_check",
+        "title": title,
+        "question": question,
+        "options": options,
+        "answer_index": answer_index,
+        "explanation": explanation,
+    }
+
+
+def _blank(title, prompt, answer, aliases=None, explanation=""):
+    """Fill-in-the-blank card. `prompt` contains a literal ___ for the blank.
+    `aliases` is a list of additional accepted lowercase strings.
+    """
+    return {
+        "kind": "fill_blank",
+        "title": title,
+        "prompt": prompt,
+        "answer": answer,
+        "aliases": aliases or [],
+        "explanation": explanation,
+    }
+
+
+def _play(title, instruction, seed_prompt="", system=None):
+    """Hands-on Playground card — user types into a textarea, hits Run, sees AI reply."""
+    return {
+        "kind": "playground",
+        "title": title,
+        "instruction": instruction,
+        "seed_prompt": seed_prompt,
+        "system": system or "",
+    }
+
+
 PATHS = [
     {
         "id": "fundamentals",
@@ -303,13 +340,32 @@ PATHS = [
                     {
                         "id": "f1l1",
                         "title": "AI vs. ML vs. LLMs",
-                        "duration_min": 5,
-                        "xp": 50,
+                        "duration_min": 7,
+                        "xp": 70,
                         "cards": [
                             _card("Three words, one revolution", "Artificial Intelligence is the umbrella. Machine Learning is how machines *learn* from data. Large Language Models (LLMs) are the breakthrough that powers ChatGPT, Claude, and Gemini."),
                             _card("Why now?", "Three things collided: cheap GPUs, massive internet-scale data, and the Transformer architecture (2017). Together they made GPT-4, GPT-5, and Claude possible."),
+                            _check(
+                                "Quick check",
+                                "Which is the broadest umbrella term?",
+                                ["LLM", "Machine Learning", "Artificial Intelligence", "Transformer"],
+                                2,
+                                "AI is the umbrella. ML is a subfield of AI. LLMs are a subfield of ML.",
+                            ),
                             _card("The 2026 landscape", "GPT-5.2, Claude Sonnet 4.5, and Gemini 3 are now multimodal — they understand text, images, audio, and video. They can reason, plan, and use tools."),
+                            _blank(
+                                "Fill in the blank",
+                                "The architecture that made modern LLMs possible is the ___.",
+                                "Transformer",
+                                aliases=["transformers", "transformer architecture", "the transformer"],
+                                explanation="The Transformer paper 'Attention is All You Need' (2017) introduced the architecture every modern LLM is built on.",
+                            ),
                             _card("What this means for you", "You no longer need to code to use AI. The new skill is *prompting* — knowing how to ask. That's what this app teaches you."),
+                            _play(
+                                "Try a prompt",
+                                "Now you try. Ask an AI to explain LLMs to a 10-year-old in 3 sentences. Type your prompt below and hit Run to see how it responds.",
+                                seed_prompt="Explain what a Large Language Model is to a 10-year-old in 3 short sentences.",
+                            ),
                         ],
                         "quiz": _q(
                             "Which of these is the architecture that made modern LLMs possible?",

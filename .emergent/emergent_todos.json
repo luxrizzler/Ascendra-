@@ -1,30 +1,38 @@
 [
   {
-    "content": "Stripe audit: products/prices/webhook listed via rk_live",
+    "content": "Backend: Add /api/playground/run LLM endpoint",
     "status": "completed"
   },
   {
-    "content": "Update webhook to ascendraacademy.com + add invoice.upcoming event",
+    "content": "Backend: Update curriculum.py with helpers + f1l1 interactive cards",
     "status": "completed"
   },
   {
-    "content": "P0 SECURITY: Fix webhook signature bypass (verified by testing_agent iter 12)",
+    "content": "Backend: Add admin migration endpoint to push new cards to existing DB lessons",
     "status": "completed"
   },
   {
-    "content": "Create new $19.99 Stripe price + update stripe_config.json + archive old $19.98 price",
+    "content": "Frontend: TTS controller (speechSynthesis + Media Session + Wake Lock)",
     "status": "completed"
   },
   {
-    "content": "Verify checkout uses new $19.99 price end-to-end (Stripe live session expired after verification)",
+    "content": "Frontend: 4 card components (Text, KnowledgeCheck, FillBlank, Playground)",
     "status": "completed"
   },
   {
-    "content": "User: REDEPLOY to push security fix + new price ID to production",
+    "content": "Frontend: Refactor LessonPlayer.js to use CardRouter + play-all mode",
+    "status": "completed"
+  },
+  {
+    "content": "Verify: esbuild clean + screenshot test (all 4 card types render correctly)",
+    "status": "completed"
+  },
+  {
+    "content": "Verify: testing_agent end-to-end run",
     "status": "in_progress"
   },
   {
-    "content": "Optional post-launch: rotate sk_live_ key (exposed in chat)",
+    "content": "User: redeploy to push to production",
     "status": "pending"
   }
 ]

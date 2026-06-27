@@ -1,10 +1,13 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useParams, Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { api } from "@/lib/api";
 import Loader from "@/components/Loader";
-import { ArrowLeft, ArrowRight, CheckCircle2, X, Zap, Trophy, Sparkles, Lightbulb } from "lucide-react";
+import { ArrowLeft, ArrowRight, CheckCircle2, X, Zap, Trophy, Sparkles } from "lucide-react";
 import { toast } from "sonner";
+import { CardRouter, isInteractive } from "@/components/lesson/CardRouter";
+import { LessonAudioBar } from "@/components/lesson/LessonAudioBar";
+import { tts } from "@/lib/tts";
 
 export default function LessonPlayer() {
   const { lessonId } = useParams();
@@ -13,16 +16,23 @@ export default function LessonPlayer() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
 
-  const [idx, setIdx] = useState(0); // 0..cards.length-1 -> cards; cards.length -> quiz; cards.length+1 -> result
+  // idx: 0..cards.length-1 -> cards; cards.length -> quiz; cards.length+1 -> result
+  const [idx, setIdx] = useState(0);
   const [pick, setPick] = useState(null);
   const [showResult, setShowResult] = useState(false);
-  const [completion, setCompletion] = useState(null); // {awarded_xp, newly_completed_paths, certificates_issued}
+  const [completion, setCompletion] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+
+  // Play-all mode: when ON, finishing TTS of a text card auto-advances to next card.
+  const [playAll, setPlayAll] = useState(false);
 
   useEffect(() => {
     setLoading(true);
     api.get(`/lessons/${lessonId}`)
-      .then((l) => { setLesson(l); setIdx(0); setPick(null); setShowResult(false); setCompletion(null); })
+      .then((l) => {
+        setLesson(l); setIdx(0); setPick(null);
+        setShowResult(false); setCompletion(null);
+      })
       .catch((e) => {
         if (/(403|requires)/i.test(e.message || "")) {
           toast.error("This lesson requires an upgrade.");
@@ -34,6 +44,10 @@ export default function LessonPlayer() {
       .finally(() => setLoading(false));
   }, [lessonId, nav]);
 
+  // Stop any ongoing speech when the lesson page unmounts or the user navigates cards.
+  useEffect(() => () => tts.stop(), []);
+  useEffect(() => { tts.stop(); }, [idx]);
+
   const total = lesson ? lesson.cards.length : 0;
   const onQuiz = lesson && idx === total;
   const onDone = lesson && idx > total;
@@ -44,7 +58,6 @@ export default function LessonPlayer() {
   const submitQuiz = async () => {
     if (pick === null) return;
     setShowResult(true);
-    // Award XP regardless of correctness on first complete (matches backend behavior)
     setSubmitting(true);
     try {
       const r = await api.post("/progress/complete", { lesson_id: lessonId });
@@ -71,13 +84,15 @@ export default function LessonPlayer() {
   if (!lesson) return null;
 
   const progressPct = onDone ? 100 : Math.round(((idx + (onQuiz ? 0 : 1)) / (total + 1)) * 100);
+  const currentCard = !onQuiz && !onDone ? lesson.cards[idx] : null;
+  const lockProgression = currentCard ? isInteractive(currentCard) : false;
 
   return (
     <div className="min-h-screen" data-testid="lesson-player" style={{ background: "#0A0413" }}>
       {/* Top bar */}
       <div className="sticky top-0 z-30 asc-glass">
         <div className="max-w-3xl mx-auto px-5 py-3 flex items-center gap-4">
-          <button onClick={() => nav(-1)} className="shrink-0 p-2 rounded-full hover:bg-white/5" data-testid="lesson-close-btn"><X size={18} /></button>
+          <button onClick={() => { tts.stop(); nav(-1); }} className="shrink-0 p-2 rounded-full hover:bg-white/5" data-testid="lesson-close-btn"><X size={18} /></button>
           <div className="flex-1">
             <div className="text-xs text-[var(--asc-text-muted)] truncate">{lesson.path_title} · {lesson.module_title}</div>
             <div className="h-1.5 rounded-full mt-1.5 overflow-hidden" style={{ background: "rgba(191,180,255,0.1)" }}>
@@ -90,36 +105,64 @@ export default function LessonPlayer() {
 
       <div className="max-w-3xl mx-auto px-5 py-8">
         {/* Title */}
-        <div className="mb-6">
+        <div className="mb-4">
           <div className="asc-label" style={{ color: lesson.path_color }}>{lesson.module_title}</div>
           <h1 className="asc-h2 text-3xl sm:text-4xl mt-2">{lesson.title}</h1>
         </div>
+
+        {/* Audio bar */}
+        {!onQuiz && !onDone && (
+          <LessonAudioBar
+            playAll={playAll}
+            onTogglePlayAll={() => {
+              const nextOn = !playAll;
+              setPlayAll(nextOn);
+              if (nextOn && currentCard && currentCard.kind !== "playground" && currentCard.kind !== "fill_blank") {
+                // Kick off the current card immediately
+                const text = currentCard.kind === "knowledge_check"
+                  ? `${currentCard.title}. ${currentCard.question}`
+                  : `${currentCard.title}. ${currentCard.body}`;
+                tts.speak(text, {
+                  title: currentCard.title,
+                  artist: "Ascendra Academy",
+                  album: lesson.title,
+                  onEnd: () => { if (idx < total - 1) next(); },
+                });
+              } else if (!nextOn) {
+                tts.stop();
+              }
+            }}
+            lessonTitle={lesson.title}
+          />
+        )}
 
         {/* Card / Quiz / Result */}
         <AnimatePresence mode="wait">
           {!onQuiz && !onDone && (
             <motion.div
-              key={`card-${idx}`}
+              key={`card-${idx}-${currentCard?.kind || "text"}`}
               initial={{ opacity: 0, x: 40 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -40 }}
               transition={{ duration: 0.25 }}
-              drag="x"
+              drag={lockProgression ? false : "x"}
               dragConstraints={{ left: 0, right: 0 }}
               dragElastic={0.3}
               onDragEnd={(e, info) => {
+                if (lockProgression) return;
                 if (info.offset.x < -80) next();
                 else if (info.offset.x > 80) prev();
               }}
-              className="asc-card lesson-card p-8 sm:p-10 min-h-[340px] flex flex-col"
             >
-              <div className="flex items-center gap-2 mb-5">
-                <div className="w-9 h-9 rounded-full grid place-items-center" style={{ background: "rgba(255,176,0,0.15)" }}><Lightbulb size={16} color="#FFB000" /></div>
-                <div className="text-xs text-[var(--asc-text-muted)] tracking-wider">CARD {idx + 1} / {total}</div>
-              </div>
-              <h3 className="asc-h2 text-2xl sm:text-3xl">{lesson.cards[idx].title}</h3>
-              <p className="text-[var(--asc-text-dim)] text-lg mt-4 leading-relaxed flex-1">{lesson.cards[idx].body}</p>
-              <div className="text-xs text-[var(--asc-text-muted)] mt-6 text-center">Swipe or use the arrows to continue</div>
+              <CardRouter
+                card={currentCard}
+                idx={idx}
+                total={total}
+                lessonTitle={lesson.title}
+                lessonId={lessonId}
+                onAdvance={next}
+                autoplay={playAll}
+              />
             </motion.div>
           )}
 
@@ -127,13 +170,14 @@ export default function LessonPlayer() {
             <motion.div key="quiz" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="asc-card p-8 sm:p-10">
               <div className="flex items-center gap-2 mb-5">
                 <div className="w-9 h-9 rounded-full grid place-items-center" style={{ background: "rgba(124,58,237,0.18)" }}><Sparkles size={16} color="#BFB4FF" /></div>
-                <div className="text-xs text-[var(--asc-text-muted)] tracking-wider">CHECK FOR UNDERSTANDING</div>
+                <div className="text-xs text-[var(--asc-text-muted)] tracking-wider">FINAL CHECK FOR UNDERSTANDING</div>
               </div>
               <h3 className="asc-h2 text-2xl sm:text-3xl">{lesson.quiz.question}</h3>
               <div className="space-y-3 mt-5">
                 {lesson.quiz.options.map((o, i) => (
                   <button
                     key={i}
+                    type="button"
                     onClick={() => setPick(i)}
                     data-testid={`quiz-option-${i}`}
                     className="w-full text-left p-4 rounded-xl border transition-all"
@@ -193,14 +237,21 @@ export default function LessonPlayer() {
           )}
         </AnimatePresence>
 
-        {/* Nav controls for cards */}
-        {!onQuiz && !onDone && (
+        {/* Nav controls for cards. Hidden on interactive cards (they have their own Continue). */}
+        {!onQuiz && !onDone && !lockProgression && (
           <div className="flex items-center justify-between mt-6">
             <button onClick={prev} disabled={idx === 0} data-testid="lesson-prev-btn" className={`asc-btn-secondary text-sm ${idx === 0 ? "opacity-40 cursor-not-allowed" : ""}`}><ArrowLeft size={14} /> Prev</button>
             <div className="text-xs text-[var(--asc-text-muted)]">Card {idx + 1} of {total}</div>
             <button onClick={next} data-testid="lesson-next-btn" className="asc-btn-primary text-sm">
               {idx === total - 1 ? "To quiz" : "Next"} <ArrowRight size={14} />
             </button>
+          </div>
+        )}
+
+        {/* For interactive cards, give a discreet Back button so they can re-listen to prior cards */}
+        {!onQuiz && !onDone && lockProgression && idx > 0 && (
+          <div className="flex items-center justify-start mt-6">
+            <button onClick={prev} data-testid="lesson-prev-btn" className="asc-btn-secondary text-sm"><ArrowLeft size={14} /> Prev</button>
           </div>
         )}
       </div>

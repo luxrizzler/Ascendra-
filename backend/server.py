@@ -701,6 +701,41 @@ async def tutor_sessions(user=Depends(current_user)):
     sessions = await chats_col.aggregate(pipeline).to_list(30)
     return {"sessions": sessions}
 
+# ─── Lesson Playground (inline AI prompt practice) ───────────────────────
+class PlaygroundIn(BaseModel):
+    prompt: str = Field(..., min_length=1, max_length=2000)
+    instruction: Optional[str] = Field(None, max_length=600)
+    lesson_id: Optional[str] = None
+
+
+class PlaygroundOut(BaseModel):
+    response: str
+
+
+@api.post("/playground/run", response_model=PlaygroundOut)
+async def lesson_playground(body: PlaygroundIn, user=Depends(current_user)):
+    """Inline LLM playground used by `playground` cards in the lesson player.
+    Stateless — no chat history. Uses Claude Sonnet 4.5 via Emergent LLM key.
+    """
+    sys_msg = (
+        body.instruction
+        or "You are an AI tutor inside Ascendra Academy. The user is practicing prompting. "
+           "Respond directly to their prompt as a helpful AI assistant would — concise, useful, "
+           "and educational. Keep replies under 220 words unless the user asks for more."
+    )
+    try:
+        chat = LlmChat(
+            api_key=EMERGENT_LLM_KEY,
+            session_id=f"playground-{user['id']}-{uuid.uuid4().hex[:8]}",
+            system_message=sys_msg,
+        ).with_model("anthropic", "claude-sonnet-4-5-20250929")
+        reply = await chat.send_message(UserMessage(text=body.prompt))
+    except Exception as e:
+        log.exception("playground LLM call failed")
+        raise HTTPException(503, f"AI Playground unavailable: {str(e)[:160]}")
+    return PlaygroundOut(response=reply)
+
+
 # ─── Pricing & Stripe ───────────────────────────────────────────────────────
 TIERS = {
     "ascender": {
@@ -2500,6 +2535,53 @@ async def admin_generate_cover(body: CoverGenIn, _admin=Depends(require_admin)):
     if body.path_id:
         await _curric_update_path(db, body.path_id, {"image": url})
     return {"url": url}
+
+
+# ─── Interactive-cards migration ──────────────────────────────────────────
+@api.post("/admin/curriculum/migrate-interactive")
+async def admin_migrate_interactive(_admin=Depends(require_admin)):
+    """Upserts the new interactive cards (knowledge_check, fill_blank, playground)
+    into existing curriculum lessons in MongoDB. Idempotent.
+    """
+    from curriculum import PATHS as SEED_PATHS
+    updated = []
+    skipped = []
+    UPGRADED_LESSONS = {"f1l1"}
+    for sp in SEED_PATHS:
+        for m in sp.get("modules", []):
+            for lsn in m.get("lessons", []):
+                if lsn.get("id") not in UPGRADED_LESSONS:
+                    continue
+                live = await db["curriculum_paths"].find_one({"id": sp["id"]})
+                if not live:
+                    skipped.append({"lesson_id": lsn["id"], "reason": "path missing"})
+                    continue
+                live_mods = live.get("modules", [])
+                found = False
+                for lm in live_mods:
+                    if lm.get("id") != m["id"]:
+                        continue
+                    for i, ll in enumerate(lm.get("lessons", [])):
+                        if ll.get("id") == lsn["id"]:
+                            lm["lessons"][i] = {
+                                **ll,
+                                "cards": lsn["cards"],
+                                "quiz": lsn.get("quiz", ll.get("quiz")),
+                                "duration_min": lsn.get("duration_min", ll.get("duration_min")),
+                                "xp": lsn.get("xp", ll.get("xp")),
+                            }
+                            found = True
+                            break
+                if found:
+                    await db["curriculum_paths"].update_one(
+                        {"id": sp["id"]},
+                        {"$set": {"modules": live_mods,
+                                  "updated_at": datetime.now(timezone.utc)}},
+                    )
+                    updated.append(lsn["id"])
+                else:
+                    skipped.append({"lesson_id": lsn["id"], "reason": "module/lesson not found in DB"})
+    return {"updated": updated, "skipped": skipped, "count": len(updated)}
 
 
 app.include_router(api)
