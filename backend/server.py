@@ -1899,23 +1899,45 @@ async def admin_stats(_admin=Depends(require_admin)):
     conversion = (paid_count / user_count * 100) if user_count else 0
     signups_30d = await users_col.count_documents({"created_at": {"$gte": month_ago}})
 
-    paid_sessions = await sessions_col.find({"status": "paid"}, {"_id": 0}).to_list(10000)
-    def _amt_usd(s):
-        if "amount_usd" in s and s["amount_usd"] is not None:
-            return float(s["amount_usd"])
-        return float(s.get("amount_cents", 0)) / 100.0
-    revenue_total = sum(_amt_usd(s) for s in paid_sessions)
-    revenue_mtd = sum(_amt_usd(s) for s in paid_sessions if s.get("paid_at") and s["paid_at"] >= month_ago)
-    monthly_rev = 0.0
-    annual_rev = 0.0
-    for s in paid_sessions:
-        if s.get("paid_at") and s["paid_at"] >= month_ago:
-            amt = _amt_usd(s)
-            if s.get("interval") == "annual":
-                annual_rev += amt
-            else:
-                monthly_rev += amt
+    # Aggregate revenue server-side in one query (was: load up to 10,000 docs into memory)
+    _rev_pipeline = [
+        {"$match": {"status": "paid"}},
+        {"$addFields": {
+            "amt": {"$cond": [
+                {"$and": [
+                    {"$ne": [{"$type": "$amount_usd"}, "missing"]},
+                    {"$ne": ["$amount_usd", None]},
+                ]},
+                {"$toDouble": "$amount_usd"},
+                {"$divide": [{"$toDouble": {"$ifNull": ["$amount_cents", 0]}}, 100.0]},
+            ]},
+            "in_month": {"$cond": [
+                {"$gte": [{"$ifNull": ["$paid_at", None]}, month_ago]},
+                True, False,
+            ]},
+        }},
+        {"$group": {
+            "_id": None,
+            "revenue_total": {"$sum": "$amt"},
+            "revenue_mtd":  {"$sum": {"$cond": ["$in_month", "$amt", 0]}},
+            "monthly_rev": {"$sum": {"$cond": [
+                {"$and": ["$in_month", {"$ne": ["$interval", "annual"]}]},
+                "$amt", 0,
+            ]}},
+            "annual_rev":  {"$sum": {"$cond": [
+                {"$and": ["$in_month", {"$eq": ["$interval", "annual"]}]},
+                "$amt", 0,
+            ]}},
+        }},
+    ]
+    _rev_doc = await sessions_col.aggregate(_rev_pipeline).to_list(1)
+    _rev = _rev_doc[0] if _rev_doc else {}
+    revenue_total = float(_rev.get("revenue_total", 0.0) or 0.0)
+    revenue_mtd = float(_rev.get("revenue_mtd", 0.0) or 0.0)
+    monthly_rev = float(_rev.get("monthly_rev", 0.0) or 0.0)
+    annual_rev = float(_rev.get("annual_rev", 0.0) or 0.0)
     arr_estimate = monthly_rev * 12 + annual_rev
+    paid_sessions_count = await sessions_col.count_documents({"status": "paid"})
 
     lessons_completed = 0
     _lc_pipeline = [
@@ -1951,7 +1973,7 @@ async def admin_stats(_admin=Depends(require_admin)):
             "total_usd": round(revenue_total, 2),
             "mtd_usd": round(revenue_mtd, 2),
             "arr_estimate_usd": round(arr_estimate, 2),
-            "paid_sessions": len(paid_sessions),
+            "paid_sessions": paid_sessions_count,
         },
         "engagement": {
             "lessons_completed": lessons_completed,

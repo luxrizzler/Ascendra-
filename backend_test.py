@@ -1,373 +1,292 @@
 """
-Backend test for APScheduler bug fix verification.
-
-Tests:
-1. Admin authentication
-2. Manual trigger endpoints for scheduler jobs (lifecycle, auto-content)
-3. X/Twitter status (regression)
-4. Social posts list (regression)
-5. Scheduler status/next-run times (regression)
-6. Log verification for "no running event loop" errors
+Backend test for /api/admin/stats endpoint after MongoDB aggregation optimization.
+Tests response shape compatibility and revenue calculation correctness.
 """
 import requests
 import sys
-import time
-from datetime import datetime
+import uuid
+from datetime import datetime, timezone
+from pymongo import MongoClient
 
-BASE_URL = "https://repo-to-site-2.preview.emergentagent.com/api"
-ADMIN_EMAIL = "admin@ascendraacademy.com"
-ADMIN_PASSWORD = "AscendraAdmin2026!"
+BASE_URL = "https://repo-to-site-2.preview.emergentagent.com"
+MONGO_URL = "mongodb://localhost:27017"
+DB_NAME = "ascendra_db"
 
-class APSchedulerBugFixTester:
+class AdminStatsTest:
     def __init__(self):
+        self.base_url = BASE_URL
         self.token = None
         self.tests_run = 0
         self.tests_passed = 0
-        self.tests_failed = 0
-        self.errors = []
+        self.test_session_ids = []  # Track test sessions for cleanup
+        
+        # MongoDB connection for direct data insertion
+        self.mongo_client = MongoClient(MONGO_URL)
+        self.db = self.mongo_client[DB_NAME]
+        self.sessions_col = self.db["payment_sessions"]
 
-    def log_pass(self, test_name):
-        self.tests_passed += 1
-        print(f"✅ PASS: {test_name}")
+    def log(self, msg, level="INFO"):
+        """Log test messages"""
+        print(f"[{level}] {msg}")
 
-    def log_fail(self, test_name, reason):
-        self.tests_failed += 1
-        self.errors.append({"test": test_name, "reason": reason})
-        print(f"❌ FAIL: {test_name} - {reason}")
-
-    def run_test(self, name, method, endpoint, expected_status, data=None, check_json=True):
-        """Run a single API test"""
-        url = f"{BASE_URL}/{endpoint}"
-        headers = {'Content-Type': 'application/json'}
-        if self.token:
-            headers['Authorization'] = f'Bearer {self.token}'
-
+    def test(self, name, func):
+        """Run a single test"""
         self.tests_run += 1
-        print(f"\n🔍 Testing: {name}")
-        print(f"   Endpoint: {method} {endpoint}")
-        
+        self.log(f"\n{'='*60}")
+        self.log(f"TEST {self.tests_run}: {name}")
+        self.log('='*60)
         try:
-            if method == 'GET':
-                response = requests.get(url, headers=headers, timeout=30)
-            elif method == 'POST':
-                response = requests.post(url, json=data, headers=headers, timeout=30)
-            else:
-                raise ValueError(f"Unsupported method: {method}")
-
-            print(f"   Status: {response.status_code}")
-            
-            if response.status_code != expected_status:
-                self.log_fail(name, f"Expected {expected_status}, got {response.status_code}")
-                try:
-                    print(f"   Response: {response.text[:500]}")
-                except:
-                    pass
-                return False, {}
-
-            if check_json:
-                try:
-                    json_data = response.json()
-                    self.log_pass(name)
-                    return True, json_data
-                except Exception as e:
-                    self.log_fail(name, f"Invalid JSON response: {str(e)}")
-                    return False, {}
-            else:
-                self.log_pass(name)
-                return True, {}
-
-        except requests.exceptions.Timeout:
-            self.log_fail(name, "Request timeout (30s)")
-            return False, {}
-        except Exception as e:
-            self.log_fail(name, f"Exception: {str(e)}")
-            return False, {}
-
-    def test_admin_login(self):
-        """Test admin authentication"""
-        print("\n" + "="*70)
-        print("TEST 1: Admin Authentication")
-        print("="*70)
-        
-        success, response = self.run_test(
-            "Admin Login",
-            "POST",
-            "auth/login",
-            200,
-            data={"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD}
-        )
-        
-        if success and 'access_token' in response:
-            self.token = response['access_token']
-            print(f"   ✓ Token obtained: {self.token[:20]}...")
+            func()
+            self.tests_passed += 1
+            self.log(f"✅ PASSED: {name}", "SUCCESS")
             return True
-        else:
-            print("   ✗ Failed to obtain token")
+        except AssertionError as e:
+            self.log(f"❌ FAILED: {name}", "ERROR")
+            self.log(f"   Reason: {str(e)}", "ERROR")
+            return False
+        except Exception as e:
+            self.log(f"❌ ERROR: {name}", "ERROR")
+            self.log(f"   Exception: {str(e)}", "ERROR")
             return False
 
-    def test_lifecycle_manual_trigger(self):
-        """Test lifecycle manual trigger endpoint"""
-        print("\n" + "="*70)
-        print("TEST 2: Lifecycle Manual Trigger (Bug Fix Verification)")
-        print("="*70)
-        print("   This endpoint calls run_all_lifecycle(db) - the SAME function")
-        print("   that the scheduler invokes. If it returns 200 without errors,")
-        print("   the scheduler fix is working.")
-        
-        success, response = self.run_test(
-            "Lifecycle Manual Run",
-            "POST",
-            "admin/lifecycle/run",
-            200,
-            data={"kind": "all"}
+    def admin_login(self):
+        """Test admin login and get token"""
+        self.log("Attempting admin login...")
+        response = requests.post(
+            f"{self.base_url}/api/auth/login",
+            json={"email": "admin@ascendraacademy.com", "password": "AscendraAdmin2026!"},
+            timeout=10
         )
-        
-        if success:
-            print(f"   ✓ Lifecycle scan completed successfully")
-            if response:
-                print(f"   Response summary: {response}")
-        
-        return success
+        assert response.status_code == 200, f"Login failed with status {response.status_code}: {response.text}"
+        data = response.json()
+        assert "access_token" in data, "No access_token in login response"
+        self.token = data["access_token"]
+        self.log(f"✅ Admin login successful, token obtained")
 
-    def test_auto_content_manual_trigger(self):
-        """Test auto-content manual trigger endpoint"""
-        print("\n" + "="*70)
-        print("TEST 3: Auto-Content Manual Trigger (Bug Fix Verification)")
-        print("="*70)
-        print("   This endpoint calls run_daily_lesson(db) - the SAME function")
-        print("   that the scheduler invokes. If it returns 200 without errors,")
-        print("   the scheduler fix is working.")
-        
-        success, response = self.run_test(
-            "Auto-Content Manual Run",
-            "POST",
-            "admin/auto/run",
-            200,
-            data={"kind": "daily_lesson"}
+    def get_admin_stats(self):
+        """Fetch /api/admin/stats"""
+        assert self.token, "No token available, login first"
+        response = requests.get(
+            f"{self.base_url}/api/admin/stats",
+            headers={"Authorization": f"Bearer {self.token}"},
+            timeout=10
         )
-        
-        if success:
-            print(f"   ✓ Auto-content run completed successfully")
-            if response:
-                print(f"   Response summary: {response}")
-        
-        return success
+        assert response.status_code == 200, f"Stats endpoint failed with status {response.status_code}: {response.text}"
+        return response.json()
 
-    def test_x_status(self):
-        """Test X/Twitter status (regression)"""
-        print("\n" + "="*70)
-        print("TEST 4: X/Twitter Status (Regression)")
-        print("="*70)
+    def test_response_shape(self):
+        """REGRESSION: Verify exact response shape"""
+        stats = self.get_admin_stats()
         
-        success, response = self.run_test(
-            "X Status",
-            "GET",
-            "admin/social/x/status",
-            200
-        )
+        # Top-level keys
+        required_keys = ["users", "revenue", "engagement", "traffic"]
+        for key in required_keys:
+            assert key in stats, f"Missing top-level key: {key}"
         
-        if success:
-            if response.get('ok') and response.get('screen_name') == 'Ascendraacademy':
-                print(f"   ✓ X credentials valid: @{response.get('screen_name')}")
-                self.log_pass("X Status - Credentials Valid")
-            else:
-                print(f"   ⚠ X status response: {response}")
+        # Revenue object shape
+        revenue = stats["revenue"]
+        revenue_keys = ["total_usd", "mtd_usd", "arr_estimate_usd", "paid_sessions"]
+        for key in revenue_keys:
+            assert key in revenue, f"Missing revenue key: {key}"
         
-        return success
+        self.log(f"✅ Response shape is correct")
+        self.log(f"   Top-level keys: {list(stats.keys())}")
+        self.log(f"   Revenue keys: {list(revenue.keys())}")
 
-    def test_social_posts(self):
-        """Test social posts list (regression)"""
-        print("\n" + "="*70)
-        print("TEST 5: Social Posts List (Regression)")
-        print("="*70)
+    def test_revenue_types(self):
+        """REGRESSION: Verify all revenue values are numeric"""
+        stats = self.get_admin_stats()
+        revenue = stats["revenue"]
         
-        success, response = self.run_test(
-            "Social Posts List",
-            "GET",
-            "admin/social/posts",
-            200
-        )
+        # Check types
+        assert isinstance(revenue["total_usd"], (int, float)), f"total_usd is not numeric: {type(revenue['total_usd'])}"
+        assert isinstance(revenue["mtd_usd"], (int, float)), f"mtd_usd is not numeric: {type(revenue['mtd_usd'])}"
+        assert isinstance(revenue["arr_estimate_usd"], (int, float)), f"arr_estimate_usd is not numeric: {type(revenue['arr_estimate_usd'])}"
+        assert isinstance(revenue["paid_sessions"], int), f"paid_sessions is not int: {type(revenue['paid_sessions'])}"
         
-        if success:
-            posts = response.get('posts', [])
-            print(f"   ✓ Found {len(posts)} posts")
-            
-            # Check for the specific post mentioned in requirements
-            target_post = None
-            for post in posts:
-                if post.get('id', '').startswith('40fc7b29-'):
-                    target_post = post
-                    break
-            
-            if target_post:
-                print(f"   ✓ Found expected post: {target_post.get('id')}")
-                self.log_pass("Social Posts - Expected Post Found")
-            else:
-                print(f"   ⚠ Expected post (40fc7b29-...) not found")
+        # Check not null/undefined
+        assert revenue["total_usd"] is not None, "total_usd is None"
+        assert revenue["mtd_usd"] is not None, "mtd_usd is None"
+        assert revenue["arr_estimate_usd"] is not None, "arr_estimate_usd is None"
+        assert revenue["paid_sessions"] is not None, "paid_sessions is None"
         
-        return success
+        self.log(f"✅ All revenue values are numeric and not null")
+        self.log(f"   total_usd: {revenue['total_usd']} ({type(revenue['total_usd']).__name__})")
+        self.log(f"   mtd_usd: {revenue['mtd_usd']} ({type(revenue['mtd_usd']).__name__})")
+        self.log(f"   arr_estimate_usd: {revenue['arr_estimate_usd']} ({type(revenue['arr_estimate_usd']).__name__})")
+        self.log(f"   paid_sessions: {revenue['paid_sessions']} ({type(revenue['paid_sessions']).__name__})")
 
-    def test_scheduler_status(self):
-        """Test scheduler status endpoints (regression)"""
-        print("\n" + "="*70)
-        print("TEST 6: Scheduler Status (Regression)")
-        print("="*70)
+    def test_empty_db_zeros(self):
+        """REGRESSION: With zero paid sessions, all revenue should be 0.0"""
+        # Verify DB state
+        paid_count = self.sessions_col.count_documents({"status": "paid"})
+        assert paid_count == 0, f"Expected 0 paid sessions, found {paid_count}"
         
-        success, response = self.run_test(
-            "Scheduler Status",
-            "GET",
-            "admin/auto/settings",
-            200
-        )
+        stats = self.get_admin_stats()
+        revenue = stats["revenue"]
         
-        if success:
-            # Check for next_runs field
-            next_runs = response.get('next_runs', {})
-            if next_runs:
-                print(f"   ✓ Scheduler is running with next-run times:")
-                for job_id, next_run in next_runs.items():
-                    print(f"      - {job_id}: {next_run}")
-                
-                # Verify next_run times are in the future
-                from datetime import datetime
-                now = datetime.now()
-                all_future = True
-                for job_id, next_run_str in next_runs.items():
-                    if next_run_str:
-                        try:
-                            next_run_dt = datetime.fromisoformat(next_run_str.replace('Z', '+00:00'))
-                            if next_run_dt < now:
-                                all_future = False
-                                print(f"      ⚠ {job_id} next_run is in the past!")
-                        except:
-                            pass
-                
-                if all_future:
-                    print(f"   ✓ All next_run times are in the future (scheduler is active)")
-                    self.log_pass("Scheduler Status - Next Runs Valid")
-            else:
-                print(f"   ⚠ No next_runs found in response")
-                print(f"   Response: {response}")
+        assert revenue["total_usd"] == 0.0, f"Expected total_usd=0.0, got {revenue['total_usd']}"
+        assert revenue["mtd_usd"] == 0.0, f"Expected mtd_usd=0.0, got {revenue['mtd_usd']}"
+        assert revenue["arr_estimate_usd"] == 0.0, f"Expected arr_estimate_usd=0.0, got {revenue['arr_estimate_usd']}"
+        assert revenue["paid_sessions"] == 0, f"Expected paid_sessions=0, got {revenue['paid_sessions']}"
         
-        return success
+        self.log(f"✅ Empty DB returns correct zeros")
+        self.log(f"   Revenue: {revenue}")
 
-    def check_backend_logs(self):
-        """Check backend logs for scheduler errors"""
-        print("\n" + "="*70)
-        print("TEST 7: Backend Log Verification")
-        print("="*70)
-        print("   Checking for 'no running event loop' or 'coroutine was never awaited'")
-        print("   errors in backend logs...")
+    def test_other_top_level_objects(self):
+        """REGRESSION: Verify users, engagement, traffic objects are present and numeric"""
+        stats = self.get_admin_stats()
+        
+        # Users
+        users = stats["users"]
+        assert isinstance(users["total"], int), f"users.total not int: {type(users['total'])}"
+        assert isinstance(users["paid"], int), f"users.paid not int: {type(users['paid'])}"
+        self.log(f"✅ users object present: total={users['total']}, paid={users['paid']}")
+        
+        # Engagement
+        engagement = stats["engagement"]
+        assert isinstance(engagement["lessons_completed"], int), f"engagement.lessons_completed not int: {type(engagement['lessons_completed'])}"
+        assert isinstance(engagement["certificates_issued"], int), f"engagement.certificates_issued not int"
+        self.log(f"✅ engagement object present: lessons_completed={engagement['lessons_completed']}")
+        
+        # Traffic
+        traffic = stats["traffic"]
+        assert isinstance(traffic["pageviews_total"], int), f"traffic.pageviews_total not int"
+        self.log(f"✅ traffic object present: pageviews_total={traffic['pageviews_total']}")
+
+    def insert_test_session(self, amount_usd, interval, session_id=None):
+        """Insert a test paid session directly into MongoDB"""
+        if session_id is None:
+            session_id = f"test-session-revenue-{uuid.uuid4()}"
+        
+        doc = {
+            "session_id": session_id,
+            "status": "paid",
+            "amount_usd": amount_usd,
+            "paid_at": datetime.now(timezone.utc),
+            "interval": interval,
+            "user_id": "test-user-id",
+            "tier": "pathfinder",
+            "mode": "payment",
+            "created_at": datetime.now(timezone.utc),
+        }
+        self.sessions_col.insert_one(doc)
+        self.test_session_ids.append(session_id)
+        self.log(f"✅ Inserted test session: {session_id}, amount={amount_usd}, interval={interval}")
+        return session_id
+
+    def cleanup_test_sessions(self):
+        """Delete all test sessions"""
+        if self.test_session_ids:
+            result = self.sessions_col.delete_many({"session_id": {"$in": self.test_session_ids}})
+            self.log(f"✅ Cleaned up {result.deleted_count} test sessions")
+            self.test_session_ids = []
+
+    def test_single_monthly_session(self):
+        """POSITIVE PATH: Single monthly session with amount_usd=19.99"""
+        # Insert test session
+        self.insert_test_session(amount_usd=19.99, interval="monthly")
+        
+        # Fetch stats
+        stats = self.get_admin_stats()
+        revenue = stats["revenue"]
+        
+        # Verify calculations
+        assert revenue["total_usd"] == 19.99, f"Expected total_usd=19.99, got {revenue['total_usd']}"
+        assert revenue["mtd_usd"] == 19.99, f"Expected mtd_usd=19.99, got {revenue['mtd_usd']}"
+        assert revenue["paid_sessions"] == 1, f"Expected paid_sessions=1, got {revenue['paid_sessions']}"
+        
+        # ARR = monthly * 12
+        expected_arr = 19.99 * 12
+        assert abs(revenue["arr_estimate_usd"] - expected_arr) < 0.01, \
+            f"Expected arr_estimate_usd={expected_arr}, got {revenue['arr_estimate_usd']}"
+        
+        self.log(f"✅ Single monthly session calculations correct")
+        self.log(f"   total_usd: {revenue['total_usd']}")
+        self.log(f"   mtd_usd: {revenue['mtd_usd']}")
+        self.log(f"   arr_estimate_usd: {revenue['arr_estimate_usd']}")
+        self.log(f"   paid_sessions: {revenue['paid_sessions']}")
+
+    def test_two_sessions_mixed(self):
+        """POSITIVE PATH: Two sessions (monthly + annual)"""
+        # Insert second session (annual)
+        self.insert_test_session(amount_usd=199.99, interval="annual")
+        
+        # Fetch stats
+        stats = self.get_admin_stats()
+        revenue = stats["revenue"]
+        
+        # Verify calculations
+        # total = 19.99 (from previous test) + 199.99 = 219.98
+        expected_total = 19.99 + 199.99
+        assert abs(revenue["total_usd"] - expected_total) < 0.01, \
+            f"Expected total_usd={expected_total}, got {revenue['total_usd']}"
+        
+        # mtd should be same as total (both paid this month)
+        assert abs(revenue["mtd_usd"] - expected_total) < 0.01, \
+            f"Expected mtd_usd={expected_total}, got {revenue['mtd_usd']}"
+        
+        # paid_sessions = 2
+        assert revenue["paid_sessions"] == 2, f"Expected paid_sessions=2, got {revenue['paid_sessions']}"
+        
+        # ARR = 19.99*12 + 199.99 = 239.88 + 199.99 = 439.87
+        expected_arr = 19.99 * 12 + 199.99
+        assert abs(revenue["arr_estimate_usd"] - expected_arr) < 0.01, \
+            f"Expected arr_estimate_usd={expected_arr}, got {revenue['arr_estimate_usd']}"
+        
+        self.log(f"✅ Two sessions (monthly + annual) calculations correct")
+        self.log(f"   total_usd: {revenue['total_usd']} (expected: {expected_total})")
+        self.log(f"   mtd_usd: {revenue['mtd_usd']} (expected: {expected_total})")
+        self.log(f"   arr_estimate_usd: {revenue['arr_estimate_usd']} (expected: {expected_arr})")
+        self.log(f"   paid_sessions: {revenue['paid_sessions']}")
+
+    def run_all_tests(self):
+        """Run all tests in sequence"""
+        self.log("\n" + "="*60)
+        self.log("STARTING ADMIN STATS ENDPOINT TESTS")
+        self.log("="*60)
         
         try:
-            import subprocess
+            # Login first
+            self.admin_login()
             
-            # Check error log
-            result = subprocess.run(
-                ["tail", "-n", "500", "/var/log/supervisor/backend.err.log"],
-                capture_output=True,
-                text=True,
-                timeout=5
-            )
+            # REGRESSION TESTS (empty DB state)
+            self.test("Response shape is correct", self.test_response_shape)
+            self.test("Revenue values are numeric and not null", self.test_revenue_types)
+            self.test("Empty DB returns zeros", self.test_empty_db_zeros)
+            self.test("Other top-level objects present", self.test_other_top_level_objects)
             
-            error_log = result.stdout
+            # POSITIVE PATH TESTS (with test data)
+            self.test("Single monthly session calculations", self.test_single_monthly_session)
+            self.test("Two sessions (monthly + annual) calculations", self.test_two_sessions_mixed)
             
-            # Look for the specific errors AFTER the most recent restart
-            # Find the most recent "Application startup complete" marker
-            lines = error_log.split('\n')
+        finally:
+            # Cleanup
+            self.log("\n" + "="*60)
+            self.log("CLEANUP")
+            self.log("="*60)
+            self.cleanup_test_sessions()
             
-            # Find last startup
-            last_startup_idx = -1
-            for i, line in enumerate(lines):
-                if "Application startup complete" in line or "auto-content scheduler started" in line:
-                    last_startup_idx = i
+            # Verify cleanup
+            paid_count = self.sessions_col.count_documents({"status": "paid"})
+            self.log(f"✅ DB cleaned: {paid_count} paid sessions remaining (should be 0)")
             
-            if last_startup_idx >= 0:
-                recent_logs = '\n'.join(lines[last_startup_idx:])
-            else:
-                recent_logs = error_log
-            
-            # Check for errors
-            has_runtime_error = "RuntimeError: no running event loop" in recent_logs
-            has_coroutine_warning = "coroutine was never awaited" in recent_logs
-            
-            if has_runtime_error or has_coroutine_warning:
-                self.log_fail("Backend Logs", "Found scheduler errors in recent logs")
-                print(f"   ✗ Found errors after last restart:")
-                if has_runtime_error:
-                    print(f"      - RuntimeError: no running event loop")
-                if has_coroutine_warning:
-                    print(f"      - coroutine was never awaited")
-                return False
-            else:
-                self.log_pass("Backend Logs - No Scheduler Errors")
-                print(f"   ✓ No scheduler errors found in recent logs")
-                return True
-                
-        except Exception as e:
-            print(f"   ⚠ Could not check logs: {str(e)}")
-            return True  # Don't fail the test if we can't check logs
-
-    def print_summary(self):
-        """Print test summary"""
-        print("\n" + "="*70)
-        print("TEST SUMMARY")
-        print("="*70)
-        print(f"Total tests run: {self.tests_run}")
-        print(f"Passed: {self.tests_passed}")
-        print(f"Failed: {self.tests_failed}")
+        # Summary
+        self.log("\n" + "="*60)
+        self.log("TEST SUMMARY")
+        self.log("="*60)
+        self.log(f"Tests run: {self.tests_run}")
+        self.log(f"Tests passed: {self.tests_passed}")
+        self.log(f"Tests failed: {self.tests_run - self.tests_passed}")
         
-        if self.errors:
-            print("\n❌ FAILED TESTS:")
-            for error in self.errors:
-                print(f"   - {error['test']}: {error['reason']}")
-        
-        if self.tests_failed == 0:
-            print("\n✅ ALL TESTS PASSED - APScheduler bug fix verified!")
-            print("\nVERIFICATION COMPLETE:")
-            print("  ✓ Scheduler jobs configured correctly (coroutine functions with args)")
-            print("  ✓ Manual trigger endpoints work without errors")
-            print("  ✓ No 'RuntimeError: no running event loop' in recent logs")
-            print("  ✓ All regression tests passed (X status, social posts, auth)")
+        if self.tests_passed == self.tests_run:
+            self.log("✅ ALL TESTS PASSED", "SUCCESS")
             return 0
         else:
-            print("\n❌ SOME TESTS FAILED - See details above")
+            self.log(f"❌ {self.tests_run - self.tests_passed} TEST(S) FAILED", "ERROR")
             return 1
 
-def main():
-    print("="*70)
-    print("APScheduler Bug Fix Verification Test Suite")
-    print("="*70)
-    print(f"Backend URL: {BASE_URL}")
-    print(f"Admin: {ADMIN_EMAIL}")
-    print(f"Started: {datetime.now().isoformat()}")
-    
-    tester = APSchedulerBugFixTester()
-    
-    # Run tests in order
-    if not tester.test_admin_login():
-        print("\n❌ CRITICAL: Admin login failed. Cannot continue.")
-        return 1
-    
-    # Give backend a moment to settle
-    time.sleep(1)
-    
-    # Bug fix verification tests
-    tester.test_lifecycle_manual_trigger()
-    time.sleep(1)
-    tester.test_auto_content_manual_trigger()
-    time.sleep(1)
-    
-    # Regression tests
-    tester.test_x_status()
-    tester.test_social_posts()
-    tester.test_scheduler_status()
-    
-    # Log verification
-    tester.check_backend_logs()
-    
-    # Print summary
-    return tester.print_summary()
-
 if __name__ == "__main__":
-    sys.exit(main())
+    tester = AdminStatsTest()
+    exit_code = tester.run_all_tests()
+    sys.exit(exit_code)
