@@ -24,15 +24,11 @@
     "status": "completed"
   },
   {
-    "content": "Verify: esbuild clean + screenshot test (all 4 card types render correctly)",
+    "content": "testing_agent verified 100% backend (12/12) + 100% frontend",
     "status": "completed"
   },
   {
-    "content": "Verify: testing_agent end-to-end run",
+    "content": "User: redeploy to production + run /api/admin/curriculum/migrate-interactive on prod",
     "status": "in_progress"
-  },
-  {
-    "content": "User: redeploy to push to production",
-    "status": "pending"
   }
 ]
