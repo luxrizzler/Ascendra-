@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { Helmet } from "react-helmet-async";
-import { api, BACKEND_URL } from "@/lib/api";
+import { api } from "@/lib/api";
 import Loader from "@/components/Loader";
 import { ArrowRight, CheckCircle2, AlertTriangle, Lightbulb, Wrench, HelpCircle, Sparkles, ChevronRight } from "lucide-react";
 
@@ -39,9 +39,10 @@ export default function LearnHub() {
     );
   }
 
+  const _origin = typeof window !== "undefined" ? window.location.origin.replace(/\/$/, "") : "";
   const canonical = useCaseSlug
-    ? `${BACKEND_URL.replace(/\/$/, "")}/learn/${modelSlug}/${useCaseSlug}`
-    : `${BACKEND_URL.replace(/\/$/, "")}/learn/${modelSlug}`;
+    ? `${_origin}/learn/${modelSlug}/${useCaseSlug}`
+    : `${_origin}/learn/${modelSlug}`;
 
   // JSON-LD structured data
   const faqLd = (page.faqs && page.faqs.length) ? {
@@ -58,9 +59,9 @@ export default function LearnHub() {
     "@context": "https://schema.org",
     "@type": "BreadcrumbList",
     "itemListElement": [
-      { "@type": "ListItem", "position": 1, "name": "Home", "item": BACKEND_URL.replace(/\/$/, "") },
-      { "@type": "ListItem", "position": 2, "name": "Learn", "item": `${BACKEND_URL.replace(/\/$/, "")}/learn` },
-      { "@type": "ListItem", "position": 3, "name": page.model_name, "item": `${BACKEND_URL.replace(/\/$/, "")}/learn/${modelSlug}` },
+      { "@type": "ListItem", "position": 1, "name": "Home", "item": _origin },
+      { "@type": "ListItem", "position": 2, "name": "Learn", "item": `${_origin}/learn` },
+      { "@type": "ListItem", "position": 3, "name": page.model_name, "item": `${_origin}/learn/${modelSlug}` },
       ...(useCaseSlug ? [{ "@type": "ListItem", "position": 4, "name": page.use_case_name || useCaseSlug, "item": canonical }] : []),
     ],
   };

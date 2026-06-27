@@ -466,6 +466,8 @@ def send_digest(to: str, published: list, drafted: list, failed: list) -> dict:
             )
         return "".join(out)
 
+    _public_base = (os.environ.get("PUBLIC_WEB_URL") or "").rstrip("/") or "http://localhost:3000"
+    _auto_url = f"{_public_base}/admin/auto-content"
     body_html = f"""
       <h1 style="margin:0 0 6px 0;color:#FFFFFF;font-size:28px;line-height:34px;letter-spacing:-0.5px;font-weight:900;">Auto-pilot digest</h1>
       <p style="margin:0 0 18px 0;color:#B8B8C2;font-size:14px;">Last 24 hours of automated content generation.</p>
@@ -479,12 +481,12 @@ def send_digest(to: str, published: list, drafted: list, failed: list) -> dict:
       <div style="margin:18px 0 6px 0;color:#FB7185;font-size:12px;font-weight:800;letter-spacing:1.5px;">FAILED ({len(failed)})</div>
       {_rows(failed, "#FB7185")}
 
-      <p style="margin:22px 0 0 0;color:#7a7a85;font-size:12px;">Review flagged items in <a href="https://repo-to-site-2.preview.emergentagent.com/admin/auto-content" style="color:#FFB000;">/admin/auto-content</a>.</p>
+      <p style="margin:22px 0 0 0;color:#7a7a85;font-size:12px;">Review flagged items in <a href="{_auto_url}" style="color:#FFB000;">/admin/auto-content</a>.</p>
     """
     text = (
         f"Auto-pilot digest — last 24 hours\n"
         f"Published: {len(published)}\nFlagged for review: {len(drafted)}\nFailed: {len(failed)}\n"
-        f"Review: https://repo-to-site-2.preview.emergentagent.com/admin/auto-content\n"
+        f"Review: {_auto_url}\n"
     )
     return _send(to, subject, _shell(subject, preheader, body_html), text)
 

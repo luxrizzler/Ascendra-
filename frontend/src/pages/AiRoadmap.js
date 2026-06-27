@@ -23,7 +23,7 @@ export default function AiRoadmap() {
       <Helmet>
         <title>The AI Roadmap — From Curious to Capable in 5 Phases | Ascendra</title>
         <meta name="description" content="The exact 5-phase path Ascendra Academy walks every learner through. Skip the YouTube graveyard. Free resource." />
-        <link rel="canonical" href="https://repo-to-site-2.preview.emergentagent.com/resources/ai-roadmap" />
+        <link rel="canonical" href={`${typeof window !== "undefined" ? window.location.origin : ""}/resources/ai-roadmap`} />
       </Helmet>
 
       <div className="asc-kicker">FREE RESOURCE</div>

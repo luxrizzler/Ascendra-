@@ -26,7 +26,7 @@ import email_service as _email
 log = logging.getLogger("lifecycle")
 
 # ─── Config ────────────────────────────────────────────────────────────────
-PUBLIC_BASE = (os.environ.get("PUBLIC_WEB_URL") or "https://repo-to-site-2.preview.emergentagent.com").rstrip("/")
+PUBLIC_BASE = (os.environ.get("PUBLIC_WEB_URL") or "").rstrip("/") or "http://localhost:3000"
 TIERS = {
     "ascender":    {"monthly": 9.99,  "annual": 99.0},
     "pathfinder":  {"monthly": 19.99, "annual": 199.0},
