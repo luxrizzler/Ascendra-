@@ -1,26 +1,26 @@
 {
-  "tiers": {
-    "ascender": {
-      "product_id": "prod_UlkAaxOW6jpI5h",
-      "prices": {
-        "monthly": "price_1TmCfhDwDiYDfGuPcBGcji3v",
-        "annual": "price_1TmCfhDwDiYDfGuPE3Cj8gwr"
-      }
+    "tiers": {
+        "ascender": {
+            "product_id": "prod_UlkAaxOW6jpI5h",
+            "prices": {
+                "monthly": "price_1TmCfhDwDiYDfGuPcBGcji3v",
+                "annual": "price_1TmCfhDwDiYDfGuPE3Cj8gwr"
+            }
+        },
+        "pathfinder": {
+            "product_id": "prod_UlkADFgx8A95RD",
+            "prices": {
+                "monthly": "price_1TmlMmDwDiYDfGuPAvTE2OYg",
+                "annual": "price_1TmCfiDwDiYDfGuPTWdi9mJi"
+            }
+        },
+        "sage": {
+            "product_id": "prod_UlkAAiB6mm6ze2",
+            "prices": {
+                "monthly": "price_1TmCfjDwDiYDfGuPaZWsO14M",
+                "annual": "price_1TmCfjDwDiYDfGuP5xe0NVQC"
+            }
+        }
     },
-    "pathfinder": {
-      "product_id": "prod_UlkADFgx8A95RD",
-      "prices": {
-        "monthly": "price_1TmCfiDwDiYDfGuPMaupaube",
-        "annual": "price_1TmCfiDwDiYDfGuPTWdi9mJi"
-      }
-    },
-    "sage": {
-      "product_id": "prod_UlkAAiB6mm6ze2",
-      "prices": {
-        "monthly": "price_1TmCfjDwDiYDfGuPaZWsO14M",
-        "annual": "price_1TmCfjDwDiYDfGuP5xe0NVQC"
-      }
-    }
-  },
-  "portal_configuration_id": "bpc_1TmCfjDwDiYDfGuP6NvFAUoO"
+    "portal_configuration_id": "bpc_1TmCfjDwDiYDfGuP6NvFAUoO"
 }
