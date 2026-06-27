@@ -1,292 +1,488 @@
 """
-Backend test for /api/admin/stats endpoint after MongoDB aggregation optimization.
-Tests response shape compatibility and revenue calculation correctness.
+Ascendra Academy - Stripe Webhook Security Fix Verification
+P0 Security Bug: Verify webhook handler correctly rejects unsigned/forged payloads
+and still accepts genuinely-signed payloads.
 """
 import requests
+import json
+import hmac
+import hashlib
+import time
 import sys
-import uuid
-from datetime import datetime, timezone
-from pymongo import MongoClient
+from datetime import datetime
 
+# Configuration
 BASE_URL = "https://repo-to-site-2.preview.emergentagent.com"
-MONGO_URL = "mongodb://localhost:27017"
-DB_NAME = "ascendra_db"
+WEBHOOK_SECRET = "whsec_pP6zR3wzRFmP74btq3NRaTHanbdK4q6J"
+ADMIN_EMAIL = "admin@ascendraacademy.com"
+ADMIN_PASSWORD = "AscendraAdmin2026!"
 
-class AdminStatsTest:
+class Colors:
+    GREEN = '\033[92m'
+    RED = '\033[91m'
+    YELLOW = '\033[93m'
+    BLUE = '\033[94m'
+    RESET = '\033[0m'
+
+class WebhookSecurityTester:
     def __init__(self):
-        self.base_url = BASE_URL
-        self.token = None
         self.tests_run = 0
         self.tests_passed = 0
-        self.test_session_ids = []  # Track test sessions for cleanup
-        
-        # MongoDB connection for direct data insertion
-        self.mongo_client = MongoClient(MONGO_URL)
-        self.db = self.mongo_client[DB_NAME]
-        self.sessions_col = self.db["payment_sessions"]
+        self.tests_failed = 0
+        self.admin_token = None
+        self.test_user_id = None
+        self.test_user_email = None
+        self.test_user_token = None
 
-    def log(self, msg, level="INFO"):
-        """Log test messages"""
-        print(f"[{level}] {msg}")
-
-    def test(self, name, func):
-        """Run a single test"""
+    def log_test(self, name, passed, expected, actual, details=""):
+        """Log test result with color coding"""
         self.tests_run += 1
-        self.log(f"\n{'='*60}")
-        self.log(f"TEST {self.tests_run}: {name}")
-        self.log('='*60)
-        try:
-            func()
+        if passed:
             self.tests_passed += 1
-            self.log(f"✅ PASSED: {name}", "SUCCESS")
-            return True
-        except AssertionError as e:
-            self.log(f"❌ FAILED: {name}", "ERROR")
-            self.log(f"   Reason: {str(e)}", "ERROR")
-            return False
-        except Exception as e:
-            self.log(f"❌ ERROR: {name}", "ERROR")
-            self.log(f"   Exception: {str(e)}", "ERROR")
-            return False
+            print(f"{Colors.GREEN}✅ PASS{Colors.RESET} - {name}")
+            if details:
+                print(f"   {Colors.BLUE}ℹ{Colors.RESET}  {details}")
+        else:
+            self.tests_failed += 1
+            print(f"{Colors.RED}❌ FAIL{Colors.RESET} - {name}")
+            print(f"   Expected: {expected}")
+            print(f"   Actual: {actual}")
+            if details:
+                print(f"   Details: {details}")
 
-    def admin_login(self):
-        """Test admin login and get token"""
-        self.log("Attempting admin login...")
-        response = requests.post(
-            f"{self.base_url}/api/auth/login",
-            json={"email": "admin@ascendraacademy.com", "password": "AscendraAdmin2026!"},
-            timeout=10
-        )
-        assert response.status_code == 200, f"Login failed with status {response.status_code}: {response.text}"
-        data = response.json()
-        assert "access_token" in data, "No access_token in login response"
-        self.token = data["access_token"]
-        self.log(f"✅ Admin login successful, token obtained")
+    def generate_stripe_signature(self, payload_str, timestamp=None):
+        """Generate a valid Stripe webhook signature using HMAC-SHA256"""
+        if timestamp is None:
+            timestamp = int(time.time())
+        
+        # Stripe signature format: t={timestamp},v1={signature}
+        signed_payload = f"{timestamp}.{payload_str}"
+        signature = hmac.new(
+            WEBHOOK_SECRET.encode('utf-8'),
+            signed_payload.encode('utf-8'),
+            hashlib.sha256
+        ).hexdigest()
+        
+        return f"t={timestamp},v1={signature}"
 
-    def get_admin_stats(self):
-        """Fetch /api/admin/stats"""
-        assert self.token, "No token available, login first"
-        response = requests.get(
-            f"{self.base_url}/api/admin/stats",
-            headers={"Authorization": f"Bearer {self.token}"},
-            timeout=10
-        )
-        assert response.status_code == 200, f"Stats endpoint failed with status {response.status_code}: {response.text}"
-        return response.json()
-
-    def test_response_shape(self):
-        """REGRESSION: Verify exact response shape"""
-        stats = self.get_admin_stats()
+    def test_webhook_no_signature(self):
+        """TEST 1: POST webhook with NO stripe-signature header → MUST return 400"""
+        print(f"\n{Colors.BLUE}TEST 1: Webhook without signature header{Colors.RESET}")
         
-        # Top-level keys
-        required_keys = ["users", "revenue", "engagement", "traffic"]
-        for key in required_keys:
-            assert key in stats, f"Missing top-level key: {key}"
-        
-        # Revenue object shape
-        revenue = stats["revenue"]
-        revenue_keys = ["total_usd", "mtd_usd", "arr_estimate_usd", "paid_sessions"]
-        for key in revenue_keys:
-            assert key in revenue, f"Missing revenue key: {key}"
-        
-        self.log(f"✅ Response shape is correct")
-        self.log(f"   Top-level keys: {list(stats.keys())}")
-        self.log(f"   Revenue keys: {list(revenue.keys())}")
-
-    def test_revenue_types(self):
-        """REGRESSION: Verify all revenue values are numeric"""
-        stats = self.get_admin_stats()
-        revenue = stats["revenue"]
-        
-        # Check types
-        assert isinstance(revenue["total_usd"], (int, float)), f"total_usd is not numeric: {type(revenue['total_usd'])}"
-        assert isinstance(revenue["mtd_usd"], (int, float)), f"mtd_usd is not numeric: {type(revenue['mtd_usd'])}"
-        assert isinstance(revenue["arr_estimate_usd"], (int, float)), f"arr_estimate_usd is not numeric: {type(revenue['arr_estimate_usd'])}"
-        assert isinstance(revenue["paid_sessions"], int), f"paid_sessions is not int: {type(revenue['paid_sessions'])}"
-        
-        # Check not null/undefined
-        assert revenue["total_usd"] is not None, "total_usd is None"
-        assert revenue["mtd_usd"] is not None, "mtd_usd is None"
-        assert revenue["arr_estimate_usd"] is not None, "arr_estimate_usd is None"
-        assert revenue["paid_sessions"] is not None, "paid_sessions is None"
-        
-        self.log(f"✅ All revenue values are numeric and not null")
-        self.log(f"   total_usd: {revenue['total_usd']} ({type(revenue['total_usd']).__name__})")
-        self.log(f"   mtd_usd: {revenue['mtd_usd']} ({type(revenue['mtd_usd']).__name__})")
-        self.log(f"   arr_estimate_usd: {revenue['arr_estimate_usd']} ({type(revenue['arr_estimate_usd']).__name__})")
-        self.log(f"   paid_sessions: {revenue['paid_sessions']} ({type(revenue['paid_sessions']).__name__})")
-
-    def test_empty_db_zeros(self):
-        """REGRESSION: With zero paid sessions, all revenue should be 0.0"""
-        # Verify DB state
-        paid_count = self.sessions_col.count_documents({"status": "paid"})
-        assert paid_count == 0, f"Expected 0 paid sessions, found {paid_count}"
-        
-        stats = self.get_admin_stats()
-        revenue = stats["revenue"]
-        
-        assert revenue["total_usd"] == 0.0, f"Expected total_usd=0.0, got {revenue['total_usd']}"
-        assert revenue["mtd_usd"] == 0.0, f"Expected mtd_usd=0.0, got {revenue['mtd_usd']}"
-        assert revenue["arr_estimate_usd"] == 0.0, f"Expected arr_estimate_usd=0.0, got {revenue['arr_estimate_usd']}"
-        assert revenue["paid_sessions"] == 0, f"Expected paid_sessions=0, got {revenue['paid_sessions']}"
-        
-        self.log(f"✅ Empty DB returns correct zeros")
-        self.log(f"   Revenue: {revenue}")
-
-    def test_other_top_level_objects(self):
-        """REGRESSION: Verify users, engagement, traffic objects are present and numeric"""
-        stats = self.get_admin_stats()
-        
-        # Users
-        users = stats["users"]
-        assert isinstance(users["total"], int), f"users.total not int: {type(users['total'])}"
-        assert isinstance(users["paid"], int), f"users.paid not int: {type(users['paid'])}"
-        self.log(f"✅ users object present: total={users['total']}, paid={users['paid']}")
-        
-        # Engagement
-        engagement = stats["engagement"]
-        assert isinstance(engagement["lessons_completed"], int), f"engagement.lessons_completed not int: {type(engagement['lessons_completed'])}"
-        assert isinstance(engagement["certificates_issued"], int), f"engagement.certificates_issued not int"
-        self.log(f"✅ engagement object present: lessons_completed={engagement['lessons_completed']}")
-        
-        # Traffic
-        traffic = stats["traffic"]
-        assert isinstance(traffic["pageviews_total"], int), f"traffic.pageviews_total not int"
-        self.log(f"✅ traffic object present: pageviews_total={traffic['pageviews_total']}")
-
-    def insert_test_session(self, amount_usd, interval, session_id=None):
-        """Insert a test paid session directly into MongoDB"""
-        if session_id is None:
-            session_id = f"test-session-revenue-{uuid.uuid4()}"
-        
-        doc = {
-            "session_id": session_id,
-            "status": "paid",
-            "amount_usd": amount_usd,
-            "paid_at": datetime.now(timezone.utc),
-            "interval": interval,
-            "user_id": "test-user-id",
-            "tier": "pathfinder",
-            "mode": "payment",
-            "created_at": datetime.now(timezone.utc),
+        forged_payload = {
+            "type": "checkout.session.completed",
+            "data": {
+                "object": {
+                    "metadata": {
+                        "user_id": "forged-user-123",
+                        "tier": "sage"
+                    }
+                }
+            }
         }
-        self.sessions_col.insert_one(doc)
-        self.test_session_ids.append(session_id)
-        self.log(f"✅ Inserted test session: {session_id}, amount={amount_usd}, interval={interval}")
-        return session_id
-
-    def cleanup_test_sessions(self):
-        """Delete all test sessions"""
-        if self.test_session_ids:
-            result = self.sessions_col.delete_many({"session_id": {"$in": self.test_session_ids}})
-            self.log(f"✅ Cleaned up {result.deleted_count} test sessions")
-            self.test_session_ids = []
-
-    def test_single_monthly_session(self):
-        """POSITIVE PATH: Single monthly session with amount_usd=19.99"""
-        # Insert test session
-        self.insert_test_session(amount_usd=19.99, interval="monthly")
-        
-        # Fetch stats
-        stats = self.get_admin_stats()
-        revenue = stats["revenue"]
-        
-        # Verify calculations
-        assert revenue["total_usd"] == 19.99, f"Expected total_usd=19.99, got {revenue['total_usd']}"
-        assert revenue["mtd_usd"] == 19.99, f"Expected mtd_usd=19.99, got {revenue['mtd_usd']}"
-        assert revenue["paid_sessions"] == 1, f"Expected paid_sessions=1, got {revenue['paid_sessions']}"
-        
-        # ARR = monthly * 12
-        expected_arr = 19.99 * 12
-        assert abs(revenue["arr_estimate_usd"] - expected_arr) < 0.01, \
-            f"Expected arr_estimate_usd={expected_arr}, got {revenue['arr_estimate_usd']}"
-        
-        self.log(f"✅ Single monthly session calculations correct")
-        self.log(f"   total_usd: {revenue['total_usd']}")
-        self.log(f"   mtd_usd: {revenue['mtd_usd']}")
-        self.log(f"   arr_estimate_usd: {revenue['arr_estimate_usd']}")
-        self.log(f"   paid_sessions: {revenue['paid_sessions']}")
-
-    def test_two_sessions_mixed(self):
-        """POSITIVE PATH: Two sessions (monthly + annual)"""
-        # Insert second session (annual)
-        self.insert_test_session(amount_usd=199.99, interval="annual")
-        
-        # Fetch stats
-        stats = self.get_admin_stats()
-        revenue = stats["revenue"]
-        
-        # Verify calculations
-        # total = 19.99 (from previous test) + 199.99 = 219.98
-        expected_total = 19.99 + 199.99
-        assert abs(revenue["total_usd"] - expected_total) < 0.01, \
-            f"Expected total_usd={expected_total}, got {revenue['total_usd']}"
-        
-        # mtd should be same as total (both paid this month)
-        assert abs(revenue["mtd_usd"] - expected_total) < 0.01, \
-            f"Expected mtd_usd={expected_total}, got {revenue['mtd_usd']}"
-        
-        # paid_sessions = 2
-        assert revenue["paid_sessions"] == 2, f"Expected paid_sessions=2, got {revenue['paid_sessions']}"
-        
-        # ARR = 19.99*12 + 199.99 = 239.88 + 199.99 = 439.87
-        expected_arr = 19.99 * 12 + 199.99
-        assert abs(revenue["arr_estimate_usd"] - expected_arr) < 0.01, \
-            f"Expected arr_estimate_usd={expected_arr}, got {revenue['arr_estimate_usd']}"
-        
-        self.log(f"✅ Two sessions (monthly + annual) calculations correct")
-        self.log(f"   total_usd: {revenue['total_usd']} (expected: {expected_total})")
-        self.log(f"   mtd_usd: {revenue['mtd_usd']} (expected: {expected_total})")
-        self.log(f"   arr_estimate_usd: {revenue['arr_estimate_usd']} (expected: {expected_arr})")
-        self.log(f"   paid_sessions: {revenue['paid_sessions']}")
-
-    def run_all_tests(self):
-        """Run all tests in sequence"""
-        self.log("\n" + "="*60)
-        self.log("STARTING ADMIN STATS ENDPOINT TESTS")
-        self.log("="*60)
         
         try:
-            # Login first
-            self.admin_login()
+            response = requests.post(
+                f"{BASE_URL}/api/billing/webhook",
+                json=forged_payload,
+                headers={"Content-Type": "application/json"}
+                # NO stripe-signature header
+            )
             
-            # REGRESSION TESTS (empty DB state)
-            self.test("Response shape is correct", self.test_response_shape)
-            self.test("Revenue values are numeric and not null", self.test_revenue_types)
-            self.test("Empty DB returns zeros", self.test_empty_db_zeros)
-            self.test("Other top-level objects present", self.test_other_top_level_objects)
+            passed = response.status_code == 400
+            body_text = response.text.lower()
+            has_correct_message = "missing stripe-signature header" in body_text
             
-            # POSITIVE PATH TESTS (with test data)
-            self.test("Single monthly session calculations", self.test_single_monthly_session)
-            self.test("Two sessions (monthly + annual) calculations", self.test_two_sessions_mixed)
+            self.log_test(
+                "Reject webhook without signature",
+                passed and has_correct_message,
+                "400 with 'Missing stripe-signature header'",
+                f"{response.status_code} with body: {response.text[:200]}",
+                "✓ Unsigned payload correctly rejected" if passed else "⚠ Security vulnerability: unsigned payload accepted"
+            )
             
-        finally:
-            # Cleanup
-            self.log("\n" + "="*60)
-            self.log("CLEANUP")
-            self.log("="*60)
-            self.cleanup_test_sessions()
+            return passed and has_correct_message
             
-            # Verify cleanup
-            paid_count = self.sessions_col.count_documents({"status": "paid"})
-            self.log(f"✅ DB cleaned: {paid_count} paid sessions remaining (should be 0)")
-            
-        # Summary
-        self.log("\n" + "="*60)
-        self.log("TEST SUMMARY")
-        self.log("="*60)
-        self.log(f"Tests run: {self.tests_run}")
-        self.log(f"Tests passed: {self.tests_passed}")
-        self.log(f"Tests failed: {self.tests_run - self.tests_passed}")
+        except Exception as e:
+            self.log_test(
+                "Reject webhook without signature",
+                False,
+                "400 with error message",
+                f"Exception: {str(e)}"
+            )
+            return False
+
+    def test_webhook_invalid_signature(self):
+        """TEST 2: POST webhook with BOGUS stripe-signature header → MUST return 400"""
+        print(f"\n{Colors.BLUE}TEST 2: Webhook with invalid signature{Colors.RESET}")
         
-        if self.tests_passed == self.tests_run:
-            self.log("✅ ALL TESTS PASSED", "SUCCESS")
+        forged_payload = {
+            "type": "checkout.session.completed",
+            "data": {
+                "object": {
+                    "metadata": {
+                        "user_id": "forged-user-456",
+                        "tier": "sage"
+                    }
+                }
+            }
+        }
+        
+        try:
+            response = requests.post(
+                f"{BASE_URL}/api/billing/webhook",
+                json=forged_payload,
+                headers={
+                    "Content-Type": "application/json",
+                    "stripe-signature": "t=1234,v1=deadbeef"  # Bogus signature
+                }
+            )
+            
+            passed = response.status_code == 400
+            body_text = response.text.lower()
+            has_correct_message = "invalid signature" in body_text
+            
+            self.log_test(
+                "Reject webhook with invalid signature",
+                passed and has_correct_message,
+                "400 with 'Invalid signature'",
+                f"{response.status_code} with body: {response.text[:200]}",
+                "✓ Forged signature correctly rejected" if passed else "⚠ Security vulnerability: forged signature accepted"
+            )
+            
+            return passed and has_correct_message
+            
+        except Exception as e:
+            self.log_test(
+                "Reject webhook with invalid signature",
+                False,
+                "400 with error message",
+                f"Exception: {str(e)}"
+            )
+            return False
+
+    def create_test_user(self):
+        """Create a fresh test user for the positive path test"""
+        print(f"\n{Colors.BLUE}SETUP: Creating test user{Colors.RESET}")
+        
+        timestamp = int(time.time())
+        self.test_user_email = f"webhook_test_{timestamp}@test.ascendra.com"
+        
+        try:
+            response = requests.post(
+                f"{BASE_URL}/api/auth/signup",
+                json={
+                    "email": self.test_user_email,
+                    "password": "TestPass123!",
+                    "name": "Webhook Test User"
+                }
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                self.test_user_token = data.get("access_token")
+                
+                # Get user ID
+                me_response = requests.get(
+                    f"{BASE_URL}/api/auth/me",
+                    headers={"Authorization": f"Bearer {self.test_user_token}"}
+                )
+                
+                if me_response.status_code == 200:
+                    user_data = me_response.json()
+                    self.test_user_id = user_data.get("id")
+                    initial_tier = user_data.get("tier")
+                    
+                    print(f"{Colors.GREEN}✓{Colors.RESET} Test user created: {self.test_user_email}")
+                    print(f"   User ID: {self.test_user_id}")
+                    print(f"   Initial tier: {initial_tier}")
+                    return True
+            
+            print(f"{Colors.RED}✗{Colors.RESET} Failed to create test user: {response.status_code}")
+            return False
+            
+        except Exception as e:
+            print(f"{Colors.RED}✗{Colors.RESET} Exception creating test user: {str(e)}")
+            return False
+
+    def test_webhook_valid_signature(self):
+        """TEST 3: POST webhook with VALID signature → MUST return 200 and process event"""
+        print(f"\n{Colors.BLUE}TEST 3: Webhook with valid signature (POSITIVE PATH){Colors.RESET}")
+        
+        if not self.test_user_id:
+            self.log_test(
+                "Process webhook with valid signature",
+                False,
+                "200 and tier updated",
+                "Test user not created"
+            )
+            return False
+        
+        # Create a valid webhook payload
+        payload = {
+            "type": "checkout.session.completed",
+            "data": {
+                "object": {
+                    "id": f"cs_test_{int(time.time())}",
+                    "mode": "payment",
+                    "customer": f"cus_test_{int(time.time())}",
+                    "metadata": {
+                        "user_id": self.test_user_id,
+                        "tier": "ascender",
+                        "interval": "monthly"
+                    }
+                }
+            }
+        }
+        
+        payload_str = json.dumps(payload)
+        
+        try:
+            # Generate valid signature
+            valid_signature = self.generate_stripe_signature(payload_str)
+            
+            print(f"   Sending signed webhook for user: {self.test_user_id}")
+            
+            # Send webhook with valid signature
+            response = requests.post(
+                f"{BASE_URL}/api/billing/webhook",
+                data=payload_str,  # Send as raw string, not JSON
+                headers={
+                    "Content-Type": "application/json",
+                    "stripe-signature": valid_signature
+                }
+            )
+            
+            webhook_passed = response.status_code == 200
+            
+            self.log_test(
+                "Webhook accepts valid signature",
+                webhook_passed,
+                "200",
+                f"{response.status_code}",
+                f"Response: {response.text[:100]}" if not webhook_passed else "✓ Valid signature accepted"
+            )
+            
+            if not webhook_passed:
+                return False
+            
+            # Wait a moment for processing
+            time.sleep(1)
+            
+            # Verify user tier was updated
+            print(f"   Verifying tier update...")
+            me_response = requests.get(
+                f"{BASE_URL}/api/auth/me",
+                headers={"Authorization": f"Bearer {self.test_user_token}"}
+            )
+            
+            if me_response.status_code == 200:
+                user_data = me_response.json()
+                updated_tier = user_data.get("tier")
+                
+                tier_updated = updated_tier == "ascender"
+                
+                self.log_test(
+                    "User tier updated to 'ascender'",
+                    tier_updated,
+                    "tier='ascender'",
+                    f"tier='{updated_tier}'",
+                    f"✓ Webhook successfully processed and tier granted" if tier_updated else "⚠ Webhook accepted but tier not updated"
+                )
+                
+                return webhook_passed and tier_updated
+            else:
+                self.log_test(
+                    "User tier updated to 'ascender'",
+                    False,
+                    "tier='ascender'",
+                    f"Failed to fetch user: {me_response.status_code}"
+                )
+                return False
+            
+        except Exception as e:
+            self.log_test(
+                "Process webhook with valid signature",
+                False,
+                "200 and tier updated",
+                f"Exception: {str(e)}"
+            )
+            return False
+
+    def test_regression_social_x_status(self):
+        """REGRESSION: GET /api/admin/social/x/status returns ok:true"""
+        print(f"\n{Colors.BLUE}REGRESSION TEST: Admin social X status{Colors.RESET}")
+        
+        # Login as admin if not already
+        if not self.admin_token:
+            try:
+                response = requests.post(
+                    f"{BASE_URL}/api/auth/login",
+                    json={"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD}
+                )
+                if response.status_code == 200:
+                    self.admin_token = response.json().get("access_token")
+            except Exception as e:
+                print(f"{Colors.YELLOW}⚠{Colors.RESET} Could not login as admin: {str(e)}")
+        
+        try:
+            response = requests.get(
+                f"{BASE_URL}/api/admin/social/x/status",
+                headers={"Authorization": f"Bearer {self.admin_token}"} if self.admin_token else {}
+            )
+            
+            passed = response.status_code == 200
+            if passed:
+                data = response.json()
+                has_ok = data.get("ok") == True
+                passed = has_ok
+            
+            self.log_test(
+                "Admin social X status endpoint",
+                passed,
+                "200 with ok:true",
+                f"{response.status_code} with body: {response.text[:100]}"
+            )
+            
+            return passed
+            
+        except Exception as e:
+            self.log_test(
+                "Admin social X status endpoint",
+                False,
+                "200 with ok:true",
+                f"Exception: {str(e)}"
+            )
+            return False
+
+    def test_regression_api_root(self):
+        """REGRESSION: GET /api/ returns {status:ok}"""
+        print(f"\n{Colors.BLUE}REGRESSION TEST: API root endpoint{Colors.RESET}")
+        
+        try:
+            response = requests.get(f"{BASE_URL}/api/")
+            
+            passed = response.status_code == 200
+            if passed:
+                data = response.json()
+                has_status = data.get("status") == "ok"
+                passed = has_status
+            
+            self.log_test(
+                "API root endpoint",
+                passed,
+                "200 with status:ok",
+                f"{response.status_code} with body: {response.text[:100]}"
+            )
+            
+            return passed
+            
+        except Exception as e:
+            self.log_test(
+                "API root endpoint",
+                False,
+                "200 with status:ok",
+                f"Exception: {str(e)}"
+            )
+            return False
+
+    def test_regression_openapi_schema(self):
+        """REGRESSION: GET /openapi.json contains /api/billing/webhook route"""
+        print(f"\n{Colors.BLUE}REGRESSION TEST: OpenAPI schema includes webhook route{Colors.RESET}")
+        
+        try:
+            # OpenAPI schema is only accessible internally (not through public ingress)
+            # Check internal endpoint
+            response = requests.get("http://localhost:8001/openapi.json")
+            
+            passed = response.status_code == 200
+            if passed:
+                schema = response.json()
+                paths = schema.get("paths", {})
+                has_webhook = "/api/billing/webhook" in paths
+                
+                passed = has_webhook
+                
+                self.log_test(
+                    "Webhook route in OpenAPI schema",
+                    passed,
+                    "/api/billing/webhook present in schema",
+                    f"Webhook route {'found' if has_webhook else 'NOT FOUND'} in schema"
+                )
+            else:
+                self.log_test(
+                    "Webhook route in OpenAPI schema",
+                    False,
+                    "200 with webhook route",
+                    f"{response.status_code}"
+                )
+            
+            return passed
+            
+        except Exception as e:
+            self.log_test(
+                "Webhook route in OpenAPI schema",
+                False,
+                "200 with webhook route",
+                f"Exception: {str(e)}"
+            )
+            return False
+
+    def print_summary(self):
+        """Print test summary"""
+        print(f"\n{'='*70}")
+        print(f"{Colors.BLUE}TEST SUMMARY{Colors.RESET}")
+        print(f"{'='*70}")
+        print(f"Total tests run: {self.tests_run}")
+        print(f"{Colors.GREEN}Passed: {self.tests_passed}{Colors.RESET}")
+        print(f"{Colors.RED}Failed: {self.tests_failed}{Colors.RESET}")
+        
+        if self.tests_failed == 0:
+            print(f"\n{Colors.GREEN}✅ ALL TESTS PASSED - P0 Security Fix Verified{Colors.RESET}")
+            print(f"   • Unsigned webhooks are rejected (400)")
+            print(f"   • Invalid signatures are rejected (400)")
+            print(f"   • Valid signatures are accepted and processed (200)")
+            print(f"   • No regressions detected")
             return 0
         else:
-            self.log(f"❌ {self.tests_run - self.tests_passed} TEST(S) FAILED", "ERROR")
+            print(f"\n{Colors.RED}❌ SOME TESTS FAILED{Colors.RESET}")
             return 1
 
+def main():
+    print(f"{Colors.BLUE}{'='*70}{Colors.RESET}")
+    print(f"{Colors.BLUE}Ascendra Academy - Stripe Webhook Security Fix Verification{Colors.RESET}")
+    print(f"{Colors.BLUE}P0 Security Bug: Verify mandatory signature verification{Colors.RESET}")
+    print(f"{Colors.BLUE}{'='*70}{Colors.RESET}")
+    print(f"Base URL: {BASE_URL}")
+    print(f"Webhook Secret: {WEBHOOK_SECRET[:10]}...{WEBHOOK_SECRET[-4:]}")
+    
+    tester = WebhookSecurityTester()
+    
+    # Run security tests
+    print(f"\n{Colors.YELLOW}{'='*70}{Colors.RESET}")
+    print(f"{Colors.YELLOW}SECURITY TESTS (P0 Fix Verification){Colors.RESET}")
+    print(f"{Colors.YELLOW}{'='*70}{Colors.RESET}")
+    
+    tester.test_webhook_no_signature()
+    tester.test_webhook_invalid_signature()
+    
+    # Create test user for positive path
+    if tester.create_test_user():
+        tester.test_webhook_valid_signature()
+    else:
+        print(f"{Colors.RED}⚠ Skipping positive path test - could not create test user{Colors.RESET}")
+    
+    # Run regression tests
+    print(f"\n{Colors.YELLOW}{'='*70}{Colors.RESET}")
+    print(f"{Colors.YELLOW}REGRESSION TESTS{Colors.RESET}")
+    print(f"{Colors.YELLOW}{'='*70}{Colors.RESET}")
+    
+    tester.test_regression_social_x_status()
+    tester.test_regression_api_root()
+    tester.test_regression_openapi_schema()
+    
+    # Print summary
+    return tester.print_summary()
+
 if __name__ == "__main__":
-    tester = AdminStatsTest()
-    exit_code = tester.run_all_tests()
-    sys.exit(exit_code)
+    sys.exit(main())

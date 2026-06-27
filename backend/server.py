@@ -1005,20 +1005,26 @@ async def checkout_status(session_id: str, request: Request, user=Depends(curren
 
 @api.post("/billing/webhook")
 async def stripe_webhook(request: Request, stripe_signature: Optional[str] = Header(None)):
-    """Handles Stripe events for both one-time payments and subscriptions."""
+    """Handles Stripe events for both one-time payments and subscriptions.
+    SECURITY: signature verification is REQUIRED. We never process unsigned
+    payloads — that would allow anyone to forge tier upgrades, subscriptions,
+    or grant Sage access for free.
+    """
     payload = await request.body()
     import stripe as _stripe
     _stripe.api_key = STRIPE_API_KEY
     webhook_secret = os.environ.get("STRIPE_WEBHOOK_SECRET", "").strip()
+    if not webhook_secret:
+        log.error("STRIPE_WEBHOOK_SECRET is not configured — rejecting webhook")
+        raise HTTPException(503, "Webhook handler not configured")
+    if not stripe_signature:
+        log.warning("webhook rejected: missing stripe-signature header")
+        raise HTTPException(400, "Missing stripe-signature header")
     try:
-        if webhook_secret and stripe_signature:
-            event = _stripe.Webhook.construct_event(payload, stripe_signature, webhook_secret)
-        else:
-            import json as _json
-            event = _json.loads(payload)
+        event = _stripe.Webhook.construct_event(payload, stripe_signature, webhook_secret)
     except Exception as e:
         log.warning(f"webhook verify failed: {e}")
-        raise HTTPException(400, "Invalid payload")
+        raise HTTPException(400, "Invalid signature")
 
     etype = event.get("type") if isinstance(event, dict) else getattr(event, "type", "")
     obj = (event.get("data", {}) or {}).get("object", {}) if isinstance(event, dict) else event.data.object

@@ -1,38 +1,22 @@
 [
   {
-    "content": "Fix auto_content.py asyncio.create_task RuntimeError (verified by testing_agent iter 9)",
+    "content": "Stripe audit: products/prices/webhook listed via rk_live",
     "status": "completed"
   },
   {
-    "content": "Wire up /api/admin/x/test-post endpoint for safe one-off test tweet",
+    "content": "Update webhook to ascendraacademy.com + add invoice.upcoming event",
     "status": "completed"
   },
   {
-    "content": "Optimize curriculum_db.get_lesson (indexed lookup, verified by testing_agent iter 10)",
-    "status": "completed"
-  },
-  {
-    "content": "Optimize admin stats revenue calc (aggregation, verified by testing_agent iter 11)",
-    "status": "completed"
-  },
-  {
-    "content": "Remove hardcoded preview URLs from lifecycle.py, email_service.py, AiRoadmap.js, LearnHub.js",
-    "status": "completed"
-  },
-  {
-    "content": "Final deployment audit — PASS (zero BLOCKERs, zero WARNs)",
-    "status": "completed"
-  },
-  {
-    "content": "User launches via Emergent Built-in Deploy + DNS setup",
+    "content": "P0 SECURITY: Fix webhook signature bypass in /api/billing/webhook",
     "status": "in_progress"
   },
   {
-    "content": "User attaches X App to a Project + post-launch X test post",
+    "content": "Verify fix with testing_agent (both rejected-unsigned + accepted-signed)",
     "status": "pending"
   },
   {
-    "content": "Post-launch smoke test (after DNS propagates)",
+    "content": "User: redeploy to production + verify production webhook secret is set",
     "status": "pending"
   }
 ]
