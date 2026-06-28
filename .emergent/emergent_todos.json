@@ -1,14 +1,34 @@
 [
   {
-    "content": "Phase 17 backend + frontend (subscription card)",
+    "content": "Phase 17 backend + frontend (subscription card) — 100% passed",
     "status": "completed"
   },
   {
-    "content": "Phase 17 backend testing — all passed, 1 medium bug fixed (LAPSED detection)",
+    "content": "Phase 17 medium bug fixed (LAPSED detection for manually-upgraded users)",
     "status": "completed"
   },
   {
-    "content": "Phase 18: Onboarding quiz as popup — awaiting user clarification on scope",
+    "content": "Phase 18 backend: POST /api/onboarding/anonymous + lead capture + signup auto-attach",
+    "status": "completed"
+  },
+  {
+    "content": "Phase 18 frontend: OnboardingModal component (anonymous + authed modes, email step, result view)",
+    "status": "completed"
+  },
+  {
+    "content": "Phase 18 frontend: Landing auto-popup (8s delay + localStorage 7-day suppression) + Find my path button",
+    "status": "completed"
+  },
+  {
+    "content": "Phase 18 frontend: Dashboard modal replaces /onboarding redirect",
+    "status": "completed"
+  },
+  {
+    "content": "Phase 18 frontend: Signup ?prefill=email param support",
+    "status": "completed"
+  },
+  {
+    "content": "Run backend testing agent on /api/onboarding/anonymous + signup auto-attach + lead consumption",
     "status": "in_progress"
   }
 ]

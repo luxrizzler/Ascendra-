@@ -1,8 +1,9 @@
 import { Link, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
-import { Sparkles, ArrowRight, Rocket, TrendingUp, Compass, Users, CheckCircle2, Infinity as InfinityIcon, Sun, Gift } from "lucide-react";
+import { Sparkles, ArrowRight, Rocket, TrendingUp, Compass, Users, CheckCircle2, Infinity as InfinityIcon, Sun, Gift, Wand2 } from "lucide-react";
 import { api } from "@/lib/api";
 import LeadCaptureModal from "@/components/LeadCaptureModal";
+import OnboardingModal from "@/components/OnboardingModal";
 
 const HERO_IMG = "https://customer-assets.emergentagent.com/job_ai-business-academy-2/artifacts/c1jkvwwp_4185C05A-6A9A-42F7-A146-9109CF6F03DD.png";
 
@@ -47,11 +48,48 @@ export default function Landing() {
   const [tiers, setTiers] = useState(FALLBACK_TIERS);
   const [seoPages, setSeoPages] = useState([]);
   const [leadOpen, setLeadOpen] = useState(false);
+  const [quizOpen, setQuizOpen] = useState(false);
 
   useEffect(() => {
     api.get("/pricing").then((r) => { if (r?.tiers?.length) setTiers(r.tiers); }).catch(() => {});
     api.get("/seo/published").then((r) => { setSeoPages((r.pages || []).filter((p) => p.kind === "hub")); }).catch(() => {});
   }, []);
+
+  // Auto-popup the personalization quiz for first-time anonymous visitors.
+  // Skipped if: user is signed in, already dismissed within 7 days, or already took quiz.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const isLoggedIn = !!localStorage.getItem("ascendra_token");
+      if (isLoggedIn) return;
+      const dismissed = localStorage.getItem("ascendra_quiz_dismissed_at");
+      if (dismissed) {
+        const days = (Date.now() - Number(dismissed)) / (1000 * 60 * 60 * 24);
+        if (days < 7) return;
+      }
+      const completed = localStorage.getItem("ascendra_quiz_completed_at");
+      if (completed) return;
+    } catch (_e) { /* localStorage blocked — show anyway */ }
+    const t = setTimeout(() => setQuizOpen(true), 8000); // 8s delay
+    return () => clearTimeout(t);
+  }, []);
+
+  // Persist quiz close as "dismissed" if user closes before submitting; or
+  // as "completed" if they finished. Either way, suppress for 7 days.
+  const handleQuizOpenChange = (open) => {
+    setQuizOpen(open);
+    if (!open) {
+      try {
+        if (!localStorage.getItem("ascendra_quiz_completed_at")) {
+          localStorage.setItem("ascendra_quiz_dismissed_at", String(Date.now()));
+        }
+      } catch (_e) { /* ignore */ }
+    }
+  };
+
+  const handleQuizComplete = () => {
+    try { localStorage.setItem("ascendra_quiz_completed_at", String(Date.now())); } catch (_e) { /* ignore */ }
+  };
 
   return (
     <div data-testid="landing-page">
@@ -78,6 +116,14 @@ export default function Landing() {
               <button onClick={() => nav("/signup")} className="asc-btn-primary text-base" data-testid="hero-cta-btn">
                 Begin your ascent <ArrowRight size={18} />
               </button>
+              <button
+                onClick={() => setQuizOpen(true)}
+                className="asc-btn-secondary text-base"
+                data-testid="hero-quiz-btn"
+                style={{ color: "#FFB000", borderColor: "rgba(255,176,0,0.55)" }}
+              >
+                <Wand2 size={16} /> Find my path (60s)
+              </button>
               <button onClick={() => nav("/pricing")} className="asc-btn-secondary text-base" data-testid="hero-pricing-btn">See pricing</button>
             </div>
             <button onClick={() => setLeadOpen(true)} className="mt-5 inline-flex items-center gap-2 text-sm text-[var(--asc-brand)] hover:underline font-bold" data-testid="hero-lead-magnet-btn">
@@ -88,6 +134,13 @@ export default function Landing() {
       </section>
 
       <LeadCaptureModal open={leadOpen} onClose={() => setLeadOpen(false)} source="landing_hero" />
+      <OnboardingModal
+        open={quizOpen}
+        onOpenChange={handleQuizOpenChange}
+        anonymous
+        source="landing_popup"
+        onComplete={handleQuizComplete}
+      />
 
       {/* MISSION */}
       <section className="px-6 py-16">

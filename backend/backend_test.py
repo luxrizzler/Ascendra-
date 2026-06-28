@@ -567,6 +567,404 @@ class APITester:
             else:
                 self.log(f"   ⚠️  Expected at least 10 curated paths, found {len(curated_paths)}")
     
+    def test_phase_18_onboarding_anonymous(self):
+        """Test Phase 18: Anonymous Onboarding Quiz with Lead-Gen"""
+        self.log("\n" + "=" * 60)
+        self.log("PHASE 18: ANONYMOUS ONBOARDING QUIZ WITH LEAD-GEN")
+        self.log("=" * 60)
+        
+        import time
+        
+        # Test 1: POST /api/onboarding/anonymous with valid data
+        self.log("\n--- Test 1: POST /api/onboarding/anonymous with valid email + complete answers ---")
+        timestamp = int(time.time())
+        test_email = f"quiz_lead_test_{timestamp}@example.com"
+        
+        valid_quiz_data = {
+            "email": test_email,
+            "motivation": "career",
+            "experience": "beginner",
+            "tools_used": ["chatgpt", "claude"],
+            "goals": ["build_project", "fundamentals"],
+            "time_per_day": "15",
+            "learning_style": "hands_on",
+            "source": "landing_popup"
+        }
+        
+        success, response = self.test(
+            "POST /api/onboarding/anonymous - Valid submission returns ok:true with plan",
+            "POST",
+            "onboarding/anonymous",
+            200,
+            data=valid_quiz_data
+        )
+        
+        lead_id = None
+        plan = None
+        if success:
+            ok = response.get("ok")
+            already_registered = response.get("already_registered")
+            plan = response.get("plan")
+            lead_id = response.get("lead_id")
+            
+            self.log(f"   ok: {ok}, already_registered: {already_registered}")
+            self.log(f"   lead_id: {lead_id}")
+            
+            if ok == True:
+                self.log("   ✅ ok is True as expected")
+            else:
+                self.log(f"   ❌ Expected ok=True, got {ok}", "ERROR")
+            
+            if already_registered == False:
+                self.log("   ✅ already_registered is False as expected")
+            else:
+                self.log(f"   ❌ Expected already_registered=False, got {already_registered}", "ERROR")
+            
+            if plan:
+                self.log(f"   ✅ Plan generated")
+                headline = plan.get("headline")
+                rationale = plan.get("rationale")
+                recommended_path_ids = plan.get("recommended_path_ids")
+                first_lesson_id = plan.get("first_lesson_id")
+                daily_goal_target = plan.get("daily_goal_target")
+                
+                self.log(f"   Plan headline: {headline}")
+                self.log(f"   Recommended paths: {recommended_path_ids}")
+                self.log(f"   First lesson: {first_lesson_id}")
+                self.log(f"   Daily goal: {daily_goal_target}")
+                
+                if headline and rationale and recommended_path_ids and daily_goal_target:
+                    self.log("   ✅ Plan has all required fields")
+                else:
+                    self.log("   ⚠️  Plan missing some fields (may be Claude rate-limit)", "WARN")
+            else:
+                self.log("   ⚠️  Plan is null (may be Claude rate-limit)", "WARN")
+            
+            if lead_id:
+                self.log(f"   ✅ lead_id returned: {lead_id}")
+            else:
+                self.log("   ❌ lead_id missing", "ERROR")
+        
+        # Test 2: Verify lead saved in onboarding_leads collection
+        # (We can't directly query MongoDB from here, but we'll verify via signup auto-attach later)
+        
+        # Test 3: POST /api/onboarding/anonymous with existing registered user email
+        self.log("\n--- Test 3: POST /api/onboarding/anonymous with existing registered user email ---")
+        
+        existing_user_quiz_data = {
+            "email": ADMIN_EMAIL,
+            "motivation": "business",
+            "experience": "expert",
+            "tools_used": ["chatgpt"],
+            "goals": ["build_project"],
+            "time_per_day": "30",
+            "learning_style": "reading"
+        }
+        
+        success, response = self.test(
+            "POST /api/onboarding/anonymous - Existing user returns already_registered:true",
+            "POST",
+            "onboarding/anonymous",
+            200,
+            data=existing_user_quiz_data
+        )
+        
+        if success:
+            ok = response.get("ok")
+            already_registered = response.get("already_registered")
+            plan = response.get("plan")
+            
+            self.log(f"   ok: {ok}, already_registered: {already_registered}")
+            
+            if already_registered == True:
+                self.log("   ✅ already_registered is True as expected")
+            else:
+                self.log(f"   ❌ Expected already_registered=True, got {already_registered}", "ERROR")
+            
+            # Plan should be null for existing users
+            if plan is None:
+                self.log("   ✅ Plan is null for existing user (no generation)")
+            else:
+                self.log(f"   ⚠️  Plan was generated for existing user (unexpected)", "WARN")
+        
+        # Test 4: POST /api/onboarding/anonymous with invalid email format
+        self.log("\n--- Test 4: POST /api/onboarding/anonymous with invalid email format ---")
+        
+        invalid_email_data = {
+            "email": "notanemail",
+            "motivation": "career",
+            "experience": "beginner",
+            "tools_used": ["chatgpt"],
+            "goals": ["fundamentals"],
+            "time_per_day": "15",
+            "learning_style": "hands_on"
+        }
+        
+        self.test(
+            "POST /api/onboarding/anonymous - Invalid email returns 422",
+            "POST",
+            "onboarding/anonymous",
+            422,
+            data=invalid_email_data
+        )
+        
+        # Test 5: POST /api/onboarding/anonymous with missing required field
+        self.log("\n--- Test 5: POST /api/onboarding/anonymous with missing required field ---")
+        
+        missing_field_data = {
+            "email": f"test_{timestamp}_missing@example.com",
+            # "motivation": "career",  # MISSING
+            "experience": "beginner",
+            "tools_used": ["chatgpt"],
+            "goals": ["fundamentals"],
+            "time_per_day": "15",
+            "learning_style": "hands_on"
+        }
+        
+        self.test(
+            "POST /api/onboarding/anonymous - Missing motivation returns 422",
+            "POST",
+            "onboarding/anonymous",
+            422,
+            data=missing_field_data
+        )
+        
+        # Test 6: END-TO-END - Signup with email that submitted anonymous quiz
+        self.log("\n--- Test 6: END-TO-END - Signup auto-attach flow ---")
+        
+        # Step 1: Submit another anonymous quiz with a new email
+        self.log("   Step 1: Submit anonymous quiz with new email")
+        signup_test_email = f"quiz_signup_test_{timestamp}@example.com"
+        
+        quiz_for_signup = {
+            "email": signup_test_email,
+            "motivation": "side_hustle",
+            "experience": "some",
+            "tools_used": ["chatgpt", "midjourney"],
+            "goals": ["create_content", "automate"],
+            "time_per_day": "30",
+            "learning_style": "all",
+            "source": "landing_button"
+        }
+        
+        success, quiz_response = self.test(
+            "POST /api/onboarding/anonymous - Submit quiz for signup test",
+            "POST",
+            "onboarding/anonymous",
+            200,
+            data=quiz_for_signup
+        )
+        
+        quiz_plan = None
+        if success:
+            quiz_plan = quiz_response.get("plan")
+            self.log(f"   ✅ Quiz submitted, plan generated: {quiz_plan is not None}")
+        
+        # Step 2: Signup with the same email
+        self.log("   Step 2: Signup with the same email")
+        
+        signup_data = {
+            "email": signup_test_email,
+            "password": "TestPass123!",
+            "name": "Quiz Signup Test User"
+        }
+        
+        success, signup_response = self.test(
+            "POST /api/auth/signup - Signup with quiz email",
+            "POST",
+            "auth/signup",
+            200,
+            data=signup_data
+        )
+        
+        new_user_token = None
+        if success:
+            new_user_token = signup_response.get("access_token")
+            self.log(f"   ✅ Signup successful, token received")
+        
+        # Step 3: Verify auto-attach via GET /api/onboarding/me
+        if new_user_token:
+            self.log("   Step 3: Verify auto-attach via GET /api/onboarding/me")
+            
+            success, onboarding_response = self.test(
+                "GET /api/onboarding/me - Check onboarded status after signup",
+                "GET",
+                "onboarding/me",
+                200,
+                token=new_user_token
+            )
+            
+            if success:
+                onboarded = onboarding_response.get("onboarded")
+                plan = onboarding_response.get("plan")
+                answers = onboarding_response.get("answers")
+                
+                self.log(f"   onboarded: {onboarded}")
+                self.log(f"   plan present: {plan is not None}")
+                self.log(f"   answers present: {answers is not None}")
+                
+                if onboarded == True:
+                    self.log("   ✅ User is onboarded (auto-attached)")
+                else:
+                    self.log(f"   ❌ Expected onboarded=True, got {onboarded}", "ERROR")
+                
+                if plan:
+                    self.log("   ✅ Plan auto-attached")
+                    # Verify plan fields match
+                    if quiz_plan:
+                        if plan.get("headline") == quiz_plan.get("headline"):
+                            self.log("   ✅ Plan headline matches original quiz plan")
+                        else:
+                            self.log("   ⚠️  Plan headline differs from original", "WARN")
+                else:
+                    self.log("   ❌ Plan not auto-attached", "ERROR")
+                
+                if answers:
+                    self.log("   ✅ Answers auto-attached")
+                    if answers.get("motivation") == "side_hustle":
+                        self.log("   ✅ Answers match original quiz submission")
+                    else:
+                        self.log("   ⚠️  Answers differ from original", "WARN")
+                else:
+                    self.log("   ❌ Answers not auto-attached", "ERROR")
+            
+            # Step 4: Verify progress.daily_goal_target is set
+            self.log("   Step 4: Verify progress.daily_goal_target is set")
+            
+            success, progress_response = self.test(
+                "GET /api/progress - Check daily_goal_target",
+                "GET",
+                "progress",
+                200,
+                token=new_user_token
+            )
+            
+            # Note: The progress endpoint doesn't return daily_goal_target in ProgressOut model
+            # But we can check via /api/streak/me which does return it
+            success, streak_response = self.test(
+                "GET /api/streak/me - Check daily_goal_target via streak endpoint",
+                "GET",
+                "streak/me",
+                200,
+                token=new_user_token
+            )
+            
+            if success:
+                daily_goal_target = streak_response.get("daily_goal_target")
+                self.log(f"   daily_goal_target: {daily_goal_target}")
+                
+                if daily_goal_target and daily_goal_target > 0:
+                    self.log(f"   ✅ daily_goal_target is set to {daily_goal_target}")
+                else:
+                    self.log(f"   ❌ daily_goal_target not set or invalid", "ERROR")
+        
+        # Test 7: Signup with email that DID NOT submit quiz
+        self.log("\n--- Test 7: Signup with email that DID NOT submit quiz ---")
+        
+        no_quiz_email = f"no_quiz_test_{timestamp}@example.com"
+        
+        signup_no_quiz_data = {
+            "email": no_quiz_email,
+            "password": "TestPass123!",
+            "name": "No Quiz Test User"
+        }
+        
+        success, signup_response = self.test(
+            "POST /api/auth/signup - Signup without prior quiz",
+            "POST",
+            "auth/signup",
+            200,
+            data=signup_no_quiz_data
+        )
+        
+        no_quiz_token = None
+        if success:
+            no_quiz_token = signup_response.get("access_token")
+            self.log(f"   ✅ Signup successful")
+        
+        if no_quiz_token:
+            success, onboarding_response = self.test(
+                "GET /api/onboarding/me - User without quiz should be onboarded=false",
+                "GET",
+                "onboarding/me",
+                200,
+                token=no_quiz_token
+            )
+            
+            if success:
+                onboarded = onboarding_response.get("onboarded")
+                plan = onboarding_response.get("plan")
+                
+                self.log(f"   onboarded: {onboarded}")
+                self.log(f"   plan: {plan}")
+                
+                if onboarded == False:
+                    self.log("   ✅ User is not onboarded (no prior quiz)")
+                else:
+                    self.log(f"   ❌ Expected onboarded=False, got {onboarded}", "ERROR")
+                
+                if plan is None:
+                    self.log("   ✅ Plan is null (no prior quiz)")
+                else:
+                    self.log(f"   ❌ Plan should be null, got {plan}", "ERROR")
+        
+        # Test 8: Regression - GET /api/onboarding/me for existing users
+        self.log("\n--- Test 8: Regression - GET /api/onboarding/me for existing users ---")
+        
+        sage1_token = self.user_tokens.get("sage1@ascendraacademy.com")
+        if sage1_token:
+            self.test(
+                "GET /api/onboarding/me - Existing user (regression check)",
+                "GET",
+                "onboarding/me",
+                200,
+                token=sage1_token
+            )
+        
+        # Test 9: Regression - POST /api/onboarding/submit for authed users
+        self.log("\n--- Test 9: Regression - POST /api/onboarding/submit for authed users ---")
+        
+        if no_quiz_token:
+            authed_quiz_data = {
+                "motivation": "productivity",
+                "experience": "intermediate",
+                "tools_used": ["claude", "perplexity"],
+                "goals": ["automate", "promotion"],
+                "time_per_day": "60",
+                "learning_style": "reading"
+            }
+            
+            success, response = self.test(
+                "POST /api/onboarding/submit - Authed user submits quiz",
+                "POST",
+                "onboarding/submit",
+                200,
+                token=no_quiz_token,
+                data=authed_quiz_data
+            )
+            
+            if success:
+                onboarded = response.get("onboarded")
+                plan = response.get("plan")
+                
+                self.log(f"   onboarded: {onboarded}")
+                self.log(f"   plan present: {plan is not None}")
+                
+                if onboarded == True:
+                    self.log("   ✅ User is now onboarded")
+                else:
+                    self.log(f"   ❌ Expected onboarded=True, got {onboarded}", "ERROR")
+        
+        # Test 10: Regression - GET /api/paths still works
+        self.log("\n--- Test 10: Regression - GET /api/paths still works ---")
+        
+        self.test(
+            "GET /api/paths - Regression check",
+            "GET",
+            "paths",
+            200
+        )
+    
     def test_phase_17_billing_status(self):
         """Test Phase 17: Smart Subscription Management Card"""
         self.log("\n" + "=" * 60)
@@ -883,6 +1281,9 @@ def main():
     
     # Run Phase 17 tests
     tester.test_phase_17_billing_status()
+    
+    # Run Phase 18 tests
+    tester.test_phase_18_onboarding_anonymous()
     
     # Print summary
     return tester.print_summary()

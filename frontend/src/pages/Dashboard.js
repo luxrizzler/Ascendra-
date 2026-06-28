@@ -7,6 +7,7 @@ import TierBadge from "@/components/TierBadge";
 import { Flame, Sparkles, ArrowRight, Trophy, Layers, MessageSquare, BookOpen, ChevronRight, Library, Target } from "lucide-react";
 import { StreakCard } from "@/components/streak/StreakCard";
 import SubscriptionCard from "@/components/SubscriptionCard";
+import OnboardingModal from "@/components/OnboardingModal";
 
 export default function Dashboard() {
   const { user } = useAuth();
@@ -17,6 +18,7 @@ export default function Dashboard() {
   const [whatsNew, setWhatsNew] = useState([]);
   const [plan, setPlan] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [showOnboarding, setShowOnboarding] = useState(false);
 
   useEffect(() => {
     Promise.all([
@@ -26,21 +28,31 @@ export default function Dashboard() {
       api.get("/whats-new?days=14&limit=6").catch(() => ({ items: [] })),
       api.get("/onboarding/me").catch(() => ({ onboarded: false, plan: null })),
     ]).then(([p, ps, c, wn, ob]) => {
-      // Auto-redirect new users to onboarding quiz
-      if (!ob.onboarded) {
-        nav("/onboarding", { replace: true });
-        return;
-      }
       setProgress(p);
       setPaths(ps.paths);
       setCerts(c.certificates);
       setWhatsNew(wn.items || []);
       setPlan(ob.plan);
+      // Show the onboarding modal instead of redirecting away
+      if (!ob.onboarded) {
+        setShowOnboarding(true);
+      }
     }).finally(() => setLoading(false));
   }, [nav]);
 
+  const handleOnboardingChange = (open) => {
+    setShowOnboarding(open);
+  };
+
+  const handleOnboardingComplete = () => {
+    // Re-fetch plan after the user submits so the personalized hero updates.
+    api.get("/onboarding/me").then((ob) => {
+      if (ob.plan) setPlan(ob.plan);
+    }).catch(() => {});
+  };
+
   if (loading) return <Loader />;
-  if (!progress) return <Loader label="Redirecting…" />;
+  if (!progress) return <Loader label="Loading…" />;
 
   const recId = user?.recommended_path_id;
   const recommended = paths.find((p) => p.id === recId) || paths[0];
@@ -247,6 +259,15 @@ export default function Dashboard() {
           </div>
         )}
       </section>
+
+      {/* Onboarding modal (shown to brand-new authed users; auto-opens once) */}
+      <OnboardingModal
+        open={showOnboarding}
+        onOpenChange={handleOnboardingChange}
+        anonymous={false}
+        source="dashboard_first_visit"
+        onComplete={handleOnboardingComplete}
+      />
     </div>
   );
 }

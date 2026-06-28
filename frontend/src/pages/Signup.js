@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { AuthShell } from "./Login";
 import { ArrowRight } from "lucide-react";
@@ -9,10 +9,15 @@ import GoogleButton from "@/components/GoogleButton";
 export default function Signup() {
   const { signup } = useAuth();
   const nav = useNavigate();
-  const [email, setEmail] = useState("");
+  const [params] = useSearchParams();
+  const prefillEmail = params.get("prefill") || "";
+  const [email, setEmail] = useState(prefillEmail);
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
+
+  // Keep email in sync if the prefill param changes (rare, but safe)
+  useEffect(() => { if (prefillEmail) setEmail(prefillEmail); }, [prefillEmail]);
 
   const submit = async (e) => {
     e.preventDefault();
@@ -21,7 +26,9 @@ export default function Signup() {
     try {
       await signup(email.trim().toLowerCase(), password, name.trim() || undefined);
       toast.success("Account created — welcome to Ascendra!");
-      nav("/onboarding");
+      // Signup endpoint auto-attaches anonymous quiz answers if email matches a lead.
+      // Dashboard will detect onboarded=true and skip the in-app modal.
+      nav("/dashboard");
     } catch (err) {
       toast.error(err.message || "Could not create account");
     } finally {

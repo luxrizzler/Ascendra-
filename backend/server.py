@@ -441,19 +441,51 @@ async def _issue_certificate_if_complete(user: dict, path_id: str) -> Optional[d
 # ─── Auth routes ────────────────────────────────────────────────────────────
 @api.post("/auth/signup", response_model=Token)
 async def signup(body: SignupIn):
-    existing = await users_col.find_one({"email": body.email.lower()})
+    email_lower = body.email.lower()
+    existing = await users_col.find_one({"email": email_lower})
     if existing:
         raise HTTPException(400, "Email already registered")
     user = {
         "id": str(uuid.uuid4()),
-        "email": body.email.lower(),
-        "name": body.name or body.email.split("@")[0],
+        "email": email_lower,
+        "name": body.name or email_lower.split("@")[0],
         "goal": body.goal,
         "tier": "free",
         "password_hash": hash_pw(body.password),
         "created_at": datetime.now(timezone.utc),
     }
+    # Auto-attach pre-signup quiz answers if this email took the anonymous quiz
+    try:
+        lead = await db["onboarding_leads"].find_one(
+            {"email": email_lower, "consumed": {"$ne": True}},
+            sort=[("created_at", -1)],
+        )
+        if lead:
+            user["onboarding_answers"] = lead.get("answers", {})
+            user["onboarded_at"] = datetime.now(timezone.utc).isoformat()
+            if lead.get("plan"):
+                user["onboarding_plan"] = lead["plan"]
+                user["recommended_path_id"] = (lead["plan"].get("recommended_path_ids") or [None])[0]
+    except Exception as e:
+        log.warning(f"signup: lead attach failed for {email_lower}: {e}")
     await users_col.insert_one(user)
+    # Mark the lead as consumed so we don't double-attach if signup happens twice
+    try:
+        if user.get("onboarding_answers"):
+            await db["onboarding_leads"].update_many(
+                {"email": email_lower},
+                {"$set": {"consumed": True, "consumed_user_id": user["id"], "consumed_at": datetime.now(timezone.utc)}},
+            )
+            # Also seed daily goal from plan
+            plan = user.get("onboarding_plan") or {}
+            if plan.get("daily_goal_target"):
+                await progress_col.update_one(
+                    {"user_id": user["id"]},
+                    {"$set": {"daily_goal_target": int(plan["daily_goal_target"])}},
+                    upsert=True,
+                )
+    except Exception as e:
+        log.warning(f"signup: lead consume failed: {e}")
     return Token(access_token=make_token(user["id"]))
 
 @api.post("/auth/login", response_model=Token)
@@ -993,6 +1025,92 @@ async def submit_onboarding(body: OnboardingIn, user=Depends(current_user)):
             {"$set": {"daily_goal_target": plan.daily_goal_target}},
         )
     return OnboardingOut(plan=plan, onboarded=True, answers=answers)
+
+
+class OnboardingAnonymousIn(BaseModel):
+    email: EmailStr
+    motivation: str
+    experience: str
+    tools_used: List[str] = []
+    goals: List[str] = []
+    time_per_day: str
+    learning_style: str
+    source: Optional[str] = None  # e.g. "landing_popup", "landing_button"
+
+
+@api.post("/onboarding/anonymous")
+async def submit_onboarding_anonymous(body: OnboardingAnonymousIn,
+                                        background_tasks: BackgroundTasks):
+    """Anonymous lead-capture variant of the onboarding quiz.
+
+    Used on the public landing page. Saves answers + email to onboarding_leads
+    and generates a personalized plan via Claude (best-effort). When the lead
+    later signs up with the same email, the signup endpoint auto-attaches
+    these answers so they skip the in-app onboarding.
+
+    Resend email with the plan is sent in the background — does NOT block UI.
+    """
+    email_lower = body.email.lower()
+    # Don't capture a lead for an already-registered user — they should log in.
+    existing_user = await users_col.find_one({"email": email_lower}, {"_id": 0, "id": 1})
+    if existing_user:
+        return {
+            "ok": True,
+            "already_registered": True,
+            "message": "Looks like you already have an account! Sign in to see your plan.",
+        }
+    answers = body.model_dump(exclude={"email", "source"})
+    plan_model = await _generate_onboarding_plan(answers)
+    plan_dict = plan_model.model_dump() if plan_model else None
+    lead_id = str(uuid.uuid4())
+    await db["onboarding_leads"].insert_one({
+        "id": lead_id,
+        "email": email_lower,
+        "answers": answers,
+        "plan": plan_dict,
+        "source": body.source or "landing",
+        "consumed": False,
+        "created_at": datetime.now(timezone.utc),
+    })
+    # Send the plan via email in the background (best-effort).
+    if plan_dict:
+        background_tasks.add_task(_email_anonymous_plan, email_lower, plan_dict)
+    return {
+        "ok": True,
+        "already_registered": False,
+        "plan": plan_dict,
+        "lead_id": lead_id,
+    }
+
+
+async def _email_anonymous_plan(email: str, plan: dict) -> None:
+    """Best-effort send of the personalized plan email to a quiz-taker lead."""
+    try:
+        from email_service import send_email
+        subject = f"Your personalized AI plan: {plan.get('headline', 'Ascendra')}"
+        rationale = plan.get("rationale", "")
+        daily = int(plan.get("daily_goal_target", 1) or 1)
+        signup_url = f"{_public_web_url()}/signup?prefill={email}"
+        html = f"""
+        <div style="background:#0A0413;color:#F4F1FF;font-family:Inter,Arial,sans-serif;padding:32px;">
+          <div style="max-width:560px;margin:0 auto;">
+            <h1 style="color:#FFB000;font-size:28px;margin:0 0 8px 0;">Your AI plan is ready 🎯</h1>
+            <div style="font-size:22px;font-weight:800;margin:14px 0;">{plan.get('headline','Your personalized path')}</div>
+            <p style="line-height:1.55;color:#C8C5E6;margin:12px 0;">{rationale}</p>
+            <div style="background:rgba(255,176,0,0.08);border:1px solid rgba(255,176,0,0.35);border-radius:12px;padding:14px 18px;margin:18px 0;">
+              <div style="font-weight:800;color:#FFB000;">Your daily goal</div>
+              <div>{daily} lesson{'s' if daily > 1 else ''} per day</div>
+            </div>
+            <a href="{signup_url}" style="display:inline-block;background:#FFB000;color:#0A0413;padding:14px 28px;border-radius:12px;font-weight:800;text-decoration:none;margin-top:8px;">Create your free account →</a>
+            <p style="font-size:12px;color:#9CA0B8;margin-top:36px;">
+              You'll automatically start with your personalized plan when you sign up.
+            </p>
+          </div>
+        </div>
+        """
+        await send_email(to=email, subject=subject, html=html)
+    except Exception as e:
+        log.warning(f"anonymous plan email failed for {email}: {e}")
 
 
 @api.get("/onboarding/me", response_model=OnboardingOut)
