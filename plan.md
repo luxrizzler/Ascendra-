@@ -29,13 +29,16 @@ Build a largely automated growth engine:
 - **Lifecycle automation** to improve conversion/retention.
 - **Social pipeline** using a **free-only content generation stack** (no paid video services), plus X/Twitter integration readiness.
 
-### NEW overarching objective: Coursiv‑style engagement loop — IN PROGRESS 🟡
+### NEW overarching objective: Coursiv‑style engagement loop — LARGELY ACHIEVED ✅ / ONGOING 🟡
 Deliver an interactive learning experience comparable to “Coursiv-style” apps:
 - Streak tracking + celebrations
 - AI onboarding quiz → personalized plan
 - 15‑Day Challenge roadmap
 - Interactive lesson cards (Knowledge Checks, Fill‑in‑the‑blank, Playgrounds) generated dynamically by Claude
 - TTS narration + prompt libraries
+
+### NEW operational objective: Trustworthy business metrics — ACHIEVED ✅
+Ensure admin analytics reflect **real-world performance** by excluding internal QA/admin accounts from key dashboards.
 
 ---
 
@@ -258,13 +261,13 @@ Testing:
 - Also fixed lifecycle scheduler job registration.
 - Verified by `testing_agent_v3` (iteration_9): **backend 100%**, **scheduler 100%**, **regressions 100%**.
 
-**Interactive content auto-upgrade (future lessons) — IMPLEMENTED / VERIFY PENDING 🟡**
+**Interactive content auto-upgrade (future lessons) — VERIFIED ✅**
 - Inline interactivization added after auto-publish in:
   - `run_daily_lesson()`
   - `run_monday_path()` (sampled lessons)
-- Added safety-net scheduler job:
+- Safety-net scheduler job:
   - `interactive_sweep` (Cron: every hour at `:15`) calling `run_interactive_sweep()`.
-- **Open verification item:** confirm job appears in `/api/admin/auto/settings` → `next_runs.interactive_sweep` after backend restart.
+- **Verified:** `interactive_sweep` is present in `/api/admin/auto/settings` → `next_runs.interactive_sweep`.
 
 ---
 
@@ -389,42 +392,36 @@ Planned:
 
 ---
 
-### Phase 14 — P0 Bug Fix: Admin analytics must exclude internal test/admin accounts — IN PROGRESS 🟡
-**Goal:** Ensure admin dashboard metrics reflect real business performance by excluding internal test/admin accounts.
+### Phase 14 — P0 Bug Fix: Admin analytics must exclude internal test/admin accounts — COMPLETED ✅
+**Goal:** Ensure admin dashboard metrics reflect real business performance by excluding internal QA/test/admin accounts.
 
-**User clarifications (confirmed):**
-- Exclude internal accounts from **all admin analytics**:
-  - `sage[0-9]+@ascendraacademy.com`
-  - `admin@ascendraacademy.com`
-- **Keep free-tier users included** in stats (they are real leads for marketing conversion).
-- Hardcode regex/patterns (no env-driven list).
+**What shipped (backend):**
+- `/app/backend/server.py`:
+  - Added `TEST_EMAIL_REGEX`
+  - Added helpers: `_real_users_filter()`, `_get_excluded_user_ids()`, `_and_filters()`
+- `GET /api/admin/stats`:
+  - Excludes internal accounts from:
+    - Users totals / tier breakdown / 30-day signups
+    - Revenue totals / paid sessions
+    - Engagement totals (DAU/WAU/lessons completed/certificates)
+  - Adds a new `filters` block in response for transparency (excluded_count, regex).
+- `GET /api/admin/users`, `GET /api/admin/sales`, `GET /api/admin/subscribers`:
+  - Exclude internal accounts by default
+  - Override available: `?include_internal=true`
 
-**Implementation plan (Phase A — P0 Admin Stats Filter):**
-1) Add a hardcoded `TEST_EMAIL_REGEX` (or equivalent predicate) in `/app/backend/server.py`.
-2) Add helpers:
-   - `_real_users_filter()` → Mongo query fragment that excludes internal emails and/or `is_admin==True`.
-   - `_get_excluded_user_ids()` → resolves excluded user IDs (for joining against `progress` and `payment_sessions`).
-3) Rewrite `/api/admin/stats` to apply filtering consistently:
-   - `users_col` counts (total, tier breakdown, signups_30d)
-   - `sessions_col` revenue aggregations and paid_sessions count (exclude excluded `user_id`s)
-   - `progress_col` engagement aggregations (dau/wau/lessons_completed) excluding excluded `user_id`s
-4) Apply the same exclusion defaults to other admin business views to avoid inconsistent admin numbers:
-   - `GET /api/admin/users` (default listing)
-   - `GET /api/admin/subscribers`
-   - `GET /api/admin/sales`
-5) Leave `GET /api/admin/traffic` unchanged (pageviews are anonymous visitors; not user-email keyed).
+**Internal account patterns excluded:**
+- `sage*`, `admin@...`
+- `e2e_*`, `smoke_*`, `final_*` on `@ascendraacademy.com`
+- any `@test.ascendra.com` (e.g. `webhook_test_*`)
 
-**Phase B — Verify auto-pilot interactive cron registration (follow-up, confirmed “do both”):**
-1) Restart backend.
-2) Call `GET /api/admin/auto/settings`.
-3) Confirm `next_runs.interactive_sweep` is present (not missing/empty), proving the job registered.
+**Major finding (business metrics):**
+- All 24 users in the current DB were internal/test artifacts.
+- Prior dashboard showing “4 paying subscribers / $39.96 MRR” was entirely from `webhook_test_*` QA accounts.
+- Dashboard now correctly shows **0 real customers / 0 real leads**, which is accurate.
 
-**Phase C — Testing (MANDATORY: backend testing agent):**
-- Run backend-only tests to verify:
-  - `/api/admin/stats` excludes internal accounts from totals/revenue/engagement.
-  - Free tier users remain included.
-  - `/api/admin/sales`, `/api/admin/subscribers`, `/api/admin/users` align with the filtered logic.
-  - `interactive_sweep` appears in `next_runs`.
+**Verification:**
+- Backend testing_agent ran and passed **28/28 tests (100%)**.
+- No regressions found (`/admin/traffic`, `/paths`, `/whats-new`, `/auth/login` still work).
 
 ---
 
@@ -450,11 +447,11 @@ Planned:
 - ✅ AI onboarding quiz + personalized plan.
 - ✅ 15-day challenge roadmap.
 - ✅ Interactive lesson cards + prompt libraries + browser-native TTS.
-- 🟡 Ensure **all future auto-pilot lessons** are automatically interactivized (verify `interactive_sweep` job is active).
+- ✅ Auto-interactive future lessons verified via `interactive_sweep` scheduler.
 
-### Current P0 quality bar (must pass before new feature work)
-- ⬜ Admin analytics endpoints exclude internal accounts (`sage*`, `admin@`) while still counting free-tier leads.
-- ⬜ Verified by backend testing agent.
+### Current P0 quality bar (must pass before new feature work) — ACHIEVED ✅
+- ✅ Admin analytics endpoints exclude internal accounts while keeping real free-tier leads.
+- ✅ Verified by backend testing agent (28/28 = 100%).
 
 ### Remaining operator setup (recommended)
 1) **Stripe (billing automation)**
