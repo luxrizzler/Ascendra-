@@ -5,6 +5,7 @@ import { AuthShell } from "./Login";
 import { ArrowRight } from "lucide-react";
 import { toast } from "sonner";
 import GoogleButton from "@/components/GoogleButton";
+import SEO from "@/components/SEO";
 
 export default function Signup() {
   const { signup } = useAuth();
@@ -38,7 +39,12 @@ export default function Signup() {
 
   return (
     <AuthShell title="Begin your ascent" subtitle="Create a free account. No card required.">
-      <GoogleButton label="Continue with Google" />
+      <SEO
+        title="Create your Ascendra account — Free signup"
+        description="Create a free Ascendra Academy account in 30 seconds. No credit card required. Start your AI learning journey today with personalized paths and an AI tutor."
+        path="/signup"
+        noindex
+      />      <GoogleButton label="Continue with Google" />
       <div className="flex items-center gap-3 my-4">
         <div className="flex-1 h-px" style={{ background: "rgba(191,180,255,0.18)" }} />
         <div className="text-[10px] uppercase tracking-[0.25em] text-[var(--asc-text-muted)]">Or with email</div>

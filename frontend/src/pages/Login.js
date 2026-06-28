@@ -4,6 +4,7 @@ import { useAuth } from "@/context/AuthContext";
 import { Sparkles, ArrowRight } from "lucide-react";
 import { toast } from "sonner";
 import GoogleButton from "@/components/GoogleButton";
+import SEO from "@/components/SEO";
 
 export default function Login() {
   const { login } = useAuth();
@@ -33,6 +34,12 @@ export default function Login() {
 
   return (
     <AuthShell title="Welcome back" subtitle="Sign in to continue your ascent.">
+      <SEO
+        title="Sign in to Ascendra Academy"
+        description="Sign in to your Ascendra Academy account to continue your AI learning path, track your streak, and access certificates."
+        path="/login"
+        noindex
+      />
       <GoogleButton label="Continue with Google" />
       <Divider />
       <form onSubmit={submit} className="space-y-4" data-testid="login-form">

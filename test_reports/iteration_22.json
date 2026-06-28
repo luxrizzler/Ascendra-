@@ -1,0 +1,41 @@
+{
+  "summary": "Completed comprehensive SEO audit testing for all 4 errors and 4 warnings from Semrush audit. Verified static files (robots.txt, sitemap.xml, llms.txt, index.html), per-page Helmet meta tags, backend regression endpoints, and related guides cross-linking. All 18 test scenarios passed successfully.",
+  "backend_issues": {
+    "critical_bugs": [],
+    "flaky_endpoints": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "passed_tests": [
+    "Static file: robots.txt returns HTTP 200 with text/plain content-type",
+    "Static file: robots.txt contains 'Sitemap: https://ascendraacademy.com/sitemap.xml'",
+    "Static file: robots.txt contains 'Sitemap: https://ascendraacademy.com/api/seo/sitemap.xml'",
+    "Static file: sitemap.xml returns HTTP 200 with application/xml content-type and 13 valid <url> entries",
+    "Static file: llms.txt returns HTTP 200 with text/plain content-type and starts with '# Ascendra Academy'",
+    "Static file: index.html contains exactly ONE <title> tag and ONE <meta description> tag (no duplicates)",
+    "Static file: index.html default title is 'Ascendra Academy · Learn AI in 2026 · Paths, Tutor, Certificates'",
+    "Static file: index.html meta description does NOT contain 'a product of emergent.sh'",
+    "Playwright: Landing (/) page title contains 'Learn AI in 2026' after Helmet JS execution",
+    "Playwright: Pricing (/pricing) page title contains 'Pricing — Three AI learning plans' after Helmet JS execution",
+    "Playwright: Login (/login) page title is 'Sign in to Ascendra Academy' with noindex, nofollow meta tag",
+    "Playwright: Signup (/signup) page title is 'Create your Ascendra account'",
+    "Playwright: Forgot password (/forgot-password) page title is 'Reset your Ascendra password'",
+    "Playwright: Learn hub (/learn/gpt-52) has specific GPT-5.2 title (not generic default)",
+    "Playwright: Learn hub (/learn/gpt-52) contains 'Related AI model guides' section with 4 cross-links to other guides",
+    "Backend regression: /api/auth/login works correctly (returns access token)",
+    "Backend regression: /api/billing/status works with admin token",
+    "Backend regression: /api/paths returns 11 curated paths"
+  ],
+  "test_report_links": [],
+  "action_item_for_main_agent": "",
+  "updated_files": [],
+  "success_percentage": {
+    "backend": "100% (3/3 regression tests passed)",
+    "frontend": "100% (15/15 SEO tests passed)"
+  },
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_test_itself": false
+}

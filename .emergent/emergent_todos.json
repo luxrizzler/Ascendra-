@@ -1,34 +1,38 @@
 [
   {
-    "content": "Phase 17 backend + frontend (subscription card) — 100% passed",
-    "status": "completed"
+    "content": "Fix index.html: remove duplicate title+meta tags, set clean defaults",
+    "status": "in_progress"
   },
   {
-    "content": "Phase 17 medium bug fixed (LAPSED detection for manually-upgraded users)",
-    "status": "completed"
+    "content": "Create SEO component using react-helmet-async (already installed)",
+    "status": "pending"
   },
   {
-    "content": "Phase 18 backend: POST /api/onboarding/anonymous + lead capture + signup auto-attach",
-    "status": "completed"
+    "content": "Add unique title+meta+canonical to: Landing, Paths, Models, Tutor, Pricing, Login, Signup, ForgotPassword",
+    "status": "pending"
   },
   {
-    "content": "Phase 18 frontend: OnboardingModal component (anonymous + authed modes, email step, result view)",
-    "status": "completed"
+    "content": "Create static /public/robots.txt as text/plain with Sitemap directive",
+    "status": "pending"
   },
   {
-    "content": "Phase 18 frontend: Landing auto-popup (8s delay + localStorage 7-day suppression) + Find my path button",
-    "status": "completed"
+    "content": "Create static /public/sitemap.xml with all main routes",
+    "status": "pending"
   },
   {
-    "content": "Phase 18 frontend: Dashboard modal replaces /onboarding redirect",
-    "status": "completed"
+    "content": "Create static /public/llms.txt with proper formatting",
+    "status": "pending"
   },
   {
-    "content": "Phase 18 frontend: Signup ?prefill=email param support",
-    "status": "completed"
+    "content": "Add cross-links between /learn/* guide pages",
+    "status": "pending"
   },
   {
-    "content": "Phase 18 testing: 51/52 backend tests passed (98.1%); 1 flaky LLM rate-limit — not a code bug",
-    "status": "completed"
+    "content": "Add visible text content to Tutor + Login + Signup + ForgotPassword (low word count)",
+    "status": "pending"
+  },
+  {
+    "content": "Run testing agent to verify all 8 fixes (full SEO audit checks)",
+    "status": "pending"
   }
 ]

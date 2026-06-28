@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import SEO from "@/components/SEO";
 
 export default function Paths() {
   const { user } = useAuth();
@@ -94,6 +95,11 @@ export default function Paths() {
 
   return (
     <div className="max-w-7xl mx-auto px-5 sm:px-8 py-10" data-testid="paths-page">
+      <SEO
+        title="AI Learning Paths — Curated curriculums for every level"
+        description="Curated AI learning paths covering every facet of AI in 2026 — from your first prompt to building and shipping with agents. Mix beginner, intermediate, and advanced lessons or generate your own custom path with Claude."
+        path="/paths"
+      />
       <div className="flex items-end justify-between gap-3 flex-wrap">
         <div>
           <div className="asc-kicker">All paths</div>

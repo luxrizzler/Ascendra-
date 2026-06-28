@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { api } from "@/lib/api";
 import { AuthShell } from "./Login";
 import { toast } from "sonner";
+import SEO from "@/components/SEO";
 
 export default function ForgotPassword() {
   const [email, setEmail] = useState("");
@@ -30,7 +31,12 @@ export default function ForgotPassword() {
 
   return (
     <AuthShell title="Reset password" subtitle="Enter your email and we'll send a magic link.">
-      {!sent ? (
+      <SEO
+        title="Reset your Ascendra password"
+        description="Forgot your password? Enter your email and we'll send you a magic reset link so you can get back to learning AI."
+        path="/forgot-password"
+        noindex
+      />      {!sent ? (
         <form onSubmit={submit} className="space-y-4" data-testid="forgot-form">
           <input className="asc-input" type="email" placeholder="Email" required value={email} onChange={(e) => setEmail(e.target.value)} data-testid="forgot-email-input" />
           <button type="submit" disabled={busy} className="asc-btn-primary w-full justify-center" data-testid="forgot-submit-btn">

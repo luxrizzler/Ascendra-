@@ -1,0 +1,28 @@
+# Ascendra Academy — robots.txt
+# Updated: 2026
+
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /admin/
+Disallow: /api/admin
+Disallow: /api/admin/
+Disallow: /login
+Disallow: /signup
+Disallow: /forgot-password
+Disallow: /reset-password
+Disallow: /profile
+Disallow: /dashboard
+Disallow: /lessons/
+Disallow: /tutor
+Disallow: /certificates/
+Disallow: /onboarding
+
+# Crawl-delay for politeness on dynamic AI pages
+Crawl-delay: 2
+
+# Sitemap — primary (static, always available)
+Sitemap: https://ascendraacademy.com/sitemap.xml
+
+# Sitemap — dynamic (backend-generated, includes all paths + SEO Studio pages)
+Sitemap: https://ascendraacademy.com/api/seo/sitemap.xml

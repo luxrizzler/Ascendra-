@@ -237,7 +237,52 @@ export default function LearnHub() {
           </div>
         </div>
       </section>
+
+      {/* Related guides — cross-links for SEO + discoverability */}
+      <RelatedGuides currentSlug={modelSlug} />
     </div>
+  );
+}
+
+
+const ALL_GUIDES = [
+  { slug: "gpt-52",            name: "GPT-5.2",                blurb: "OpenAI's flagship reasoning model" },
+  { slug: "claude-sonnet-45",  name: "Claude Sonnet 4.5",      blurb: "Anthropic's nuanced writing & coding partner" },
+  { slug: "gemini-3",          name: "Gemini 3",               blurb: "Google's multimodal powerhouse" },
+  { slug: "sora-2",            name: "Sora 2",                 blurb: "OpenAI's video generation model" },
+  { slug: "nano-banana",       name: "Nano Banana",            blurb: "Gemini's image generation API" },
+  { slug: "elevenlabs",        name: "ElevenLabs",             blurb: "Voice cloning & TTS leader" },
+];
+
+function RelatedGuides({ currentSlug }) {
+  const others = ALL_GUIDES.filter((g) => g.slug !== currentSlug).slice(0, 4);
+  if (!others.length) return null;
+  return (
+    <section className="max-w-4xl mx-auto px-5 sm:px-8 py-10 border-t" style={{ borderColor: "rgba(191,180,255,0.1)" }} data-testid="related-guides">
+      <h2 className="asc-h2 text-2xl mb-6">Related AI model guides</h2>
+      <div className="grid md:grid-cols-2 gap-4">
+        {others.map((g) => (
+          <Link
+            key={g.slug}
+            to={`/learn/${g.slug}`}
+            className="asc-card p-4 flex items-start gap-3 hover:scale-[1.01] transition-transform"
+            data-testid={`related-guide-${g.slug}`}
+          >
+            <div className="w-10 h-10 rounded-lg grid place-items-center shrink-0" style={{ background: "rgba(255,176,0,0.18)" }}>
+              <Sparkles size={18} color="#FFB000" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="font-bold">{g.name}</div>
+              <div className="text-sm text-[var(--asc-text-dim)] mt-0.5">{g.blurb}</div>
+            </div>
+            <ChevronRight size={18} className="text-[var(--asc-text-muted)] shrink-0 mt-1" />
+          </Link>
+        ))}
+      </div>
+      <div className="mt-6 text-sm text-[var(--asc-text-muted)]">
+        Browse all guides on the <Link to="/learn" className="text-[var(--asc-brand)] underline">Learn hub</Link> or explore the full <Link to="/models" className="text-[var(--asc-brand)] underline">AI Models Directory</Link>.
+      </div>
+    </section>
   );
 }
 

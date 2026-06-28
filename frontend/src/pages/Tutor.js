@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import Loader from "@/components/Loader";
+import SEO from "@/components/SEO";
 import { Send, Sparkles, MessageSquare, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 
@@ -67,11 +68,16 @@ export default function Tutor() {
 
   return (
     <div className="max-w-4xl mx-auto px-5 sm:px-8 py-8 flex flex-col" style={{ minHeight: "calc(100vh - 80px)" }} data-testid="tutor-page">
+      <SEO
+        title="AI Tutor — 24/7 conversational AI coach on Ascendra"
+        description="Ask Ascendra anything about AI — from picking the right model to writing a killer system prompt. Powered by Claude Sonnet 4.5 with multi-turn memory. Practice prompts, debug agents, and learn faster with a personal AI tutor."
+        path="/tutor"
+      />
       <div className="flex items-center justify-between mb-5">
         <div>
           <div className="asc-kicker">AI Tutor</div>
           <h1 className="asc-h2 text-3xl mt-1 flex items-center gap-2"><Sparkles size={26} className="text-[var(--asc-brand)]" /> Ask Ascendra</h1>
-          <p className="text-[var(--asc-text-dim)] text-sm mt-1">Powered by Claude Sonnet 4.5 · Multi-turn memory</p>
+          <p className="text-[var(--asc-text-dim)] text-sm mt-1">Your private AI coach — powered by Claude Sonnet 4.5 with multi-turn memory. Ask anything about AI fundamentals, prompt engineering, picking models, building agents, or shipping AI features.</p>
         </div>
         <button onClick={reset} className="asc-btn-secondary text-sm" data-testid="tutor-new-btn"><RotateCcw size={14} /> New chat</button>
       </div>

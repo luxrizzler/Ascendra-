@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import Loader from "@/components/Loader";
+import SEO from "@/components/SEO";
 
 const CATEGORIES = ["All", "Text", "Image", "Video", "Audio", "Coding", "Search"];
 
@@ -26,9 +27,14 @@ export default function Models() {
 
   return (
     <div className="max-w-7xl mx-auto px-5 sm:px-8 py-10" data-testid="models-page">
+      <SEO
+        title="AI Models Directory 2026 — GPT-5.2, Claude 4.5, Gemini 3, Sora 2"
+        description="The 22 AI models that matter in 2026 — text, image, video, audio, coding and search. Compare GPT-5.2, Claude Sonnet 4.5, Gemini 3, Sora 2, Nano Banana, ElevenLabs and more with provider, pricing tier and superpower."
+        path="/models"
+      />
       <div className="asc-kicker">Models library</div>
       <h1 className="asc-h2 text-4xl sm:text-5xl mt-2">22 models that matter in 2026.</h1>
-      <p className="text-[var(--asc-text-dim)] mt-2 max-w-2xl">From reasoning giants to image wizards — know each model's superpower and pricing tier.</p>
+      <p className="text-[var(--asc-text-dim)] mt-2 max-w-2xl">From reasoning giants to image wizards — know each model&apos;s superpower and pricing tier. Search and filter by capability: text generation, image synthesis, video, audio, code, or search. Every entry includes the model&apos;s strengths, real pricing context, and which Ascendra path teaches it best.</p>
 
       <div className="flex flex-wrap items-center gap-3 mt-6">
         <input className="asc-input flex-1 min-w-[200px] max-w-md" placeholder="Search models…" value={q} onChange={(e) => setQ(e.target.value)} data-testid="models-search" />

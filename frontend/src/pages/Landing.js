@@ -4,6 +4,7 @@ import { Sparkles, ArrowRight, Rocket, TrendingUp, Compass, Users, CheckCircle2,
 import { api } from "@/lib/api";
 import LeadCaptureModal from "@/components/LeadCaptureModal";
 import OnboardingModal from "@/components/OnboardingModal";
+import SEO from "@/components/SEO";
 
 const HERO_IMG = "https://customer-assets.emergentagent.com/job_ai-business-academy-2/artifacts/c1jkvwwp_4185C05A-6A9A-42F7-A146-9109CF6F03DD.png";
 
@@ -93,6 +94,11 @@ export default function Landing() {
 
   return (
     <div data-testid="landing-page">
+      <SEO
+        title="Learn AI in 2026 — Interactive paths, AI tutor, certificates"
+        description="Ascendra Academy teaches modern AI literacy through 15-day challenges, hands-on prompt playgrounds, and an AI tutor. Master GPT-5.2, Claude Sonnet 4.5, Gemini 3, Sora 2, and more."
+        path="/"
+      />
       {/* HERO */}
       <section className="relative overflow-hidden">
         <div className="max-w-7xl mx-auto px-6 py-12 lg:py-20 grid lg:grid-cols-2 gap-10 items-center">

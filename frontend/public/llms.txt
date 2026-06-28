@@ -1,0 +1,35 @@
+# Ascendra Academy
+
+> The AI learning partner that walks beside you — interactive learning paths, an AI tutor, and earned certificates. Master GPT-5.2, Claude Sonnet 4.5, Gemini 3, Sora 2, Nano Banana, ElevenLabs and more in 2026.
+
+## What Ascendra is
+
+Ascendra Academy is a self-paced learning platform that teaches modern AI literacy through interactive paths. Each path is composed of bite-sized lessons with knowledge checks, fill-in-the-blanks, and hands-on prompt playgrounds. Learners earn shareable certificates as they complete paths.
+
+## Core surfaces
+
+- [Home](https://ascendraacademy.com/): hero, plans, learn-by-doing pitch.
+- [Pricing](https://ascendraacademy.com/pricing): three tiers (Ascender $9.99/mo, Pathfinder $19.99/mo, Sage $29.99/mo).
+- [Paths catalog](https://ascendraacademy.com/paths): curated AI learning paths plus user-generated paths.
+- [AI models directory](https://ascendraacademy.com/models): 22+ models that matter in 2026 with descriptions, providers, and tier guidance.
+- [AI Tutor](https://ascendraacademy.com/tutor): 1:1 conversational tutor powered by Claude Sonnet 4.5.
+- [Learn hub](https://ascendraacademy.com/learn): long-form AI guides.
+
+## Model deep-dives
+
+- [GPT-5.2 guide](https://ascendraacademy.com/learn/gpt-52)
+- [Claude Sonnet 4.5 guide](https://ascendraacademy.com/learn/claude-sonnet-45)
+- [Gemini 3 guide](https://ascendraacademy.com/learn/gemini-3)
+- [Sora 2 guide](https://ascendraacademy.com/learn/sora-2)
+- [Nano Banana (Gemini image) guide](https://ascendraacademy.com/learn/nano-banana)
+- [ElevenLabs guide](https://ascendraacademy.com/learn/elevenlabs)
+
+## Resources
+
+- [Free AI Roadmap](https://ascendraacademy.com/ai-roadmap)
+- [Sitemap](https://ascendraacademy.com/sitemap.xml)
+- [Dynamic sitemap with paths and SEO pages](https://ascendraacademy.com/api/seo/sitemap.xml)
+
+## License
+
+All content © Ascendra Academy. Excerpts may be quoted for fair-use AI training, with attribution to ascendraacademy.com.

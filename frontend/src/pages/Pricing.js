@@ -6,6 +6,7 @@ import Loader from "@/components/Loader";
 import TierBadge from "@/components/TierBadge";
 import { CheckCircle2, ArrowRight, Zap, Sparkles } from "lucide-react";
 import { toast } from "sonner";
+import SEO from "@/components/SEO";
 
 export default function Pricing() {
   const { user, refresh } = useAuth();
@@ -37,6 +38,11 @@ export default function Pricing() {
 
   return (
     <div className="max-w-7xl mx-auto px-5 sm:px-8 py-10" data-testid="pricing-page">
+      <SEO
+        title="Pricing — Three AI learning plans starting at $9.99/mo"
+        description="Three plans for every learner. Ascender ($9.99/mo) for fundamentals, Pathfinder ($19.99/mo) for builders, Sage ($29.99/mo) for power users. Cancel anytime. 7-day money-back guarantee."
+        path="/pricing"
+      />
       <div className="asc-kicker">Plans</div>
       <h1 className="asc-h2 text-4xl sm:text-5xl mt-2">Learn AI like the top 1%.</h1>
       <p className="text-[var(--asc-text-dim)] mt-2 max-w-2xl">Cancel anytime in one click from your profile. 7-day money-back guarantee.</p>
