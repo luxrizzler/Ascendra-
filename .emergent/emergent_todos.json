@@ -1,22 +1,22 @@
 [
   {
-    "content": "Add TEST_EMAIL_REGEX constant + helper functions (_real_users_filter, _get_excluded_user_ids) to server.py",
+    "content": "Audit current Stripe setup — confirm Hosted Checkout pattern, no card data touches our server",
     "status": "completed"
   },
   {
-    "content": "Rewrite /api/admin/stats to apply exclusion filter on users_col, sessions_col, progress_col",
+    "content": "Verify no sk_live key leakage: not in git, not in frontend bundle, not in logs",
     "status": "completed"
   },
   {
-    "content": "Apply default exclusion to /api/admin/users, /api/admin/subscribers, /api/admin/sales",
+    "content": "Confirm webhook signature verification is enforced (recent P0 fix)",
     "status": "completed"
   },
   {
-    "content": "Restart backend and verify interactive_sweep cron is registered via /api/admin/auto/settings",
+    "content": "Verify checkout amounts come from server config, not request body (no tampering)",
     "status": "completed"
   },
   {
-    "content": "Run backend testing_agent to verify all filters work + free tier still counted",
+    "content": "Live-test Stripe API with current key (create real subscription Checkout Session)",
     "status": "completed"
   }
 ]
