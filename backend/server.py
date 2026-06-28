@@ -741,7 +741,9 @@ async def fetch_lesson(lesson_id: str, user=Depends(current_user)):
     if not lsn:
         raise HTTPException(404, "Lesson not found")
     p = await _curric_get_path(db, lsn["path_id"])
-    if p and not can_access(user.get("tier", "free"), p.get("tier", "free")):
+    # Admins bypass the tier gate so they can review/QA every lesson regardless
+    # of which paid tier the path is locked behind.
+    if p and not user.get("is_admin") and not can_access(user.get("tier", "free"), p.get("tier", "free")):
         raise HTTPException(403, f"This lesson requires {p['tier'].upper()} tier. Upgrade to unlock.")
     return lsn
 

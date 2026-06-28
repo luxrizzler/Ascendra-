@@ -26,7 +26,7 @@ export default function PathDetail() {
   if (loading) return <Loader />;
   if (!path) return null;
 
-  const locked = !canAccess(user.tier, path.tier);
+  const locked = !canAccess(user, path.tier);
   const completedSet = new Set(progress.completed_lesson_ids);
   const allLessons = path.modules.flatMap((m) => m.lessons);
   const firstUncompleted = allLessons.find((l) => !completedSet.has(l.id));

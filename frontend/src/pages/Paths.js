@@ -136,7 +136,7 @@ export default function Paths() {
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-5 mt-4">
           {paths.map((p) => {
             const pr = (progress && progress.path_progress[p.id]) || { completed: 0, total: p.total_lessons, pct: 0 };
-            const locked = !canAccess(user.tier, p.tier);
+            const locked = !canAccess(user, p.tier);
             return (
               <Link
                 key={p.id}
