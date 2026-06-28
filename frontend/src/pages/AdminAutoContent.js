@@ -155,7 +155,7 @@ export default function AdminAutoContent() {
   };
 
   const regenerate = async (id, topic) => {
-    if (!confirm(`Regenerate "${topic}" with Claude?\n\nThis will discard the previous attempt and run fresh AI generation (~30–90s).`)) return;
+    if (!confirm(`Regenerate "${topic}" with Claude?\n\nThis will discard the previous attempt and run fresh AI generation. Up to ~90 seconds with auto-retry on rate-limits.`)) return;
     setBusy(`regen-${id}`);
     toast.info(`Regenerating "${topic}" — Claude is working...`);
     try {
@@ -172,7 +172,14 @@ export default function AdminAutoContent() {
       }
       load();
     } catch (e) {
-      toast.error(e.message || "Regenerate failed");
+      // Friendly message comes from backend now (server.py uses friendly_llm_error)
+      const msg = e?.message || "Could not regenerate";
+      if (/busy|wait|overloaded|hiccup/i.test(msg)) {
+        toast.warning(msg);
+      } else {
+        toast.error(msg);
+      }
+      load();
     } finally {
       setBusy(null);
     }

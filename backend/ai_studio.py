@@ -129,13 +129,17 @@ def _parse_json_block(raw: str) -> dict:
 
 
 async def _chat_complete(system: str, user_msg: str, model: str = "claude-sonnet-4-5-20250929") -> str:
-    chat = LlmChat(
-        api_key=_get_key(),
-        session_id=f"studio-{uuid.uuid4().hex[:8]}",
-        system_message=system,
-    ).with_model("anthropic", model)
-    reply = await chat.send_message(UserMessage(text=user_msg))
-    return reply
+    from llm_retry import llm_call_with_retry
+
+    async def _do_call() -> str:
+        chat = LlmChat(
+            api_key=_get_key(),
+            session_id=f"studio-{uuid.uuid4().hex[:8]}",
+            system_message=system,
+        ).with_model("anthropic", model)
+        return await chat.send_message(UserMessage(text=user_msg))
+
+    return await llm_call_with_retry(_do_call, max_retries=4, label="ai_studio._chat_complete")
 
 
 # ─── Public Studio API ──────────────────────────────────────────────────────

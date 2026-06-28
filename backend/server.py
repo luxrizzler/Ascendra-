@@ -2482,8 +2482,14 @@ async def admin_auto_regenerate(queue_id: str, _admin=Depends(require_admin)):
         fresh = await db["content_queue"].find_one({"id": queue_id}, {"_id": 0})
         return {"ok": True, "run": result, "item": fresh}
     except Exception as e:
+        from llm_retry import is_transient_llm_error, friendly_llm_error
         log.exception("regenerate failed")
-        raise HTTPException(502, f"Regeneration failed: {str(e)[:200]}")
+        # Keep the queue item visible for another retry. We already reset it to
+        # 'pending' above, but the generator may have transitioned it to failed.
+        # Surface a clean message to the operator rather than a stack trace.
+        msg = friendly_llm_error(e)
+        status_code = 503 if is_transient_llm_error(e) else 502
+        raise HTTPException(status_code, msg)
 
 
 class QueueRejectIn(BaseModel):

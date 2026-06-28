@@ -228,13 +228,18 @@ async def list_runs(db, limit: int = 50) -> list:
 
 # ─── Quality gate ──────────────────────────────────────────────────────────
 async def grade_draft(text: str, kind: str = "lesson") -> dict:
-    chat = LlmChat(
-        api_key=_get_key(),
-        session_id=f"grade-{uuid.uuid4().hex[:8]}",
-        system_message=GRADER_SYSTEM,
-    ).with_model("anthropic", "claude-sonnet-4-5-20250929")
-    user_msg = f"Type: {kind}\n\n{text[:6000]}"
-    raw = await chat.send_message(UserMessage(text=user_msg))
+    from llm_retry import llm_call_with_retry
+
+    async def _do_call() -> str:
+        chat = LlmChat(
+            api_key=_get_key(),
+            session_id=f"grade-{uuid.uuid4().hex[:8]}",
+            system_message=GRADER_SYSTEM,
+        ).with_model("anthropic", "claude-sonnet-4-5-20250929")
+        user_msg = f"Type: {kind}\n\n{text[:6000]}"
+        return await chat.send_message(UserMessage(text=user_msg))
+
+    raw = await llm_call_with_retry(_do_call, max_retries=4, label="auto_content.grade_draft")
     return _parse_json_block(raw)
 
 

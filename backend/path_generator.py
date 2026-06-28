@@ -83,12 +83,17 @@ USER_PATH_SYSTEM = (
 
 async def _chat_complete(system: str, user_msg: str,
                           model: str = "claude-sonnet-4-5-20250929") -> str:
-    chat = LlmChat(
-        api_key=_get_key(),
-        session_id=f"userpath-{uuid.uuid4().hex[:8]}",
-        system_message=system,
-    ).with_model("anthropic", model)
-    return await chat.send_message(UserMessage(text=user_msg))
+    from llm_retry import llm_call_with_retry
+
+    async def _do_call() -> str:
+        chat = LlmChat(
+            api_key=_get_key(),
+            session_id=f"userpath-{uuid.uuid4().hex[:8]}",
+            system_message=system,
+        ).with_model("anthropic", model)
+        return await chat.send_message(UserMessage(text=user_msg))
+
+    return await llm_call_with_retry(_do_call, max_retries=4, label="path_generator._chat_complete")
 
 
 async def generate_user_path_outline(goal: str) -> dict:
