@@ -1764,7 +1764,18 @@ async def billing_status(user=Depends(current_user)):
     sub_status = fresh.get("subscription_status")
     cap_end = bool(fresh.get("subscription_cancel_at_period_end", False))
     interval = fresh.get("subscription_interval")
-    has_ever_paid = bool(cust_id) or bool(fresh.get("stripe_subscription_id"))
+    # has_ever_paid covers three cases:
+    #   1. Real Stripe customer (stripe_customer_id present)
+    #   2. Active subscription record (stripe_subscription_id present)
+    #   3. User was on a paid tier in the past — tier_expires_at exists even if
+    #      now downgraded to free (covers manually-upgraded admin/test users
+    #      AND users whose Stripe customer was deleted)
+    has_ever_paid = bool(
+        cust_id
+        or fresh.get("stripe_subscription_id")
+        or fresh.get("tier_expires_at") is not None
+        or (sub_status and sub_status != "free")
+    )
 
     # Determine state
     if tier == "free":

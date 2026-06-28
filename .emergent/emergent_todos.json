@@ -1,22 +1,14 @@
 [
   {
-    "content": "Backend: Replace /api/billing/info stub with rich /api/billing/status (state + tier + renews + can_resume + certs count)",
+    "content": "Phase 17 backend + frontend (subscription card)",
     "status": "completed"
   },
   {
-    "content": "Backend: Add POST /api/billing/resume to undo cancel_at_period_end in Stripe",
+    "content": "Phase 17 backend testing — all passed, 1 medium bug fixed (LAPSED detection)",
     "status": "completed"
   },
   {
-    "content": "Frontend: Create SubscriptionCard.js component with 5 state machine",
-    "status": "completed"
-  },
-  {
-    "content": "Frontend: Add SubscriptionCard to Dashboard.js + Profile.js (replace existing portal button)",
-    "status": "completed"
-  },
-  {
-    "content": "Run backend testing agent on billing/status + resume + lapsed cert preservation",
+    "content": "Phase 18: Onboarding quiz as popup — awaiting user clarification on scope",
     "status": "in_progress"
   }
 ]
