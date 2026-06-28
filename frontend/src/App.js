@@ -14,6 +14,8 @@ import Signup from "@/pages/Signup";
 import ForgotPassword from "@/pages/ForgotPassword";
 import ResetPassword from "@/pages/ResetPassword";
 import Onboarding from "@/pages/Onboarding";
+import Challenge15Day from "@/pages/Challenge15Day";
+import PromptLibrary from "@/pages/PromptLibrary";
 import Dashboard from "@/pages/Dashboard";
 import Paths from "@/pages/Paths";
 import PathDetail from "@/pages/PathDetail";
@@ -69,6 +71,8 @@ function Shell() {
           <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/pricing" element={<Pricing />} />
           <Route path="/onboarding" element={<RequireAuth><Onboarding /></RequireAuth>} />
+          <Route path="/challenge" element={<RequireAuth><Challenge15Day /></RequireAuth>} />
+          <Route path="/prompts" element={<RequireAuth><PromptLibrary /></RequireAuth>} />
           <Route path="/dashboard" element={<RequireAuth><Dashboard /></RequireAuth>} />
           <Route path="/paths" element={<RequireAuth><Paths /></RequireAuth>} />
           <Route path="/paths/:pathId" element={<RequireAuth><PathDetail /></RequireAuth>} />

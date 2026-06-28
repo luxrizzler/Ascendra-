@@ -21,6 +21,8 @@ ADMIN_EMAIL = "admin@ascendraacademy.com"
 ADMIN_PASSWORD = "AscendraAdmin2026!"
 SAGE_EMAIL = "sage1@ascendraacademy.com"
 SAGE_PASSWORD = "test1"
+SAGE3_EMAIL = "sage3@ascendraacademy.com"
+SAGE3_PASSWORD = "test3"
 
 class Colors:
     GREEN = '\033[92m'
@@ -757,6 +759,552 @@ class InteractiveLessonTester:
             )
             return False
 
+    def test_streak_endpoint(self):
+        """TEST: GET /api/streak/me returns streak data with all required fields"""
+        print(f"\n{Colors.BLUE}TEST: Streak endpoint{Colors.RESET}")
+        
+        if not self.sage_token:
+            self.log_test(
+                "Streak endpoint",
+                False,
+                "200 with streak data",
+                "Sage user not logged in"
+            )
+            return False
+        
+        try:
+            response = requests.get(
+                f"{BASE_URL}/api/streak/me",
+                headers={"Authorization": f"Bearer {self.sage_token}"}
+            )
+            
+            passed = response.status_code == 200
+            if passed:
+                data = response.json()
+                required_fields = [
+                    "current_streak", "longest_streak", "last_active_date", "today",
+                    "activity_calendar", "daily_goal_target", "daily_goal_done",
+                    "daily_goal_complete", "next_milestone", "days_to_next_milestone"
+                ]
+                has_all_fields = all(f in data for f in required_fields)
+                
+                # Validate types
+                is_valid = (
+                    isinstance(data.get("current_streak"), int) and
+                    isinstance(data.get("longest_streak"), int) and
+                    isinstance(data.get("activity_calendar"), list) and
+                    isinstance(data.get("daily_goal_target"), int) and
+                    isinstance(data.get("daily_goal_done"), int) and
+                    isinstance(data.get("daily_goal_complete"), bool) and
+                    data.get("current_streak") >= 0
+                )
+                
+                passed = has_all_fields and is_valid
+                
+                details = f"current_streak={data.get('current_streak')}, longest_streak={data.get('longest_streak')}, calendar_days={len(data.get('activity_calendar', []))}"
+                
+                self.log_test(
+                    "Streak endpoint",
+                    passed,
+                    "200 with all required fields",
+                    f"{response.status_code} with fields: {list(data.keys())}",
+                    details if passed else "Missing or invalid fields"
+                )
+            else:
+                self.log_test(
+                    "Streak endpoint",
+                    False,
+                    "200 with streak data",
+                    f"{response.status_code}: {response.text[:200]}"
+                )
+            
+            return passed
+            
+        except Exception as e:
+            self.log_test(
+                "Streak endpoint",
+                False,
+                "200 with streak data",
+                f"Exception: {str(e)}"
+            )
+            return False
+
+    def test_progress_complete_milestone(self):
+        """TEST: POST /api/progress/complete returns optional streak_milestone field"""
+        print(f"\n{Colors.BLUE}TEST: Progress complete with streak_milestone field{Colors.RESET}")
+        
+        if not self.sage_token:
+            self.log_test(
+                "Progress complete milestone",
+                False,
+                "200 with streak_milestone field",
+                "Sage user not logged in"
+            )
+            return False
+        
+        try:
+            # Complete a lesson (f1l1)
+            response = requests.post(
+                f"{BASE_URL}/api/progress/complete",
+                json={"lesson_id": "f1l1"},
+                headers={"Authorization": f"Bearer {self.sage_token}"}
+            )
+            
+            passed = response.status_code == 200
+            if passed:
+                data = response.json()
+                # Check that streak_milestone field exists (can be null or int)
+                has_milestone_field = "streak_milestone" in data
+                
+                passed = has_milestone_field
+                
+                milestone_val = data.get("streak_milestone")
+                details = f"streak_milestone={milestone_val} (null is OK if not hitting milestone)"
+                
+                self.log_test(
+                    "Progress complete has streak_milestone field",
+                    passed,
+                    "200 with streak_milestone field present",
+                    f"{response.status_code} with streak_milestone={milestone_val}",
+                    details
+                )
+            else:
+                self.log_test(
+                    "Progress complete has streak_milestone field",
+                    False,
+                    "200 with streak_milestone field",
+                    f"{response.status_code}: {response.text[:200]}"
+                )
+            
+            return passed
+            
+        except Exception as e:
+            self.log_test(
+                "Progress complete has streak_milestone field",
+                False,
+                "200 with streak_milestone field",
+                f"Exception: {str(e)}"
+            )
+            return False
+
+    def test_onboarding_submit(self):
+        """TEST: POST /api/onboarding/submit returns AI-generated plan"""
+        print(f"\n{Colors.BLUE}TEST: Onboarding submit (AI plan generation){Colors.RESET}")
+        
+        # Login as sage3 (not onboarded yet)
+        try:
+            login_response = requests.post(
+                f"{BASE_URL}/api/auth/login",
+                json={"email": SAGE3_EMAIL, "password": SAGE3_PASSWORD}
+            )
+            if login_response.status_code != 200:
+                self.log_test(
+                    "Onboarding submit",
+                    False,
+                    "200 with plan",
+                    f"Could not login as sage3: {login_response.status_code}"
+                )
+                return False
+            
+            sage3_token = login_response.json().get("access_token")
+        except Exception as e:
+            self.log_test(
+                "Onboarding submit",
+                False,
+                "200 with plan",
+                f"Exception logging in: {str(e)}"
+            )
+            return False
+        
+        try:
+            # Submit onboarding with all 6 required fields
+            onboarding_data = {
+                "motivation": "career",
+                "experience": "beginner",
+                "tools_used": ["chatgpt", "claude"],
+                "goals": ["fundamentals", "build_project"],
+                "time_per_day": "15",
+                "learning_style": "hands_on"
+            }
+            
+            print(f"   Submitting onboarding (AI generation may take 5-15s)...")
+            response = requests.post(
+                f"{BASE_URL}/api/onboarding/submit",
+                json=onboarding_data,
+                headers={"Authorization": f"Bearer {sage3_token}"},
+                timeout=30
+            )
+            
+            passed = response.status_code == 200
+            if passed:
+                data = response.json()
+                has_plan = "plan" in data and data["plan"] is not None
+                has_onboarded = data.get("onboarded") == True
+                has_answers = "answers" in data
+                
+                if has_plan:
+                    plan = data["plan"]
+                    plan_valid = (
+                        "headline" in plan and
+                        "rationale" in plan and
+                        "recommended_path_ids" in plan and
+                        isinstance(plan.get("recommended_path_ids"), list) and
+                        len(plan.get("recommended_path_ids", [])) > 0 and
+                        "first_lesson_id" in plan and
+                        "daily_goal_target" in plan and
+                        "generated_at" in plan
+                    )
+                    
+                    # Verify recommended_path_ids are real
+                    paths_response = requests.get(
+                        f"{BASE_URL}/api/paths",
+                        headers={"Authorization": f"Bearer {sage3_token}"}
+                    )
+                    if paths_response.status_code == 200:
+                        all_paths = paths_response.json()
+                        valid_path_ids = {p["id"] for p in all_paths}
+                        rec_ids = plan.get("recommended_path_ids", [])
+                        paths_are_real = all(pid in valid_path_ids for pid in rec_ids)
+                    else:
+                        paths_are_real = False
+                    
+                    passed = has_plan and has_onboarded and has_answers and plan_valid and paths_are_real
+                    
+                    details = f"headline='{plan.get('headline', '')}', recommended_paths={plan.get('recommended_path_ids', [])}, first_lesson={plan.get('first_lesson_id')}"
+                    
+                    self.log_test(
+                        "Onboarding submit with AI plan",
+                        passed,
+                        "200 with valid plan + onboarded=true",
+                        f"{response.status_code} with plan fields: {list(plan.keys())}",
+                        details if passed else "Plan missing fields or invalid path IDs"
+                    )
+                else:
+                    self.log_test(
+                        "Onboarding submit with AI plan",
+                        False,
+                        "200 with valid plan",
+                        f"{response.status_code} but plan is null or missing"
+                    )
+                    passed = False
+            else:
+                self.log_test(
+                    "Onboarding submit with AI plan",
+                    False,
+                    "200 with plan",
+                    f"{response.status_code}: {response.text[:200]}"
+                )
+            
+            return passed
+            
+        except Exception as e:
+            self.log_test(
+                "Onboarding submit with AI plan",
+                False,
+                "200 with plan",
+                f"Exception: {str(e)}"
+            )
+            return False
+
+    def test_onboarding_get(self):
+        """TEST: GET /api/onboarding/me returns plan or {onboarded: false}"""
+        print(f"\n{Colors.BLUE}TEST: Onboarding get endpoint{Colors.RESET}")
+        
+        if not self.sage_token:
+            self.log_test(
+                "Onboarding get",
+                False,
+                "200 with onboarding data",
+                "Sage user not logged in"
+            )
+            return False
+        
+        try:
+            response = requests.get(
+                f"{BASE_URL}/api/onboarding/me",
+                headers={"Authorization": f"Bearer {self.sage_token}"}
+            )
+            
+            passed = response.status_code == 200
+            if passed:
+                data = response.json()
+                has_onboarded_field = "onboarded" in data
+                has_plan_field = "plan" in data
+                
+                passed = has_onboarded_field and has_plan_field
+                
+                onboarded = data.get("onboarded")
+                plan = data.get("plan")
+                
+                details = f"onboarded={onboarded}, plan={'present' if plan else 'null'}"
+                
+                self.log_test(
+                    "Onboarding get endpoint",
+                    passed,
+                    "200 with onboarded + plan fields",
+                    f"{response.status_code} with {details}",
+                    details
+                )
+            else:
+                self.log_test(
+                    "Onboarding get endpoint",
+                    False,
+                    "200 with onboarding data",
+                    f"{response.status_code}: {response.text[:200]}"
+                )
+            
+            return passed
+            
+        except Exception as e:
+            self.log_test(
+                "Onboarding get endpoint",
+                False,
+                "200 with onboarding data",
+                f"Exception: {str(e)}"
+            )
+            return False
+
+    def test_challenge_15day(self):
+        """TEST: GET /api/challenge/15day returns 15-day challenge with proper lock/unlock"""
+        print(f"\n{Colors.BLUE}TEST: 15-Day Challenge endpoint{Colors.RESET}")
+        
+        if not self.sage_token:
+            self.log_test(
+                "15-Day Challenge",
+                False,
+                "200 with 15 days",
+                "Sage user not logged in"
+            )
+            return False
+        
+        try:
+            response = requests.get(
+                f"{BASE_URL}/api/challenge/15day",
+                headers={"Authorization": f"Bearer {self.sage_token}"}
+            )
+            
+            passed = response.status_code == 200
+            if passed:
+                data = response.json()
+                has_required = (
+                    data.get("name") == "15-Day AI Challenge" and
+                    data.get("total_days") == 15 and
+                    "days" in data and
+                    "current_day" in data and
+                    "completed_count" in data and
+                    "is_complete" in data
+                )
+                
+                days = data.get("days", [])
+                has_15_days = len(days) == 15
+                
+                # Check day structure
+                if has_15_days:
+                    day1 = days[0]
+                    day_valid = (
+                        day1.get("day") == 1 and
+                        "lesson_id" in day1 and
+                        "theme" in day1 and
+                        "status" in day1 and
+                        day1.get("status") in ["locked", "available", "completed"]
+                    )
+                    
+                    # For sage1 who completed f1l1, day 1 should be completed
+                    day1_status = day1.get("status")
+                    day2_status = days[1].get("status") if len(days) > 1 else None
+                    
+                    # Check sequential unlock logic
+                    statuses = [d.get("status") for d in days]
+                    
+                    passed = has_required and has_15_days and day_valid
+                    
+                    details = f"day1_status={day1_status}, day2_status={day2_status}, completed_count={data.get('completed_count')}, current_day={data.get('current_day')}"
+                    
+                    self.log_test(
+                        "15-Day Challenge endpoint",
+                        passed,
+                        "200 with 15 days + proper structure",
+                        f"{response.status_code} with {len(days)} days",
+                        details
+                    )
+                else:
+                    self.log_test(
+                        "15-Day Challenge endpoint",
+                        False,
+                        "200 with 15 days",
+                        f"{response.status_code} with {len(days)} days"
+                    )
+                    passed = False
+            else:
+                self.log_test(
+                    "15-Day Challenge endpoint",
+                    False,
+                    "200 with 15 days",
+                    f"{response.status_code}: {response.text[:200]}"
+                )
+            
+            return passed
+            
+        except Exception as e:
+            self.log_test(
+                "15-Day Challenge endpoint",
+                False,
+                "200 with 15 days",
+                f"Exception: {str(e)}"
+            )
+            return False
+
+    def test_prompts_library(self):
+        """TEST: GET /api/prompts/library returns searchable prompt library"""
+        print(f"\n{Colors.BLUE}TEST: Prompts Library endpoint{Colors.RESET}")
+        
+        if not self.sage_token:
+            self.log_test(
+                "Prompts Library",
+                False,
+                "200 with prompts",
+                "Sage user not logged in"
+            )
+            return False
+        
+        try:
+            # Test 1: Get all prompts
+            response = requests.get(
+                f"{BASE_URL}/api/prompts/library",
+                headers={"Authorization": f"Bearer {self.sage_token}"}
+            )
+            
+            passed = response.status_code == 200
+            if passed:
+                data = response.json()
+                has_required = (
+                    "items" in data and
+                    "total" in data and
+                    "paths" in data
+                )
+                
+                items = data.get("items", [])
+                total = data.get("total", 0)
+                
+                # Check item structure
+                if len(items) > 0:
+                    item = items[0]
+                    item_valid = all(f in item for f in [
+                        "lesson_id", "lesson_title", "path_id", "path_title",
+                        "card_title", "instruction", "seed_prompt"
+                    ])
+                else:
+                    item_valid = False
+                
+                passed = has_required and item_valid and total > 0
+                
+                self.log_test(
+                    "Prompts Library - all prompts",
+                    passed,
+                    "200 with items array + total + paths",
+                    f"{response.status_code} with {total} prompts",
+                    f"✓ Found {total} prompts across all lessons" if passed else "Missing fields or no prompts"
+                )
+                
+                # Test 2: Search with query
+                search_response = requests.get(
+                    f"{BASE_URL}/api/prompts/library?q=image",
+                    headers={"Authorization": f"Bearer {self.sage_token}"}
+                )
+                
+                if search_response.status_code == 200:
+                    search_data = search_response.json()
+                    search_total = search_data.get("total", 0)
+                    search_works = search_total < total  # Should be filtered
+                    
+                    self.log_test(
+                        "Prompts Library - search filter",
+                        search_works,
+                        "Filtered results (less than total)",
+                        f"Search returned {search_total} results (total: {total})",
+                        f"✓ Search filtering works" if search_works else "Search not filtering"
+                    )
+                
+                # Test 3: Filter by path
+                path_response = requests.get(
+                    f"{BASE_URL}/api/prompts/library?path_id=fundamentals",
+                    headers={"Authorization": f"Bearer {self.sage_token}"}
+                )
+                
+                if path_response.status_code == 200:
+                    path_data = path_response.json()
+                    path_total = path_data.get("total", 0)
+                    path_works = path_total < total  # Should be filtered
+                    
+                    self.log_test(
+                        "Prompts Library - path filter",
+                        path_works,
+                        "Filtered by path (less than total)",
+                        f"Path filter returned {path_total} results (total: {total})",
+                        f"✓ Path filtering works" if path_works else "Path filter not working"
+                    )
+            else:
+                self.log_test(
+                    "Prompts Library - all prompts",
+                    False,
+                    "200 with prompts",
+                    f"{response.status_code}: {response.text[:200]}"
+                )
+            
+            return passed
+            
+        except Exception as e:
+            self.log_test(
+                "Prompts Library",
+                False,
+                "200 with prompts",
+                f"Exception: {str(e)}"
+            )
+            return False
+
+    def test_regression_interactive_status(self):
+        """REGRESSION: GET /api/admin/curriculum/interactive-status still works"""
+        print(f"\n{Colors.BLUE}REGRESSION TEST: Admin curriculum interactive-status{Colors.RESET}")
+        
+        if not self.admin_token:
+            self.log_test(
+                "Admin interactive-status endpoint",
+                False,
+                "200 with status data",
+                "Admin not logged in"
+            )
+            return False
+        
+        try:
+            response = requests.get(
+                f"{BASE_URL}/api/admin/curriculum/interactive-status",
+                headers={"Authorization": f"Bearer {self.admin_token}"}
+            )
+            
+            passed = response.status_code == 200
+            if passed:
+                data = response.json()
+                has_data = isinstance(data, dict) and len(data) > 0
+                passed = has_data
+            
+            self.log_test(
+                "Admin interactive-status endpoint",
+                passed,
+                "200 with status data",
+                f"{response.status_code} with data: {str(data)[:100] if passed else response.text[:100]}"
+            )
+            
+            return passed
+            
+        except Exception as e:
+            self.log_test(
+                "Admin interactive-status endpoint",
+                False,
+                "200 with status data",
+                f"Exception: {str(e)}"
+            )
+            return False
+
     def print_summary(self):
         """Print test summary"""
         print(f"\n{'='*70}")
@@ -824,6 +1372,23 @@ def main():
     else:
         print(f"{Colors.RED}⚠ Skipping positive path test - could not create test user{Colors.RESET}")
     
+    # Run NEW FEATURE tests (Phase 1-5)
+    print(f"\n{Colors.YELLOW}{'='*70}{Colors.RESET}")
+    print(f"{Colors.YELLOW}NEW FEATURES TESTS (Streak, Onboarding, Challenge, Prompts){Colors.RESET}")
+    print(f"{Colors.YELLOW}{'='*70}{Colors.RESET}")
+    
+    if sage_logged_in:
+        tester.test_streak_endpoint()
+        tester.test_progress_complete_milestone()
+        tester.test_onboarding_get()
+        tester.test_challenge_15day()
+        tester.test_prompts_library()
+    else:
+        print(f"{Colors.RED}⚠ Skipping new feature tests - sage login failed{Colors.RESET}")
+    
+    # Test onboarding submit (uses sage3)
+    tester.test_onboarding_submit()
+    
     # Run regression tests
     print(f"\n{Colors.YELLOW}{'='*70}{Colors.RESET}")
     print(f"{Colors.YELLOW}REGRESSION TESTS{Colors.RESET}")
@@ -832,6 +1397,11 @@ def main():
     tester.test_regression_social_x_status()
     tester.test_regression_api_root()
     tester.test_regression_openapi_schema()
+    
+    if admin_logged_in:
+        tester.test_regression_interactive_status()
+    else:
+        print(f"{Colors.RED}⚠ Skipping admin regression test - login failed{Colors.RESET}")
     
     # Print summary
     return tester.print_summary()

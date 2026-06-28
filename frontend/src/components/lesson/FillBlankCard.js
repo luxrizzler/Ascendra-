@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { ArrowRight, CheckCircle2, Edit3, XCircle } from "lucide-react";
 import { CardPlayButton } from "./CardPlayButton";
+import { celebrateCorrect, celebrateWrong } from "@/lib/celebrations";
 
 function _normalize(s) {
   return (s || "").toLowerCase().trim().replace(/[\.,!?;:"'`]/g, "").replace(/\s+/g, " ");
@@ -17,8 +18,8 @@ export function FillBlankCard({ card, idx, total, lessonTitle, onAdvance }) {
   const submit = () => {
     if (!val.trim()) return;
     const ok = accepted.has(_normalize(val));
-    if (ok) setStatus("correct");
-    else { setStatus("wrong"); setTries((t) => t + 1); }
+    if (ok) { setStatus("correct"); celebrateCorrect(); }
+    else { setStatus("wrong"); setTries((t) => t + 1); celebrateWrong(); }
   };
   const reveal = () => { setStatus("revealed"); setVal(card.answer); };
   const parts = (card.prompt || "").split("___");

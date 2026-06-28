@@ -7,6 +7,8 @@ import { ArrowLeft, ArrowRight, CheckCircle2, X, Zap, Trophy, Sparkles } from "l
 import { toast } from "sonner";
 import { CardRouter, isInteractive } from "@/components/lesson/CardRouter";
 import { LessonAudioBar } from "@/components/lesson/LessonAudioBar";
+import { StreakMilestoneModal } from "@/components/streak/StreakMilestoneModal";
+import { celebrateLessonComplete, celebrateStreakMilestone } from "@/lib/celebrations";
 import { tts } from "@/lib/tts";
 
 export default function LessonPlayer() {
@@ -22,6 +24,7 @@ export default function LessonPlayer() {
   const [showResult, setShowResult] = useState(false);
   const [completion, setCompletion] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  const [milestoneDays, setMilestoneDays] = useState(null);
 
   // Play-all mode: when ON, finishing TTS of a text card auto-advances to next card.
   const [playAll, setPlayAll] = useState(false);
@@ -63,6 +66,11 @@ export default function LessonPlayer() {
       const r = await api.post("/progress/complete", { lesson_id: lessonId });
       setCompletion(r);
       setIdx(total + 1);
+      celebrateLessonComplete();
+      if (r.streak_milestone) {
+        setMilestoneDays(r.streak_milestone);
+        setTimeout(celebrateStreakMilestone, 600);
+      }
     } catch (e) {
       toast.error(e.message || "Could not save progress");
     } finally {
@@ -255,6 +263,9 @@ export default function LessonPlayer() {
           </div>
         )}
       </div>
+
+      {/* Streak milestone modal — pops when user crosses 3/7/14/30/60/100-day */}
+      <StreakMilestoneModal open={!!milestoneDays} days={milestoneDays || 0} onClose={() => setMilestoneDays(null)} />
     </div>
   );
 }

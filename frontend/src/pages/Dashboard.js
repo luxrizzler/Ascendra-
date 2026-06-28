@@ -1,17 +1,20 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { api } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import Loader from "@/components/Loader";
 import TierBadge from "@/components/TierBadge";
-import { Flame, Sparkles, ArrowRight, Trophy, Layers, MessageSquare, BookOpen, ChevronRight } from "lucide-react";
+import { Flame, Sparkles, ArrowRight, Trophy, Layers, MessageSquare, BookOpen, ChevronRight, Library, Target } from "lucide-react";
+import { StreakCard } from "@/components/streak/StreakCard";
 
 export default function Dashboard() {
   const { user } = useAuth();
+  const nav = useNavigate();
   const [progress, setProgress] = useState(null);
   const [paths, setPaths] = useState([]);
   const [certs, setCerts] = useState([]);
   const [whatsNew, setWhatsNew] = useState([]);
+  const [plan, setPlan] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -20,15 +23,23 @@ export default function Dashboard() {
       api.get("/paths"),
       api.get("/certificates"),
       api.get("/whats-new?days=14&limit=6").catch(() => ({ items: [] })),
-    ]).then(([p, ps, c, wn]) => {
+      api.get("/onboarding/me").catch(() => ({ onboarded: false, plan: null })),
+    ]).then(([p, ps, c, wn, ob]) => {
+      // Auto-redirect new users to onboarding quiz
+      if (!ob.onboarded) {
+        nav("/onboarding", { replace: true });
+        return;
+      }
       setProgress(p);
       setPaths(ps.paths);
       setCerts(c.certificates);
       setWhatsNew(wn.items || []);
+      setPlan(ob.plan);
     }).finally(() => setLoading(false));
-  }, []);
+  }, [nav]);
 
   if (loading) return <Loader />;
+  if (!progress) return <Loader label="Redirecting…" />;
 
   const recId = user?.recommended_path_id;
   const recommended = paths.find((p) => p.id === recId) || paths[0];
@@ -51,12 +62,55 @@ export default function Dashboard() {
         {user && <TierBadge tier={user.tier} />}
       </div>
 
+      {/* Personalized plan hero (from onboarding quiz) */}
+      {plan && plan.first_lesson_id && (
+        <div className="asc-card p-6 mt-2 mb-6 relative overflow-hidden" data-testid="personalized-plan-hero" style={{ background: "linear-gradient(135deg, rgba(255,176,0,0.10), rgba(124,58,237,0.06))", borderColor: "rgba(255,176,0,0.35)" }}>
+          <div className="flex items-start justify-between gap-4 flex-wrap">
+            <div className="flex-1 min-w-[260px]">
+              <div className="flex items-center gap-2"><Sparkles size={14} color="#FFB000" /><span className="text-[10px] tracking-widest font-black" style={{ color: "#FFB000" }}>YOUR PERSONALIZED PLAN</span></div>
+              <h2 className="asc-h2 text-2xl mt-1" data-testid="plan-headline">{plan.headline}</h2>
+              <p className="text-[var(--asc-text-dim)] mt-2 leading-relaxed text-sm">{plan.rationale}</p>
+            </div>
+            <Link to={`/lessons/${plan.first_lesson_id}`} data-testid="plan-continue-btn" className="asc-btn-primary shrink-0">
+              Continue learning <ArrowRight size={14} />
+            </Link>
+          </div>
+        </div>
+      )}
+
       {/* Stats */}
       <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard icon={Flame} label="Streak" value={`${progress.streak_days} d`} hint="Show up daily." color="#FF6B35" />
         <StatCard icon={Sparkles} label="Total XP" value={progress.total_xp.toLocaleString()} hint={`Level ${progress.level}`} color="#FFB000" />
         <StatCard icon={Trophy} label="Certificates" value={certs.length} hint="Completed paths." color="#7C3AED" />
         <StatCard icon={Layers} label="Lessons done" value={progress.completed_lesson_ids.length} hint="Keep climbing." color="#34D399" />
+      </div>
+
+      {/* Rich streak card with calendar + daily goal + milestones */}
+      <div className="mt-4">
+        <StreakCard />
+      </div>
+
+      {/* Quick links: Challenge + Prompt Library */}
+      <div className="grid sm:grid-cols-2 gap-4 mt-4">
+        <Link to="/challenge" data-testid="dashboard-challenge-link" className="asc-card p-5 flex items-center gap-4 hover:scale-[1.005] transition-transform" style={{ background: "linear-gradient(135deg, rgba(255,107,53,0.10), rgba(255,176,0,0.04))" }}>
+          <div className="w-12 h-12 rounded-2xl grid place-items-center shrink-0" style={{ background: "rgba(255,107,53,0.20)" }}><Target size={22} color="#FF6B35" /></div>
+          <div className="flex-1">
+            <div className="text-[10px] tracking-widest font-black" style={{ color: "#FF6B35" }}>FLAGSHIP CHALLENGE</div>
+            <div className="font-bold text-base mt-0.5">15-Day AI Challenge</div>
+            <div className="text-xs text-[var(--asc-text-muted)]">One lesson a day for 15 days.</div>
+          </div>
+          <ChevronRight size={14} className="text-[var(--asc-text-muted)]" />
+        </Link>
+        <Link to="/prompts" data-testid="dashboard-prompts-link" className="asc-card p-5 flex items-center gap-4 hover:scale-[1.005] transition-transform" style={{ background: "linear-gradient(135deg, rgba(124,58,237,0.10), rgba(191,180,255,0.04))" }}>
+          <div className="w-12 h-12 rounded-2xl grid place-items-center shrink-0" style={{ background: "rgba(124,58,237,0.20)" }}><Library size={22} color="#BFB4FF" /></div>
+          <div className="flex-1">
+            <div className="text-[10px] tracking-widest font-black" style={{ color: "#BFB4FF" }}>PROMPT LIBRARY</div>
+            <div className="font-bold text-base mt-0.5">Every playground prompt</div>
+            <div className="text-xs text-[var(--asc-text-muted)]">Search & copy across all lessons.</div>
+          </div>
+          <ChevronRight size={14} className="text-[var(--asc-text-muted)]" />
+        </Link>
       </div>
 
       {/* Level progress */}

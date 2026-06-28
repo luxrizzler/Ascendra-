@@ -1,22 +1,30 @@
 [
   {
-    "content": "Build interactive_generator.py (Claude-powered card generator)",
+    "content": "Phase 1: Streak system - complete",
     "status": "completed"
   },
   {
-    "content": "Wire auto-generation into startup background task + admin manual trigger",
+    "content": "Phase 2: Onboarding quiz - complete",
     "status": "completed"
   },
   {
-    "content": "Run generator on all 39 lessons in preview — 100% coverage, 0 failures",
+    "content": "Phase 3: 15-Day AI Challenge - complete",
     "status": "completed"
   },
   {
-    "content": "testing_agent verified 100% (105/105 backend, all frontend flows)",
+    "content": "Phase 4: Sound effects + confetti - complete",
     "status": "completed"
   },
   {
-    "content": "User: redeploy to push to production (auto-migration runs on boot)",
+    "content": "Phase 5: Prompt Library - complete",
+    "status": "completed"
+  },
+  {
+    "content": "testing_agent verification (all 5 phases)",
     "status": "in_progress"
+  },
+  {
+    "content": "User: redeploy",
+    "status": "pending"
   }
 ]

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { ArrowRight, CheckCircle2, Sparkles, XCircle } from "lucide-react";
 import { CardPlayButton } from "./CardPlayButton";
+import { celebrateCorrect, celebrateWrong } from "@/lib/celebrations";
 
 export function KnowledgeCheckCard({ card, idx, total, lessonTitle, onAdvance, autoplay }) {
   const [pick, setPick] = useState(null);
@@ -9,6 +10,7 @@ export function KnowledgeCheckCard({ card, idx, total, lessonTitle, onAdvance, a
   const submit = () => {
     if (pick === null) return;
     setRevealed(true);
+    if (pick === card.answer_index) celebrateCorrect(); else celebrateWrong();
   };
   return (
     <div className="asc-card p-8 sm:p-10 min-h-[340px]" data-testid="card-knowledge-check">

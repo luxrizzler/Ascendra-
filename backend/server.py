@@ -14,7 +14,7 @@ import uuid
 import hashlib
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import List, Optional, Literal
+from typing import List, Optional, Literal, Dict
 
 import bcrypt
 import httpx
@@ -167,6 +167,7 @@ class CompleteLessonOut(BaseModel):
     awarded_xp: int = 0
     newly_completed_paths: List[str] = []
     certificates_issued: List[str] = []
+    streak_milestone: Optional[int] = None  # set if user hit 3/7/14/30/60/100 day streak
 
 class QuizAnswers(BaseModel):
     goal: Optional[str] = None
@@ -543,6 +544,7 @@ async def complete_lesson(body: CompleteLessonIn, user=Depends(current_user)):
         awarded_xp = lesson.get("xp", 50)
 
     last = p.get("last_active_date")
+    streak_milestone = None
     if last != today:
         yesterday = (datetime.now(timezone.utc).date() - timedelta(days=1)).isoformat()
         if last == yesterday:
@@ -550,6 +552,20 @@ async def complete_lesson(body: CompleteLessonIn, user=Depends(current_user)):
         else:
             p["streak_days"] = 1
         p["last_active_date"] = today
+        # Track longest streak
+        if p["streak_days"] > p.get("longest_streak", 0):
+            p["longest_streak"] = p["streak_days"]
+        # Append today to activity calendar (kept as sorted, deduped ISO date list, last 365 days)
+        cal = p.get("activity_calendar") or []
+        if today not in cal:
+            cal.append(today)
+        # Trim to last 365 entries
+        if len(cal) > 365:
+            cal = sorted(cal)[-365:]
+        p["activity_calendar"] = cal
+        # Streak milestone detection
+        if p["streak_days"] in (3, 7, 14, 30, 60, 100):
+            streak_milestone = p["streak_days"]
 
     await progress_col.update_one(
         {"user_id": user["id"]},
@@ -558,6 +574,8 @@ async def complete_lesson(body: CompleteLessonIn, user=Depends(current_user)):
             "total_xp": p["total_xp"],
             "streak_days": p["streak_days"],
             "last_active_date": p["last_active_date"],
+            "longest_streak": p.get("longest_streak", p["streak_days"]),
+            "activity_calendar": p.get("activity_calendar", [today]),
         }},
     )
 
@@ -574,7 +592,370 @@ async def complete_lesson(body: CompleteLessonIn, user=Depends(current_user)):
         awarded_xp=awarded_xp,
         newly_completed_paths=list(new_completed_paths),
         certificates_issued=issued_ids,
+        streak_milestone=streak_milestone,
     )
+
+
+# ─── Streak / Daily goal ─────────────────────────────────────────────────
+class StreakOut(BaseModel):
+    current_streak: int
+    longest_streak: int
+    last_active_date: Optional[str]
+    today: str
+    activity_calendar: List[str]   # ISO dates user completed a lesson on
+    daily_goal_target: int
+    daily_goal_done: int
+    daily_goal_complete: bool
+    next_milestone: Optional[int]
+    days_to_next_milestone: Optional[int]
+
+
+MILESTONES = [3, 7, 14, 30, 60, 100, 365]
+
+
+@api.get("/streak/me", response_model=StreakOut)
+async def get_my_streak(user=Depends(current_user)):
+    p = await get_progress(user["id"])
+    today_iso = datetime.now(timezone.utc).date().isoformat()
+    yesterday_iso = (datetime.now(timezone.utc).date() - timedelta(days=1)).isoformat()
+    last = p.get("last_active_date")
+    # If the user hasn't completed a lesson today AND not yesterday, their streak should display
+    # as broken (the *stored* value is updated lazily on next completion, but we don't want to
+    # show a stale current_streak when it's already been more than a day since their last activity).
+    raw_current = int(p.get("streak_days") or 0)
+    if last and last not in (today_iso, yesterday_iso):
+        current = 0
+    else:
+        current = raw_current
+    cal = p.get("activity_calendar") or []
+    # Daily goal: 1 lesson per day for free tier, can be customized later
+    target = int(p.get("daily_goal_target") or 1)
+    done_today = 1 if today_iso in cal else 0
+    # Next milestone calculation
+    nm = next((m for m in MILESTONES if m > current), None)
+    dtnm = (nm - current) if nm else None
+    return StreakOut(
+        current_streak=current,
+        longest_streak=int(p.get("longest_streak") or current),
+        last_active_date=last,
+        today=today_iso,
+        activity_calendar=sorted(cal)[-60:],   # last 60 days for UI
+        daily_goal_target=target,
+        daily_goal_done=done_today,
+        daily_goal_complete=(done_today >= target),
+        next_milestone=nm,
+        days_to_next_milestone=dtnm,
+    )
+
+
+# ─── Onboarding Quiz → AI-personalized Learning Plan ──────────────────────
+class OnboardingIn(BaseModel):
+    motivation: str        # career, side_hustle, productivity, business, creator, curiosity
+    experience: str        # never, beginner, some, intermediate, expert
+    tools_used: List[str] = []  # chatgpt, claude, gemini, midjourney, perplexity, nano_banana, none
+    goals: List[str] = []  # build_project, automate, create_content, promotion, fundamentals
+    time_per_day: str      # 5, 15, 30, 60
+    learning_style: str    # reading, audio, hands_on, all
+
+
+class OnboardingPlan(BaseModel):
+    headline: str
+    rationale: str
+    recommended_path_ids: List[str]
+    first_lesson_id: Optional[str] = None
+    daily_goal_target: int = 1
+    generated_at: str
+
+
+class OnboardingOut(BaseModel):
+    plan: Optional[OnboardingPlan] = None
+    onboarded: bool = False
+    answers: Optional[dict] = None
+
+
+_ONBOARD_SYSTEM = """You are the head of curriculum at Ascendra Academy.
+A new learner just finished an onboarding quiz. Your job is to recommend a personalized learning plan from the EXISTING curriculum.
+
+You will be given:
+- The learner's quiz answers (motivation, experience, tools used, goals, time/day, learning style)
+- A list of available paths (each with id, title, description, and difficulty)
+
+You must respond with a JSON object exactly in this shape — no markdown fences, no commentary:
+{
+  "headline": "Short punchy 5-8 word personalized headline (e.g., 'Your AI side-hustle launchpad')",
+  "rationale": "2-3 sentences explaining WHY these paths fit this learner, written directly to them (use 'you').",
+  "recommended_path_ids": ["<path_id_1>", "<path_id_2>", "<path_id_3>"],
+  "first_lesson_id": "<the very first lesson ID they should start with — usually the first lesson of the first recommended path>"
+}
+
+Rules:
+- recommended_path_ids: 2-4 path IDs ranked best-fit first. Must be IDs from the provided list.
+- first_lesson_id: should be an ID like 'f1l1', 'b1l1' (path + module + lesson) — pick the entry-point of recommended_path_ids[0].
+- Adapt difficulty to experience level (beginners → fundamentals first).
+- If they checked 'fundamentals' as a goal OR have 'never'/'beginner' experience, ALWAYS include the fundamentals path first.
+- Keep rationale specific to their answers (e.g., 'Since you want to build a side hustle in 15 min/day, ...')
+"""
+
+
+async def _generate_onboarding_plan(answers: dict) -> Optional[OnboardingPlan]:
+    """Call Claude to generate a personalized plan. Returns None on failure."""
+    paths_docs = await db["curriculum_paths"].find({}, {"_id": 0, "id": 1, "title": 1, "description": 1, "difficulty": 1, "tier": 1}).to_list(50)
+    if not paths_docs:
+        return None
+    paths_text = "\n".join([
+        f"- {p['id']} | {p.get('title','?')} | {p.get('description','')[:120]} | difficulty={p.get('difficulty','?')} | tier={p.get('tier','free')}"
+        for p in paths_docs
+    ])
+    user_msg = (
+        f"LEARNER QUIZ ANSWERS:\n"
+        f"  Motivation: {answers.get('motivation')}\n"
+        f"  Experience: {answers.get('experience')}\n"
+        f"  Tools used: {', '.join(answers.get('tools_used', [])) or 'none'}\n"
+        f"  Goals: {', '.join(answers.get('goals', [])) or 'general'}\n"
+        f"  Time per day: {answers.get('time_per_day')} minutes\n"
+        f"  Learning style: {answers.get('learning_style')}\n\n"
+        f"AVAILABLE PATHS:\n{paths_text}\n\n"
+        f"Generate the JSON plan now."
+    )
+    try:
+        chat = LlmChat(
+            api_key=EMERGENT_LLM_KEY,
+            session_id=f"onboarding-{uuid.uuid4().hex[:8]}",
+            system_message=_ONBOARD_SYSTEM,
+        ).with_model("anthropic", "claude-sonnet-4-5-20250929")
+        reply = await chat.send_message(UserMessage(text=user_msg))
+    except Exception as e:
+        log.warning(f"onboarding LLM call failed: {e}")
+        return None
+    # Extract JSON
+    import re as _re, json as _json
+    t = (reply or "").strip()
+    t = _re.sub(r"^```(?:json)?\s*", "", t)
+    t = _re.sub(r"\s*```$", "", t)
+    try:
+        data = _json.loads(t)
+    except Exception:
+        # Fall back: find first {...} block
+        start = t.find("{")
+        if start < 0:
+            return None
+        depth = 0
+        end = -1
+        for i, c in enumerate(t[start:], start=start):
+            if c == "{":
+                depth += 1
+            elif c == "}":
+                depth -= 1
+                if depth == 0:
+                    end = i; break
+        if end < 0:
+            return None
+        try:
+            data = _json.loads(t[start:end + 1])
+        except Exception:
+            return None
+    # Validate IDs against actual paths
+    valid_ids = {p["id"] for p in paths_docs}
+    rec_ids = [pid for pid in (data.get("recommended_path_ids") or []) if pid in valid_ids]
+    if not rec_ids:
+        return None
+    # Pick a sensible daily_goal_target from time_per_day
+    try:
+        mins = int(answers.get("time_per_day", "5"))
+    except Exception:
+        mins = 5
+    daily_goal = 1 if mins <= 5 else (2 if mins <= 15 else 3)
+    return OnboardingPlan(
+        headline=str(data.get("headline", "Your personalized path"))[:120],
+        rationale=str(data.get("rationale", ""))[:1000],
+        recommended_path_ids=rec_ids[:4],
+        first_lesson_id=str(data.get("first_lesson_id") or "") or None,
+        daily_goal_target=daily_goal,
+        generated_at=datetime.now(timezone.utc).isoformat(),
+    )
+
+
+@api.post("/onboarding/submit", response_model=OnboardingOut)
+async def submit_onboarding(body: OnboardingIn, user=Depends(current_user)):
+    answers = body.model_dump()
+    plan = await _generate_onboarding_plan(answers)
+    update = {
+        "$set": {
+            "onboarding_answers": answers,
+            "onboarded_at": datetime.now(timezone.utc).isoformat(),
+        }
+    }
+    if plan:
+        update["$set"]["onboarding_plan"] = plan.model_dump()
+    await users_col.update_one({"id": user["id"]}, update)
+    # Update daily goal too
+    if plan:
+        await progress_col.update_one(
+            {"user_id": user["id"]},
+            {"$set": {"daily_goal_target": plan.daily_goal_target}},
+        )
+    return OnboardingOut(plan=plan, onboarded=True, answers=answers)
+
+
+@api.get("/onboarding/me", response_model=OnboardingOut)
+async def get_onboarding(user=Depends(current_user)):
+    u = await users_col.find_one({"id": user["id"]}, {"_id": 0, "onboarding_plan": 1, "onboarded_at": 1, "onboarding_answers": 1})
+    if not u:
+        return OnboardingOut(onboarded=False)
+    plan = u.get("onboarding_plan")
+    return OnboardingOut(
+        plan=OnboardingPlan(**plan) if plan else None,
+        onboarded=bool(u.get("onboarded_at")),
+        answers=u.get("onboarding_answers"),
+    )
+
+
+# ─── 15-Day AI Challenge ──────────────────────────────────────────────────
+# A hand-curated sequence of 15 lessons spanning fundamentals → builder → prod
+# Each "day" unlocks once the prior day is complete.
+CHALLENGE_15_LESSONS: List[Dict[str, str]] = [
+    {"day": 1,  "lesson_id": "f1l1", "theme": "AI 101: What's actually happening"},
+    {"day": 2,  "lesson_id": "f1l2", "theme": "Choosing your AI tool"},
+    {"day": 3,  "lesson_id": "f1l3", "theme": "Talking to AI: the prompt"},
+    {"day": 4,  "lesson_id": "f2l1", "theme": "Prompting principles"},
+    {"day": 5,  "lesson_id": "f2l2", "theme": "Iteration & refinement"},
+    {"day": 6,  "lesson_id": "f2l3", "theme": "Tools for thought"},
+    {"day": 7,  "lesson_id": "f3l1", "theme": "Where AI fails (and why)"},
+    {"day": 8,  "lesson_id": "f3l2", "theme": "Hallucinations & fact-checking"},
+    {"day": 9,  "lesson_id": "p1l1", "theme": "5 daily AI moves"},
+    {"day": 10, "lesson_id": "p1l2", "theme": "Email & calendar superpowers"},
+    {"day": 11, "lesson_id": "p2l1", "theme": "Workflow automation basics"},
+    {"day": 12, "lesson_id": "c1l1", "theme": "AI for creative work"},
+    {"day": 13, "lesson_id": "c2l1", "theme": "Image generation mastery"},
+    {"day": 14, "lesson_id": "b1l1", "theme": "The AI opportunity radar"},
+    {"day": 15, "lesson_id": "b1l2", "theme": "Build your first AI workflow"},
+]
+
+
+class ChallengeDay(BaseModel):
+    day: int
+    lesson_id: str
+    theme: str
+    title: Optional[str] = None
+    duration_min: Optional[int] = None
+    xp: Optional[int] = None
+    status: str          # "locked", "available", "completed"
+
+
+class ChallengeOut(BaseModel):
+    name: str = "15-Day AI Challenge"
+    total_days: int = 15
+    days: List[ChallengeDay]
+    current_day: int          # 1..15 — the next day they should work on
+    completed_count: int
+    is_complete: bool
+
+
+@api.get("/challenge/15day", response_model=ChallengeOut)
+async def get_15day_challenge(user=Depends(current_user)):
+    p = await get_progress(user["id"])
+    done_ids = set(p.get("completed_lesson_ids", []))
+
+    # Resolve lesson metadata in batch (title, duration, xp) for the 15 lessons
+    lesson_ids = [d["lesson_id"] for d in CHALLENGE_15_LESSONS]
+    meta_map: Dict[str, dict] = {}
+    docs = await db["curriculum_paths"].find({"modules.lessons.id": {"$in": lesson_ids}}, {"_id": 0, "modules": 1}).to_list(50)
+    for path in docs:
+        for m in path.get("modules", []):
+            for lsn in m.get("lessons", []):
+                if lsn.get("id") in lesson_ids:
+                    meta_map[lsn["id"]] = {
+                        "title": lsn.get("title"),
+                        "duration_min": lsn.get("duration_min"),
+                        "xp": lsn.get("xp"),
+                    }
+
+    days_out: List[ChallengeDay] = []
+    completed = 0
+    prev_done = True   # Day 1 starts available
+    for entry in CHALLENGE_15_LESSONS:
+        lid = entry["lesson_id"]
+        meta = meta_map.get(lid, {})
+        is_done = lid in done_ids
+        if is_done:
+            status = "completed"; completed += 1
+        elif prev_done:
+            status = "available"
+        else:
+            status = "locked"
+        days_out.append(ChallengeDay(
+            day=entry["day"],
+            lesson_id=lid,
+            theme=entry["theme"],
+            title=meta.get("title"),
+            duration_min=meta.get("duration_min"),
+            xp=meta.get("xp"),
+            status=status,
+        ))
+        prev_done = is_done
+
+    # current_day = first non-completed day
+    current_day = next((d.day for d in days_out if d.status != "completed"), 15)
+    return ChallengeOut(
+        days=days_out,
+        current_day=current_day,
+        completed_count=completed,
+        is_complete=completed >= 15,
+    )
+
+
+# ─── Prompt Library (cross-lesson) ────────────────────────────────────────
+class PromptLibraryItem(BaseModel):
+    lesson_id: str
+    lesson_title: str
+    path_id: str
+    path_title: str
+    card_title: str
+    instruction: str
+    seed_prompt: str
+
+
+@api.get("/prompts/library")
+async def prompts_library(q: Optional[str] = None, path_id: Optional[str] = None,
+                          limit: int = 200, user=Depends(current_user)):
+    """Returns every `playground` card seed prompt across all lessons,
+    searchable by free-text query (matches title, instruction, or prompt body)
+    and optionally filterable by path_id.
+    """
+    items: List[PromptLibraryItem] = []
+    paths = await db["curriculum_paths"].find({}, {"_id": 0}).to_list(200)
+    needle = (q or "").lower().strip()
+    for p in paths:
+        if path_id and p.get("id") != path_id:
+            continue
+        for m in p.get("modules", []):
+            for lsn in m.get("lessons", []):
+                for card in lsn.get("cards", []):
+                    if card.get("kind") != "playground":
+                        continue
+                    item = PromptLibraryItem(
+                        lesson_id=lsn.get("id", ""),
+                        lesson_title=lsn.get("title", ""),
+                        path_id=p.get("id", ""),
+                        path_title=p.get("title", ""),
+                        card_title=card.get("title", ""),
+                        instruction=card.get("instruction", ""),
+                        seed_prompt=card.get("seed_prompt", ""),
+                    )
+                    if needle:
+                        blob = (item.card_title + " " + item.instruction + " " + item.seed_prompt + " " + item.lesson_title).lower()
+                        if needle not in blob:
+                            continue
+                    items.append(item)
+                    if len(items) >= limit:
+                        break
+    # Compose a list of unique path filter options too
+    path_options = sorted({(i.path_id, i.path_title) for i in items})
+    return {
+        "items": [i.model_dump() for i in items],
+        "total": len(items),
+        "paths": [{"id": pid, "title": ptitle} for pid, ptitle in path_options],
+    }
 
 # ─── Quiz / Recommendation ──────────────────────────────────────────────────
 @api.put("/auth/me/quiz")
