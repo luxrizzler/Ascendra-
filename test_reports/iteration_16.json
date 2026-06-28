@@ -1,0 +1,55 @@
+{
+  "summary": "Completed comprehensive backend testing of admin dashboard filtering bug fix. All 28 tests passed with 100% success rate. The implementation correctly excludes internal test/admin accounts from admin metrics while allowing override with ?include_internal=true parameter.",
+  "backend_issues": {
+    "critical_bugs": [],
+    "flaky_endpoints": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "passed_tests": [
+    "GET /api/admin/stats - filters.excludes_internal_accounts is true",
+    "GET /api/admin/stats - filters.excluded_count = 24 (all test accounts identified)",
+    "GET /api/admin/stats - users.total = 0 (correctly excludes all test accounts)",
+    "GET /api/admin/stats - users.by_tier all zeros (no real users in DB)",
+    "GET /api/admin/stats - revenue.total_usd = 0.0 (webhook_test_* accounts excluded)",
+    "GET /api/admin/stats - engagement metrics exclude test accounts (0 lessons, 0 certs, 0 DAU/WAU)",
+    "GET /api/admin/stats - traffic data still present (pageviews not filtered)",
+    "GET /api/admin/users - returns 200 and excludes internal by default (0 users)",
+    "GET /api/admin/users - no test emails in filtered results",
+    "GET /api/admin/users?include_internal=true - returns 200 and includes all 24 accounts",
+    "GET /api/admin/users?include_internal=true - test emails present (sage1-6, admin, e2e, etc.)",
+    "GET /api/admin/subscribers - returns 200 and excludes internal (0 subscribers)",
+    "GET /api/admin/subscribers - mrr_usd = 0.0 (webhook_test_* excluded)",
+    "GET /api/admin/subscribers - no webhook_test emails in filtered results",
+    "GET /api/admin/subscribers?include_internal=true - returns 200",
+    "GET /api/admin/subscribers?include_internal=true - includes 4 webhook_test_* accounts",
+    "GET /api/admin/sales - returns 200 and excludes test accounts (0 sales)",
+    "GET /api/admin/sales - no test account emails in sales results",
+    "GET /api/admin/auto/settings - returns 200",
+    "GET /api/admin/auto/settings - next_runs contains 'interactive_sweep' key",
+    "GET /api/admin/auto/settings - interactive_sweep has future ISO timestamp (2026-06-28T10:15:00+00:00)",
+    "GET /api/admin/traffic - still works (regression check)",
+    "GET /api/paths - still works (regression check)",
+    "GET /api/whats-new - still works with authentication (regression check)",
+    "POST /api/auth/login - admin login works",
+    "POST /api/auth/login - sage1 test account can still login (filtered from stats but auth works)",
+    "TEST_EMAIL_REGEX correctly matches all internal patterns",
+    "_real_users_filter() helper correctly excludes test accounts"
+  ],
+  "test_report_links": [
+    "/app/backend_admin_filtering_test.py"
+  ],
+  "action_item_for_main_agent": "",
+  "updated_files": [
+    "/app/backend_admin_filtering_test.py"
+  ],
+  "success_percentage": {
+    "backend": "100% (28/28 tests passed)",
+    "frontend": "N/A (backend-only testing per requirements)"
+  },
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_test_itself": false
+}

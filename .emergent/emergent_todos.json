@@ -1,30 +1,22 @@
 [
   {
-    "content": "Phase 1: Streak system - complete ✓",
+    "content": "Add TEST_EMAIL_REGEX constant + helper functions (_real_users_filter, _get_excluded_user_ids) to server.py",
     "status": "completed"
   },
   {
-    "content": "Phase 2: Onboarding quiz - complete ✓",
+    "content": "Rewrite /api/admin/stats to apply exclusion filter on users_col, sessions_col, progress_col",
     "status": "completed"
   },
   {
-    "content": "Phase 3: 15-Day AI Challenge - complete ✓",
+    "content": "Apply default exclusion to /api/admin/users, /api/admin/subscribers, /api/admin/sales",
     "status": "completed"
   },
   {
-    "content": "Phase 4: Sound + confetti celebrations - complete ✓",
+    "content": "Restart backend and verify interactive_sweep cron is registered via /api/admin/auto/settings",
     "status": "completed"
   },
   {
-    "content": "Phase 5: Cross-lesson Prompt Library - complete ✓",
-    "status": "completed"
-  },
-  {
-    "content": "testing_agent verified 100% frontend, 19/21 backend (the 2 'misses' are deprecated endpoints, not bugs)",
-    "status": "completed"
-  },
-  {
-    "content": "User: REDEPLOY — production auto-migrates interactive cards + ships all 5 Coursiv phases",
+    "content": "Run backend testing_agent to verify all filters work + free tier still counted",
     "status": "in_progress"
   }
 ]

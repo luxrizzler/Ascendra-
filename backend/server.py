@@ -70,6 +70,31 @@ EMERGENT_LLM_KEY = os.environ.get("EMERGENT_LLM_KEY", "")
 STRIPE_API_KEY = os.environ.get("STRIPE_API_KEY", "sk_test_emergent")
 STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
 
+# ─── Internal account exclusion (admin analytics) ───────────────────────────
+# Admin dashboard metrics must reflect REAL customers + REAL leads only.
+# Excluded from /api/admin/stats, /admin/users (default), /admin/sales,
+# /admin/subscribers:
+#   - Internal seed accounts: sage1@…, sage2@…, …, sage9@ascendraacademy.com
+#   - Admin operator accounts: admin@ascendraacademy.com (and any is_admin=True)
+#   - Automated test artifacts:
+#       • webhook_test_*@test.ascendra.com (Stripe webhook QA — appears as fake paid subs)
+#       • Any address @test.ascendra.com (whole QA subdomain)
+#       • e2e_*@ascendraacademy.com  (E2E automation runs)
+#       • smoke_*@ascendraacademy.com  (smoke tests)
+#       • final_*@ascendraacademy.com  (release-gate tests)
+# Free-tier REAL users (real emails) ARE still counted — they are marketing
+# leads we convert via lifecycle emails.
+TEST_EMAIL_REGEX = (
+    r"^(?:"
+    r"sage[0-9]+|"                       # sage1@... sage9@... (internal seeds)
+    r"admin|"                             # admin@... (admin operator)
+    r"e2e_[0-9a-z]+|"                    # e2e_*@... (automated end-to-end tests)
+    r"smoke_[0-9a-z]+|"                  # smoke_*@... (smoke tests)
+    r"final_[0-9a-z]+"                   # final_*@... (release-gate tests)
+    r")@ascendraacademy\.com$"
+    r"|.+@test\.ascendra\.com$"          # entire QA subdomain (e.g. webhook_test_*)
+)
+
 client = AsyncIOMotorClient(MONGO_URL)
 db = client[DB_NAME]
 users_col = db["users"]
@@ -2307,6 +2332,49 @@ def _serialize_user_admin(u: dict) -> dict:
     }
 
 
+def _real_users_filter() -> dict:
+    """MongoDB filter that excludes internal test/admin accounts from analytics.
+
+    Excluded:
+      - Internal seed/test accounts (e.g. sage1@ascendraacademy.com)
+      - Admin operator accounts (e.g. admin@ascendraacademy.com, any is_admin=True)
+
+    NOTE: Free-tier real customers are NOT excluded — they are marketing leads
+    that contribute to the "leads" tier breakdown and conversion funnel math.
+    """
+    return {
+        "email": {"$not": {"$regex": TEST_EMAIL_REGEX, "$options": "i"}},
+        "is_admin": {"$ne": True},
+    }
+
+
+async def _get_excluded_user_ids() -> list:
+    """Return the list of user_ids belonging to internal/test/admin accounts.
+
+    Used to filter joined collections (payment_sessions, progress, certificates,
+    etc.) since those store user_id but not email.
+    """
+    cur = users_col.find(
+        {"$or": [
+            {"email": {"$regex": TEST_EMAIL_REGEX, "$options": "i"}},
+            {"is_admin": True},
+        ]},
+        {"_id": 0, "id": 1},
+    )
+    docs = await cur.to_list(1000)
+    return [d["id"] for d in docs if d.get("id")]
+
+
+def _and_filters(*filters: dict) -> dict:
+    """Combine two MongoDB filter dicts into one. Skips empty filters."""
+    parts = [f for f in filters if f]
+    if not parts:
+        return {}
+    if len(parts) == 1:
+        return parts[0]
+    return {"$and": parts}
+
+
 @api.get("/admin/stats")
 async def admin_stats(_admin=Depends(require_admin)):
     now = datetime.now(timezone.utc)
@@ -2314,17 +2382,32 @@ async def admin_stats(_admin=Depends(require_admin)):
     week_ago = now - timedelta(days=7)
     day_ago = now - timedelta(days=1)
 
-    user_count = await users_col.count_documents({})
+    # --- Exclusion filters: keep real customers + real leads only ----------
+    # Admin/test seed accounts must NOT inflate metrics. Free-tier real users
+    # ARE included (they are marketing leads).
+    real_users = _real_users_filter()
+    excluded_ids = await _get_excluded_user_ids()
+    not_excluded_user_id = {"user_id": {"$nin": excluded_ids}} if excluded_ids else {}
+
+    user_count = await users_col.count_documents(real_users)
     tier_breakdown = {}
     for tier in ["free", "ascender", "pathfinder", "sage"]:
-        tier_breakdown[tier] = await users_col.count_documents({"tier": tier})
+        tier_breakdown[tier] = await users_col.count_documents(
+            _and_filters(real_users, {"tier": tier})
+        )
     paid_count = user_count - tier_breakdown.get("free", 0)
     conversion = (paid_count / user_count * 100) if user_count else 0
-    signups_30d = await users_col.count_documents({"created_at": {"$gte": month_ago}})
+    signups_30d = await users_col.count_documents(
+        _and_filters(real_users, {"created_at": {"$gte": month_ago}})
+    )
 
     # Aggregate revenue server-side in one query (was: load up to 10,000 docs into memory)
+    # Exclude payment_sessions belonging to internal/admin/test user_ids.
+    _rev_match: dict = {"status": "paid"}
+    if excluded_ids:
+        _rev_match["user_id"] = {"$nin": excluded_ids}
     _rev_pipeline = [
-        {"$match": {"status": "paid"}},
+        {"$match": _rev_match},
         {"$addFields": {
             "amt": {"$cond": [
                 {"$and": [
@@ -2360,21 +2443,35 @@ async def admin_stats(_admin=Depends(require_admin)):
     monthly_rev = float(_rev.get("monthly_rev", 0.0) or 0.0)
     annual_rev = float(_rev.get("annual_rev", 0.0) or 0.0)
     arr_estimate = monthly_rev * 12 + annual_rev
-    paid_sessions_count = await sessions_col.count_documents({"status": "paid"})
+    paid_sessions_count = await sessions_col.count_documents(_rev_match)
 
+    # Engagement metrics — exclude internal/admin/test users.
     lessons_completed = 0
-    _lc_pipeline = [
+    _lc_pipeline = []
+    if excluded_ids:
+        _lc_pipeline.append({"$match": {"user_id": {"$nin": excluded_ids}}})
+    _lc_pipeline += [
         {"$project": {"_id": 0, "count": {"$size": {"$ifNull": ["$completed_lesson_ids", []]}}}},
         {"$group": {"_id": None, "total": {"$sum": "$count"}}},
     ]
     _lc_doc = await progress_col.aggregate(_lc_pipeline).to_list(1)
     lessons_completed = _lc_doc[0]["total"] if _lc_doc else 0
-    certs_issued = await certs_col.count_documents({})
-    dau = await progress_col.count_documents({"last_active_date": now.date().isoformat()})
-    wau = await progress_col.count_documents({
-        "last_active_date": {"$gte": (now - timedelta(days=7)).date().isoformat()}
-    })
 
+    # Certificates issued — also exclude internal accounts.
+    certs_issued = await certs_col.count_documents(not_excluded_user_id)
+
+    # DAU / WAU — exclude internal accounts.
+    dau = await progress_col.count_documents(_and_filters(
+        not_excluded_user_id,
+        {"last_active_date": now.date().isoformat()},
+    ))
+    wau = await progress_col.count_documents(_and_filters(
+        not_excluded_user_id,
+        {"last_active_date": {"$gte": (now - timedelta(days=7)).date().isoformat()}},
+    ))
+
+    # Traffic (pageviews) is anonymous — visitor-hash keyed, no user_id — so
+    # we leave it unfiltered. Internal QA pageviews are negligible.
     pv_total = await pageviews_col.count_documents({})
     pv_24h = await pageviews_col.count_documents({"ts": {"$gte": day_ago}})
     pv_7d = await pageviews_col.count_documents({"ts": {"$gte": week_ago}})
@@ -2410,6 +2507,11 @@ async def admin_stats(_admin=Depends(require_admin)):
             "pageviews_7d": pv_7d,
             "unique_visitors_7d": uniq_7d,
         },
+        "filters": {
+            "excludes_internal_accounts": True,
+            "excluded_count": len(excluded_ids),
+            "test_email_pattern": TEST_EMAIL_REGEX,
+        },
     }
 
 
@@ -2417,6 +2519,7 @@ async def admin_stats(_admin=Depends(require_admin)):
 async def admin_users(_admin=Depends(require_admin),
                        q: Optional[str] = None,
                        tier: Optional[str] = None,
+                       include_internal: bool = False,
                        limit: int = 100):
     query: dict = {}
     if q:
@@ -2424,6 +2527,9 @@ async def admin_users(_admin=Depends(require_admin),
                          {"name": {"$regex": q, "$options": "i"}}]
     if tier:
         query["tier"] = tier
+    # Exclude internal test/admin accounts by default.
+    if not include_internal:
+        query = _and_filters(query, _real_users_filter())
     cur = users_col.find(query, {"_id": 0}).sort("created_at", -1).limit(min(limit, 500))
     users = await cur.to_list(min(limit, 500))
     user_ids = [u["id"] for u in users]
@@ -2472,8 +2578,15 @@ async def admin_patch_user(uid: str, body: AdminUserPatch, admin=Depends(require
 
 
 @api.get("/admin/sales")
-async def admin_sales(_admin=Depends(require_admin), limit: int = 100):
-    cur = sessions_col.find({"status": "paid"}, {"_id": 0}).sort("paid_at", -1).limit(min(limit, 500))
+async def admin_sales(_admin=Depends(require_admin),
+                       include_internal: bool = False,
+                       limit: int = 100):
+    sales_q: dict = {"status": "paid"}
+    if not include_internal:
+        excluded_ids = await _get_excluded_user_ids()
+        if excluded_ids:
+            sales_q["user_id"] = {"$nin": excluded_ids}
+    cur = sessions_col.find(sales_q, {"_id": 0}).sort("paid_at", -1).limit(min(limit, 500))
     sales = await cur.to_list(min(limit, 500))
     user_ids = list({s.get("user_id") for s in sales if s.get("user_id")})
     users_map = {}
@@ -2593,13 +2706,18 @@ async def admin_whats_new(_admin=Depends(require_admin), days: int = 30, limit: 
 
 # ─── Subscribers (active billing) ───────────────────────────────────────────
 @api.get("/admin/subscribers")
-async def admin_subscribers(_admin=Depends(require_admin), include_canceled: bool = False, limit: int = 500):
+async def admin_subscribers(_admin=Depends(require_admin),
+                              include_canceled: bool = False,
+                              include_internal: bool = False,
+                              limit: int = 500):
     """Admin: list of paying subscribers w/ plan, interval, status, renewal date."""
     query: dict = {"tier": {"$in": ["ascender", "pathfinder", "sage"]}}
     if not include_canceled:
         # Show users currently with a non-free tier (active OR canceled-but-still-within-period).
         # Exclude those who have been fully reverted to free already.
         pass
+    if not include_internal:
+        query = _and_filters(query, _real_users_filter())
     cur = users_col.find(query, {"_id": 0}).sort("created_at", -1).limit(min(limit, 1000))
     users = await cur.to_list(min(limit, 1000))
     rows = []

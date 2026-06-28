@@ -319,6 +319,15 @@ async def run_daily_lesson(db, *, source: str = "scheduler") -> dict:
                                      lesson_id=(published.get("id") if published else None),
                                      path_id=target_path_id, grades=grades)
             status = "published"
+            # Inline interactive-card generation: convert the brand new text-only
+            # lesson into one with knowledge_check + fill_blank + playground cards.
+            # Best-effort: if it fails, the hourly background sweep will pick it up.
+            if published and published.get("id"):
+                try:
+                    await _interactivize_one(db, published["id"], path_id=target_path_id,
+                                              module_id=target_module_id)
+                except Exception as e:
+                    log.warning(f"inline interactivize failed for {published['id']}: {e}")
         else:
             await mark_queue_status(db, item["id"], "needs_review", grades=grades, draft=draft)
             status = "drafted"
@@ -390,6 +399,16 @@ async def run_monday_path(db, *, source: str = "scheduler") -> dict:
         if passing and s.get("auto_publish", True):
             await mark_queue_status(db, item["id"], "published", path_id=created["id"], grades=grades)
             status = "published"
+            # Inline interactive-card generation for all sampled lessons of the new path.
+            # Hourly sweep will catch any others (later-generated lessons in the path).
+            for sl in sampled_lessons:
+                lid = sl.get("id")
+                if not lid:
+                    continue
+                try:
+                    await _interactivize_one(db, lid, path_id=created["id"])
+                except Exception as e:
+                    log.warning(f"inline interactivize (path lesson) failed for {lid}: {e}")
         else:
             await mark_queue_status(db, item["id"], "needs_review", path_id=created["id"], grades=grades)
             status = "drafted"
@@ -402,6 +421,67 @@ async def run_monday_path(db, *, source: str = "scheduler") -> dict:
         await mark_queue_status(db, item["id"], "failed", error=str(e)[:200])
         rid = await log_run(db, kind="monday_path", status="failed", summary={"topic": item["topic"], "error": str(e)[:300]})
         return {"status": "failed", "error": str(e)[:200], "run_id": rid}
+
+
+async def _interactivize_one(db, lesson_id: str, *, path_id: Optional[str] = None,
+                              module_id: Optional[str] = None) -> bool:
+    """Generate + apply interactive cards for a single lesson, in-place in the DB.
+    Returns True on success. Best-effort — caller catches exceptions.
+    """
+    # Lazy-import to avoid circular imports & keep startup fast
+    from interactive_generator import generate_and_apply
+    # Locate the lesson document (with path/module context for the generator)
+    q = {"modules.lessons.id": lesson_id}
+    if path_id:
+        q["id"] = path_id
+    p = await db["curriculum_paths"].find_one(q, {"_id": 0})
+    if not p:
+        return False
+    for m in p.get("modules", []):
+        if module_id and m.get("id") != module_id:
+            continue
+        for lsn in m.get("lessons", []):
+            if lsn.get("id") != lesson_id:
+                continue
+            if int(lsn.get("interactive_v") or 0) >= 1:
+                return True   # already done
+            enriched = {
+                **lsn,
+                "path_title": p.get("title", ""),
+                "path_id": p.get("id", ""),
+                "module_title": m.get("title", ""),
+                "module_id": m.get("id", ""),
+            }
+            new_lsn = await generate_and_apply(enriched)
+            if not new_lsn:
+                return False
+            # Strip injected context fields before writing back
+            clean = {k: v for k, v in new_lsn.items()
+                     if k not in ("path_title", "path_id", "module_title", "module_id")}
+            await db["curriculum_paths"].update_one(
+                {"id": p["id"], "modules.id": m["id"], "modules.lessons.id": lesson_id},
+                {"$set": {"modules.$[mm].lessons.$[ll]": clean}},
+                array_filters=[{"mm.id": m["id"]}, {"ll.id": lesson_id}],
+            )
+            return True
+    return False
+
+
+async def run_interactive_sweep(db) -> dict:
+    """Sweep the curriculum for any lesson lacking interactive_v >= 1 and upgrade it.
+    Safety-net for new lessons created via admin UI, AI Studio, or auto-pilot.
+    Sequential (concurrency 1) to stay within LLM rate limits.
+    """
+    from interactive_generator import upgrade_all_lessons
+    try:
+        result = await upgrade_all_lessons(db, force=False, concurrency=1)
+        log.info(f"interactive sweep: upgraded={len(result.get('upgraded', []))}, "
+                 f"failed={len(result.get('failed', []))}, "
+                 f"skipped={len(result.get('skipped', []))}")
+        return result
+    except Exception as e:
+        log.exception(f"interactive sweep failed: {e}")
+        return {"upgraded": [], "failed": [], "skipped": [], "total_attempted": 0, "error": str(e)[:200]}
 
 
 async def send_daily_digest(db, *, admin_email: Optional[str] = None) -> dict:
@@ -453,6 +533,13 @@ def start_scheduler(db) -> AsyncIOScheduler:
         send_daily_digest, args=[db],
         trigger=CronTrigger(hour=DAILY_DIGEST_HOUR, minute=0, timezone=SCHEDULE_TZ),
         id="daily_digest", replace_existing=True,
+    )
+    # Hourly safety-net sweep: catch any lesson created via any path that
+    # doesn't yet have interactive cards. Idempotent — skips already-upgraded.
+    sched.add_job(
+        run_interactive_sweep, args=[db],
+        trigger=CronTrigger(minute=15, timezone=SCHEDULE_TZ),  # every hour at :15
+        id="interactive_sweep", replace_existing=True,
     )
 
     sched.start()

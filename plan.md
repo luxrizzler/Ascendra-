@@ -29,6 +29,14 @@ Build a largely automated growth engine:
 - **Lifecycle automation** to improve conversion/retention.
 - **Social pipeline** using a **free-only content generation stack** (no paid video services), plus X/Twitter integration readiness.
 
+### NEW overarching objective: Coursiv‑style engagement loop — IN PROGRESS 🟡
+Deliver an interactive learning experience comparable to “Coursiv-style” apps:
+- Streak tracking + celebrations
+- AI onboarding quiz → personalized plan
+- 15‑Day Challenge roadmap
+- Interactive lesson cards (Knowledge Checks, Fill‑in‑the‑blank, Playgrounds) generated dynamically by Claude
+- TTS narration + prompt libraries
+
 ---
 
 ## 2. Implementation Steps
@@ -245,10 +253,18 @@ Delivered:
 Testing:
 - Verified with `testing_agent_v3` (iteration_7): backend 100%, frontend 95% (non-critical modal interaction variance).
 
-**Scheduler stability update (NEW) — COMPLETE ✅**
+**Scheduler stability update — COMPLETE ✅**
 - Fixed scheduler job registration to avoid `RuntimeError: no running event loop` by passing coroutine functions directly to `AsyncIOScheduler`.
 - Also fixed lifecycle scheduler job registration.
 - Verified by `testing_agent_v3` (iteration_9): **backend 100%**, **scheduler 100%**, **regressions 100%**.
+
+**Interactive content auto-upgrade (future lessons) — IMPLEMENTED / VERIFY PENDING 🟡**
+- Inline interactivization added after auto-publish in:
+  - `run_daily_lesson()`
+  - `run_monday_path()` (sampled lessons)
+- Added safety-net scheduler job:
+  - `interactive_sweep` (Cron: every hour at `:15`) calling `run_interactive_sweep()`.
+- **Open verification item:** confirm job appears in `/api/admin/auto/settings` → `next_runs.interactive_sweep` after backend restart.
 
 ---
 
@@ -313,7 +329,7 @@ Delivered:
 - Admin UI:
   - `/admin/social` (generate from lesson, preview tweets, copy buttons, slide previews, MP4 player + download)
 
-##### Phase 11.1 — X (Twitter) Integration — PARTIALLY COMPLETE ✅ / BLOCKED ⛔ (NEW)
+##### Phase 11.1 — X (Twitter) Integration — PARTIALLY COMPLETE ✅ / BLOCKED ⛔
 **What is working:**
 - OAuth 1.0a credentials validate successfully.
   - `verify_credentials()` OK for `@Ascendraacademy`.
@@ -324,7 +340,7 @@ Delivered:
   - `403 Forbidden` with reason `client-not-enrolled`.
   - Message: App must be attached to a **Project** in X Developer Portal.
 
-**Backend additions (NEW):**
+**Backend additions:**
 - Added safe test endpoint:
   - `POST /api/admin/social/x/test-post` with `{text, dry_run}`
   - `dry_run=true` verifies creds without posting.
@@ -332,18 +348,17 @@ Delivered:
 **Next steps to complete X auto-posting:**
 - ⬜ Operator: Attach the X Developer App to a **Project** in the X Developer Portal (Projects & Apps).
 - ⬜ Retry: `POST /api/admin/social/x/test-post` with `dry_run=false`.
-- ⬜ Then validate full thread+media posting from `/admin/social` using `POST /admin/social/post/{post_id}/post-to-x`.
+- ⬜ Then validate full thread+media posting from `/admin/social`.
 
 ---
 
-### Phase 12 — Deployment Readiness + Production Launch (Cloudflare / Emergent Deploy) — COMPLETE ✅ (NEW)
+### Phase 12 — Deployment Readiness + Production Launch (Cloudflare / Emergent Deploy) — COMPLETE ✅
 **Goal:** Safely deploy Ascendra to production at `ascendraacademy.com`.
 
 Deployment readiness audit (deployment_agent) — 3 passes:
 1) **Pass 1 (BLOCKER found → fixed):**
    - Unbounded admin stats scan in `/app/backend/server.py`:
      - Replaced `progress_col.find({})` loop with aggregation pipeline (`$project` + `$size` + `$sum` + `$group`).
-   - Verified by calling `/api/admin/stats` (returned correct `lessons_completed` = 10).
 
 2) **Pass 2 (BLOCKER found → fixed):**
    - `.env` parsing issue:
@@ -374,6 +389,45 @@ Planned:
 
 ---
 
+### Phase 14 — P0 Bug Fix: Admin analytics must exclude internal test/admin accounts — IN PROGRESS 🟡
+**Goal:** Ensure admin dashboard metrics reflect real business performance by excluding internal test/admin accounts.
+
+**User clarifications (confirmed):**
+- Exclude internal accounts from **all admin analytics**:
+  - `sage[0-9]+@ascendraacademy.com`
+  - `admin@ascendraacademy.com`
+- **Keep free-tier users included** in stats (they are real leads for marketing conversion).
+- Hardcode regex/patterns (no env-driven list).
+
+**Implementation plan (Phase A — P0 Admin Stats Filter):**
+1) Add a hardcoded `TEST_EMAIL_REGEX` (or equivalent predicate) in `/app/backend/server.py`.
+2) Add helpers:
+   - `_real_users_filter()` → Mongo query fragment that excludes internal emails and/or `is_admin==True`.
+   - `_get_excluded_user_ids()` → resolves excluded user IDs (for joining against `progress` and `payment_sessions`).
+3) Rewrite `/api/admin/stats` to apply filtering consistently:
+   - `users_col` counts (total, tier breakdown, signups_30d)
+   - `sessions_col` revenue aggregations and paid_sessions count (exclude excluded `user_id`s)
+   - `progress_col` engagement aggregations (dau/wau/lessons_completed) excluding excluded `user_id`s
+4) Apply the same exclusion defaults to other admin business views to avoid inconsistent admin numbers:
+   - `GET /api/admin/users` (default listing)
+   - `GET /api/admin/subscribers`
+   - `GET /api/admin/sales`
+5) Leave `GET /api/admin/traffic` unchanged (pageviews are anonymous visitors; not user-email keyed).
+
+**Phase B — Verify auto-pilot interactive cron registration (follow-up, confirmed “do both”):**
+1) Restart backend.
+2) Call `GET /api/admin/auto/settings`.
+3) Confirm `next_runs.interactive_sweep` is present (not missing/empty), proving the job registered.
+
+**Phase C — Testing (MANDATORY: backend testing agent):**
+- Run backend-only tests to verify:
+  - `/api/admin/stats` excludes internal accounts from totals/revenue/engagement.
+  - Free tier users remain included.
+  - `/api/admin/sales`, `/api/admin/subscribers`, `/api/admin/users` align with the filtered logic.
+  - `interactive_sweep` appears in `next_runs`.
+
+---
+
 ## 4. Success Criteria
 
 ### Product + Ops — ACHIEVED ✅
@@ -390,6 +444,17 @@ Planned:
 - ✅ Lead magnet capture + AI Roadmap resource + welcome drip.
 - ✅ Lifecycle automation: trial-ending, winback, streak-saver, annual upsell.
 - ✅ Social pipeline: free-only asset generation + admin preview + MP4 export.
+
+### Coursiv-style engagement loop — LARGELY ACHIEVED ✅ / ONGOING 🟡
+- ✅ Streak tracking + milestone celebrations.
+- ✅ AI onboarding quiz + personalized plan.
+- ✅ 15-day challenge roadmap.
+- ✅ Interactive lesson cards + prompt libraries + browser-native TTS.
+- 🟡 Ensure **all future auto-pilot lessons** are automatically interactivized (verify `interactive_sweep` job is active).
+
+### Current P0 quality bar (must pass before new feature work)
+- ⬜ Admin analytics endpoints exclude internal accounts (`sage*`, `admin@`) while still counting free-tier leads.
+- ⬜ Verified by backend testing agent.
 
 ### Remaining operator setup (recommended)
 1) **Stripe (billing automation)**
