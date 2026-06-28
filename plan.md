@@ -46,16 +46,18 @@ Reduce risk of revenue loss / account compromise by:
 - Ensuring rotated/revoked keys are not reused
 - Ensuring no secrets are ever pasted into chat/screenshots/logs
 
-### NEW product objectives (requested)
-**Phase 15: Admin Auto‑Pilot Queue UX Upgrade (P1)**
-- Fix immediate admin pain: items show `FAILED` / `NEEDS REVIEW` but operator cannot conveniently regenerate/approve/reject or quickly iterate.
-- Add regenerate + review controls (no full manual editor required for v1; optionally add minimal notes/edit in a controlled way).
+### NEW product objectives (requested) — SHIPPED ✅
+**Phase 15: Admin Auto‑Pilot Queue UX Upgrade (P1) — COMPLETED ✅**
+- Provide actionable controls for `FAILED` / `NEEDS REVIEW` items:
+  - Regenerate (re-run Claude)
+  - Reject (clean queue, keep audit)
+  - Minimal draft edit before publishing
 
-**Phase 16: User‑Generated Learning Paths (P1/P2 large feature)**
-- Paid users can generate custom learning paths (longer than 5–7 lessons) with Beginner/Intermediate/Advanced coverage.
-- Generated paths start private and trigger admin review notification.
-- Admin can approve to publish globally or reject with a reason.
-- Users can take lessons in any order (no forced sequencing), while the app still presents a recommended order.
+**Phase 16: User‑Generated Learning Paths (P1/P2 large feature) — COMPLETED ✅**
+- Paid users can generate custom multi-level paths (Beginner/Intermediate/Advanced).
+- Generated paths start private/pending and notify admin for review.
+- Admin can approve (publish + choose tier) or reject (keeps private, optional notes).
+- Users can take lessons in any order (no forced sequencing), while UI presents recommended order.
 
 ---
 
@@ -163,120 +165,128 @@ Routes:
 
 ---
 
-## 3. Next Actions
-
-### Phase 15 — Admin Auto‑Pilot Queue UX Upgrade (P1) — NOT STARTED
+### Phase 15 — Admin Auto‑Pilot Queue UX Upgrade (P1) — COMPLETED ✅
 **Goal:** Make the Auto‑Pilot queue actionable when items are `FAILED` / `NEEDS REVIEW`.
 
-**Current issue (user report):** On `/admin/auto-content` the operator cannot meaningfully act on queue items (no regenerate/retry workflow visible/available to resolve `FAILED` or `NEEDS REVIEW`).
+**What shipped:**
+1) **Backend** (`/app/backend/server.py`)
+- `POST /api/admin/auto/queue/{queue_id}/regenerate`
+  - Allowed statuses: `failed`, `needs_review`, `rejected`
+  - Clears prior `draft/error/grades`, increments `regen_count`, appends `regen_history`
+  - Forces generation immediately via `run_daily_lesson()` / `run_monday_path(force=True)`
+- `POST /api/admin/auto/queue/{queue_id}/reject`
+  - Sets `status=rejected`, persists `reject_reason` + timestamp
+- `PATCH /api/admin/auto/queue/{queue_id}/draft`
+  - Minimal draft editor for `needs_review` items (title + body override)
 
-**Deliverables:**
-1) **Backend**
-- Add queue item regeneration endpoint:
-  - `POST /api/admin/auto/queue/{queue_id}/regenerate`
-    - Re-run generation for the same `topic/kind/level`
-    - Overwrite `draft` (if any), clear `error`, set `status=needs_review` (or `pending_review`) with new `grades`
-    - Increment `regen_count`, store `regen_history` (timestamp, short summary, grades)
-- Add reject endpoint:
-  - `POST /api/admin/auto/queue/{queue_id}/reject` with optional `{reason}`
-    - `status=rejected` and persists reason + timestamp
-- Add publish endpoint validation improvements (existing):
-  - Keep `POST /api/admin/auto/queue/{queue_id}/publish` but ensure it can publish from `needs_review` reliably
+2) **Auto-pilot engine** (`/app/backend/auto_content.py`)
+- `run_monday_path(..., force=True)` added to bypass once-per-day dedup for manual regenerate.
 
-2) **Frontend** (`/app/frontend/src/pages/AdminAutoContent.js`)
-- For `FAILED` and `NEEDS REVIEW` items show buttons:
-  - **Regenerate** (Refresh icon) → calls regenerate endpoint
-  - **Reject** (X icon) → calls reject endpoint
-  - **Publish anyway** remains (only for items with drafts)
-- Add a small “details drawer/modal” to show:
-  - grader notes, error text, last regeneration time
+3) **Frontend** (`/app/frontend/src/pages/AdminAutoContent.js`)
+- Added buttons for queue items:
+  - **Regenerate** (FAILED / NEEDS REVIEW / REJECTED)
+  - **Edit** (NEEDS REVIEW + has draft)
+  - **Publish** (NEEDS REVIEW + has draft)
+  - **Reject** (non-pending/non-published)
+- Added `rejected` status pill.
+- Verified via screenshots.
 
-3) **Testing**
-- Use backend testing agent:
-  - Seed a fake queue item in DB with `needs_review` + `draft`
-  - Regenerate → status changes, draft updated, regen_count increments
-  - Reject → status rejected
-  - Ensure endpoints are admin-protected
-
-**Notes:**
-- The user specifically requested “refresh/recreate” over manual editing; manual editing can be added later if needed.
+4) **Testing**
+- Verified by backend testing agent (iteration_17) — 28/28 pass overall.
 
 ---
 
-### Phase 15.1 — Optional: Minimal Draft Editing (P2) — DEFERRED
-If needed after Phase 15:
-- `PATCH /api/admin/auto/queue/{id}/draft` to edit title/body only
-- Frontend modal editor + preview
-
----
-
-### Phase 16 — User‑Generated Learning Paths (P1/P2) — NOT STARTED
-**Goal:** Paid users can generate a custom path (longer than 5–7 lessons) spanning Beginner/Intermediate/Advanced, start learning immediately, and submit for admin approval to become public.
+### Phase 16 — User‑Generated Learning Paths (P1/P2) — COMPLETED ✅
+**Goal:** Paid users can generate multi-level long-form paths and submit for admin approval.
 
 **Product rules (confirmed):**
-- Path generation is **paid-only** (no free users)
-- Generated path is **private to creator** initially and **notifies admin** for review
+- Path generation is **paid-only** (`tier != free`)
+- Generated path is `pending_review` and not visible publicly until approved
 - User **cannot edit** the generated path content, but **can take lessons in any order**
-- No caps on personal paths for paying users; however **tier gating controls which public paths are visible**
-- Over time, more public paths are added and tier catalog expands:
-  - Ascender: X paths
-  - Pathfinder: Ascender paths + additional set
+- No caps on personal paths for paying users (rate-limit exists to prevent abuse)
+- Tier catalog expansion continues over time:
+  - Ascender: baseline paid catalog
+  - Pathfinder: Ascender + additional
   - Sage: everything + sage-exclusive
 
-**Deliverables:**
-1) **Schema additions** (`curriculum_paths` documents)
-- `visibility`: `private | pending_review | public | rejected`
-- `created_by`: user_id
-- `creator_email`: cached
-- `admin_review_status`: `pending | approved | rejected`
-- `admin_review_notes`: optional
-- `is_user_generated`: bool (optional convenience)
+**What shipped:**
+1) **New backend module**
+- `/app/backend/path_generator.py`
+  - Stage 1: outline generation (3 modules × 5–7 lessons each)
+  - Stage 2: background fill lesson content (controlled concurrency)
 
-2) **Backend endpoints**
-- `POST /api/paths/generate`
-  - Auth required; requires tier != `free`
-  - Input: `{ goal: string }`
-  - Output: created private path summary + first lesson IDs
-  - Generation format:
-    - 3 modules: Beginner/Intermediate/Advanced
-    - Total lessons: target 15–20 (configurable)
-    - Each lesson includes interactive cards (via `interactive_generator` inline)
+2) **Schema + queries** (`/app/backend/curriculum_db.py`)
+- Added fields:
+  - `visibility` (`public | pending_review | rejected | private`)
+  - `created_by`, `creator_email`
+  - `admin_review_status` (`pending | approved | rejected`)
+  - `admin_review_notes`
+  - `is_user_generated`
+- Added functions:
+  - `list_paths(viewer_id, is_admin, include_private)` — visibility-aware
+  - `list_paths_by_creator(creator_id)`
+  - `list_paths_pending_review()`
+
+3) **Backend endpoints** (`/app/backend/server.py`)
+- `POST /api/paths/generate` (paid-only)
+  - Validates goal length, rate-limits (1 per user / 5 minutes)
+  - Creates path with `visibility=pending_review`, `admin_review_status=pending`
+  - Creates `admin_notifications` record
+  - Background-tasks: fill lessons + interactivize (best-effort)
 - `GET /api/paths/mine`
-  - Returns user’s private/pending/rejected paths + public ones they created
-- Tier gating updates:
-  - `GET /api/paths` should return:
-    - all `public` paths accessible by tier
-    - plus user’s own private/pending paths (regardless of tier gate for public catalog)
+- Updated `GET /api/paths` (anonymous: public+approved only; authed: also include own)
+- Updated `GET /api/paths/{id}` to protect non-public paths
 
-3) **Admin review workflow**
+4) **Admin review workflow**
 - `GET /api/admin/paths/pending-review`
-- `POST /api/admin/paths/{path_id}/approve`
-  - Sets `visibility=public`, `admin_review_status=approved`
-- `POST /api/admin/paths/{path_id}/reject` with `{reason}`
-  - Sets `visibility=rejected`, keeps it visible only to creator
-- **Notifications**:
-  - In-app admin badge (simple count on admin home)
-  - Email via Resend to admin address (optional) when a new path is submitted
+- `POST /api/admin/paths/{id}/approve` (optional tier override)
+- `POST /api/admin/paths/{id}/reject` (notes)
+- In-app notifications:
+  - `GET /api/admin/notifications`
+  - `POST /api/admin/notifications/{id}/mark-read`
 
-4) **Frontend UX**
-- `/paths`:
-  - Add CTA: **“Don’t see your path? Create one”** (paid only; free sees upgrade prompt)
-  - Show public catalog + “My generated paths” section (private/pending)
-- Add `/paths/create` (or modal) with:
-  - goal prompt input
-  - generate button + loading state (30–90s)
-  - on success → route to newly created path detail
-- Update path detail / lesson list to allow “Start any lesson” (no forced order)
-- Admin page `/admin/paths-review`:
-  - list pending user paths, preview outline, approve/reject
+5) **Frontend UX**
+- `/app/frontend/src/pages/Paths.js`
+  - “Create your own path” CTA + modal goal prompt
+  - “Your custom paths” section + status badges (Pending/Approved/Needs work)
+- `/app/frontend/src/pages/AdminPathsReview.js`
+  - Review list + approve/reject modal + tier override
+- `/app/frontend/src/pages/Admin.js`
+  - Added **PATHS REVIEW** tab with pending-count badge
+- `/app/frontend/src/App.js`
+  - Registered route `/admin/paths-review`
 
-5) **Testing**
-- Backend testing agent:
-  - Paid user can generate path
-  - Free user forbidden
-  - Admin pending review list works
-  - Approve makes it appear in `/api/paths` for tiered users
-  - Reject keeps it private to creator
+6) **Testing**
+- Verified by backend testing agent (iteration_17) — 28/28 pass.
+
+**Known minor limitations (non-blockers):**
+- LLM rate limits may cause some background lesson-fill failures under load; the hourly sweep/retries mitigate this.
+- 5-minute per-user generation rate limit is strict; can be relaxed later.
+
+---
+
+## 3. Next Actions
+
+### Immediate (P0/P1): Deploy Phase 15 + 16 to production
+- User action: Redeploy via Emergent Deploy dashboard to push preview → `ascendraacademy.com`.
+- After redeploy:
+  - Verify `/admin/auto-content` shows Regenerate/Edit/Publish/Reject
+  - Verify `/paths` shows the Create Path CTA
+  - Verify `/admin/paths-review` exists and lists pending submissions
+
+### Phase 17 — Stripe key hygiene hardening (P0) — IN PROGRESS 🟡
+Goal: eliminate risk of deploying Standard Secret keys and ensure key rotation hygiene.
+- Ensure production deployment secrets use `STRIPE_API_KEY=rk_live_…` (Restricted Key)
+- Verify `STRIPE_WEBHOOK_SECRET=whsec_…` set in production
+- Confirm no secret keys are ever pasted into chat/screenshots
+- Optional improvement: add a startup log check that validates key prefix (`rk_` only) and refuses to start if `sk_` is detected (preview-safe, production-safe).
+
+### Phase 18 — X (Twitter) auto-posting unblock (P1) — USER ACTION REQUIRED
+- Fix 403 `client-not-enrolled` by attaching X App to a Project in X Developer Portal.
+- Once done, re-test `/api/admin/social/x/test-post`.
+
+### Phase 19 — Meta (FB/IG) manual post helper (P2) — NOT STARTED
+- Add one-click copy/export helpers for FB/IG posting.
 
 ---
 
@@ -306,19 +316,20 @@ If needed after Phase 15:
 
 ### Business metrics quality bar — ACHIEVED ✅
 - ✅ Admin analytics endpoints exclude internal accounts while keeping real free-tier leads.
-- ✅ Verified by backend testing agent (28/28 = 100%).
+- ✅ Verified by backend testing agent (iteration_16).
 
-### New success criteria (to be achieved)
-**Phase 15 (Admin queue UX):**
-- ⬜ Admin can regenerate failed/review items and progress queue without leaving the page.
-- ⬜ Admin can reject items to keep queue clean and audited.
-- ⬜ Verified via backend testing.
+### Phase 15 (Admin queue UX) — ACHIEVED ✅
+- ✅ Admin can regenerate failed/review items and progress queue without leaving the page.
+- ✅ Admin can reject items to keep queue clean and audited.
+- ✅ Minimal draft edit available for needs_review.
+- ✅ Verified via backend testing (iteration_17) + UI screenshot.
 
-**Phase 16 (User-generated paths):**
-- ⬜ Paid users can create multi-level (Beginner/Intermediate/Advanced) long-form paths.
-- ⬜ Paths are private by default and notify admin for review.
-- ⬜ Admin approve/reject works; approved becomes public and tier-gated.
-- ⬜ Users can take lessons in any order.
+### Phase 16 (User-generated paths) — ACHIEVED ✅
+- ✅ Paid users can create multi-level (Beginner/Intermediate/Advanced) long-form paths.
+- ✅ Paths are pending by default and notify admin for review.
+- ✅ Admin approve/reject works; approved becomes public and tier-gated.
+- ✅ Users can take lessons in any order.
+- ✅ Verified via backend testing (iteration_17) + UI screenshots.
 
 ---
 

@@ -8,7 +8,7 @@
     "status": "completed"
   },
   {
-    "content": "Phase 16: Add path schema fields (visibility, created_by, admin_review_status) + Claude path generator (15-20 lessons across 3 levels)",
+    "content": "Phase 16: Add path schema fields + Claude path generator (15-20 lessons across 3 levels)",
     "status": "completed"
   },
   {
@@ -28,7 +28,7 @@
     "status": "completed"
   },
   {
-    "content": "Run backend testing agent for Phase 15 + Phase 16 endpoints",
-    "status": "in_progress"
+    "content": "Run backend testing agent for Phase 15 + Phase 16 endpoints (28/28 passed)",
+    "status": "completed"
   }
 ]
