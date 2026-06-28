@@ -1,6 +1,7 @@
 """
-Backend API Tests for Phase 15 & Phase 16
-Tests admin auto-pilot queue management and user-generated learning paths
+Backend API Tests for Phase 15, Phase 16 & Phase 17
+Tests admin auto-pilot queue management, user-generated learning paths,
+and smart subscription management card
 """
 import requests
 import sys
@@ -566,6 +567,280 @@ class APITester:
             else:
                 self.log(f"   ⚠️  Expected at least 10 curated paths, found {len(curated_paths)}")
     
+    def test_phase_17_billing_status(self):
+        """Test Phase 17: Smart Subscription Management Card"""
+        self.log("\n" + "=" * 60)
+        self.log("PHASE 17: SMART SUBSCRIPTION MANAGEMENT CARD")
+        self.log("=" * 60)
+        
+        # Test 1: FREE_NEVER_PAID user (admin has no stripe_customer_id)
+        self.log("\n--- Test 1: GET /api/billing/status as FREE_NEVER_PAID user ---")
+        success, response = self.test(
+            "GET /api/billing/status - FREE_NEVER_PAID user (admin)",
+            "GET",
+            "billing/status",
+            200,
+            token=self.admin_token
+        )
+        
+        if success:
+            state = response.get("state")
+            tier = response.get("tier")
+            can_open_portal = response.get("can_open_portal")
+            certificates_count = response.get("certificates_count")
+            
+            self.log(f"   State: {state}, Tier: {tier}, Can open portal: {can_open_portal}, Certs: {certificates_count}")
+            
+            if state == "FREE_NEVER_PAID":
+                self.log("   ✅ State is FREE_NEVER_PAID as expected")
+            else:
+                self.log(f"   ❌ Expected state=FREE_NEVER_PAID, got {state}", "ERROR")
+            
+            if can_open_portal == False:
+                self.log("   ✅ can_open_portal is False as expected")
+            else:
+                self.log(f"   ❌ Expected can_open_portal=False, got {can_open_portal}", "ERROR")
+            
+            if isinstance(certificates_count, int):
+                self.log(f"   ✅ certificates_count field present (value: {certificates_count})")
+            else:
+                self.log(f"   ❌ certificates_count field missing or invalid", "ERROR")
+        
+        # Test 2: Paid user (sage1) - ACTIVE_RENEWING state
+        sage1_email = "sage1@ascendraacademy.com"
+        sage1_token = self.user_tokens.get(sage1_email)
+        
+        if sage1_token:
+            self.log(f"\n--- Test 2: GET /api/billing/status as paid user (sage1) ---")
+            
+            # First ensure sage1 is on sage tier
+            success, user_info = self.test(
+                "GET /api/auth/me - Get sage1 user info",
+                "GET",
+                "auth/me",
+                200,
+                token=sage1_token
+            )
+            
+            sage1_user_id = None
+            if success:
+                sage1_user_id = user_info.get("id")
+                current_tier = user_info.get("tier")
+                self.log(f"   Sage1 current tier: {current_tier}")
+                
+                # Upgrade to sage if needed
+                if current_tier != "sage":
+                    from datetime import datetime, timedelta, timezone
+                    future_date = (datetime.now(timezone.utc) + timedelta(days=90)).isoformat()
+                    
+                    self.test(
+                        "PATCH /api/admin/users/{id} - Upgrade sage1 to sage tier",
+                        "PATCH",
+                        f"admin/users/{sage1_user_id}",
+                        200,
+                        token=self.admin_token,
+                        data={
+                            "tier": "sage",
+                            "subscription_interval": "monthly",
+                            "tier_expires_at": future_date
+                        }
+                    )
+            
+            # Now test billing status
+            success, response = self.test(
+                "GET /api/billing/status - Paid user (sage1)",
+                "GET",
+                "billing/status",
+                200,
+                token=sage1_token
+            )
+            
+            if success:
+                state = response.get("state")
+                tier = response.get("tier")
+                interval = response.get("interval")
+                renews_at = response.get("renews_at")
+                can_open_portal = response.get("can_open_portal")
+                certificates_count = response.get("certificates_count")
+                
+                self.log(f"   State: {state}, Tier: {tier}, Interval: {interval}")
+                self.log(f"   Renews at: {renews_at}")
+                self.log(f"   Can open portal: {can_open_portal}, Certs: {certificates_count}")
+                
+                if tier == "sage":
+                    self.log("   ✅ Tier is sage as expected")
+                else:
+                    self.log(f"   ❌ Expected tier=sage, got {tier}", "ERROR")
+                
+                if isinstance(certificates_count, int) and certificates_count >= 0:
+                    self.log(f"   ✅ certificates_count field present and valid")
+                else:
+                    self.log(f"   ❌ certificates_count field missing or invalid", "ERROR")
+        
+        # Test 3: POST /api/billing/resume without active subscription (should 400)
+        self.log("\n--- Test 3: POST /api/billing/resume without active subscription ---")
+        self.test(
+            "POST /api/billing/resume - No active subscription returns 400",
+            "POST",
+            "billing/resume",
+            400,
+            token=self.admin_token
+        )
+        
+        # Test 4: Certificate persistence on lapse simulation
+        if sage1_token and sage1_user_id:
+            self.log("\n--- Test 4: Certificate persistence on lapse simulation ---")
+            
+            # Step 1: Get sage1's current certificates
+            self.log("   Step 1: Get sage1's current certificates")
+            success, certs_response = self.test(
+                "GET /api/certificates - Get sage1's certificates before lapse",
+                "GET",
+                "certificates",
+                200,
+                token=sage1_token
+            )
+            
+            cert_id = None
+            if success:
+                certs = certs_response.get("certificates", [])
+                self.log(f"   Sage1 has {len(certs)} certificates")
+                if certs:
+                    cert_id = certs[0].get("id")
+                    self.log(f"   First certificate ID: {cert_id}")
+            
+            # Step 2: PATCH sage1's tier_expires_at to past date
+            self.log("   Step 2: Simulate tier expiry by setting tier_expires_at to past")
+            from datetime import datetime, timezone
+            past_date = "2024-01-01T00:00:00Z"
+            
+            success, _ = self.test(
+                "PATCH /api/admin/users/{id} - Set tier_expires_at to past",
+                "PATCH",
+                f"admin/users/{sage1_user_id}",
+                200,
+                token=self.admin_token,
+                data={"tier_expires_at": past_date}
+            )
+            
+            if success:
+                self.log("   ✅ tier_expires_at set to past date")
+                
+                # Step 3: Call GET /api/billing/status - should trigger auto_downgrade
+                self.log("   Step 3: Call GET /api/billing/status (triggers auto_downgrade)")
+                success, response = self.test(
+                    "GET /api/billing/status - After expiry (should be LAPSED)",
+                    "GET",
+                    "billing/status",
+                    200,
+                    token=sage1_token
+                )
+                
+                if success:
+                    state = response.get("state")
+                    tier = response.get("tier")
+                    certificates_count = response.get("certificates_count")
+                    
+                    self.log(f"   State: {state}, Tier: {tier}, Certs: {certificates_count}")
+                    
+                    if state == "LAPSED":
+                        self.log("   ✅ State is LAPSED as expected")
+                    else:
+                        self.log(f"   ❌ Expected state=LAPSED, got {state}", "ERROR")
+                    
+                    if tier == "free":
+                        self.log("   ✅ Tier downgraded to free as expected")
+                    else:
+                        self.log(f"   ❌ Expected tier=free, got {tier}", "ERROR")
+                
+                # Step 4: Verify certificates still accessible
+                self.log("   Step 4: Verify certificates still accessible after lapse")
+                success, certs_response = self.test(
+                    "GET /api/certificates - Lapsed user can still access certificates",
+                    "GET",
+                    "certificates",
+                    200,
+                    token=sage1_token
+                )
+                
+                if success:
+                    certs = certs_response.get("certificates", [])
+                    self.log(f"   ✅ Lapsed user can still access {len(certs)} certificates")
+                
+                # Step 5: Test individual certificate access
+                if cert_id:
+                    self.log("   Step 5: Test individual certificate access")
+                    self.test(
+                        "GET /api/certificates/{id} - Lapsed user can access individual cert",
+                        "GET",
+                        f"certificates/{cert_id}",
+                        200,
+                        token=sage1_token
+                    )
+                    
+                    # Step 6: Test public certificate access
+                    self.log("   Step 6: Test public certificate access")
+                    self.test(
+                        "GET /api/certificates/public/{id} - Public access still works",
+                        "GET",
+                        f"certificates/public/{cert_id}",
+                        200
+                    )
+                
+                # Step 7: RESET sage1 back to sage tier
+                self.log("   Step 7: RESET sage1 back to sage tier")
+                from datetime import timedelta
+                future_date = (datetime.now(timezone.utc) + timedelta(days=90)).isoformat()
+                
+                success, _ = self.test(
+                    "PATCH /api/admin/users/{id} - Reset sage1 to sage tier",
+                    "PATCH",
+                    f"admin/users/{sage1_user_id}",
+                    200,
+                    token=self.admin_token,
+                    data={
+                        "tier": "sage",
+                        "subscription_interval": "monthly",
+                        "tier_expires_at": future_date
+                    }
+                )
+                
+                if success:
+                    self.log("   ✅ Sage1 reset to sage tier successfully")
+        
+        # Test 5: Regression - existing /api/billing/portal still works
+        self.log("\n--- Test 5: Regression - /api/billing/portal ---")
+        # Admin has no stripe_customer_id, so should return 400
+        self.test(
+            "POST /api/billing/portal - User without stripe_customer_id returns 400",
+            "POST",
+            "billing/portal",
+            400,
+            token=self.admin_token,
+            data={"return_url": "https://example.com/profile"}
+        )
+        
+        # Test 6: Regression - existing /api/billing/checkout still works
+        self.log("\n--- Test 6: Regression - /api/billing/checkout ---")
+        # This will likely fail with 503 if Stripe products aren't configured, but we test the endpoint exists
+        url = f"{BASE_URL}/billing/checkout"
+        headers = {'Content-Type': 'application/json', 'Authorization': f'Bearer {self.admin_token}'}
+        
+        try:
+            response = requests.post(url, json={
+                "tier": "ascender",
+                "interval": "monthly",
+                "origin_url": "https://repo-to-site-2.preview.emergentagent.com"
+            }, headers=headers, timeout=30)
+            
+            # Accept 200, 503, or 502 (Stripe not configured is OK for this test)
+            if response.status_code in [200, 502, 503]:
+                self.log(f"   ✅ /api/billing/checkout endpoint exists (status: {response.status_code})")
+            else:
+                self.log(f"   ⚠️  /api/billing/checkout returned unexpected status: {response.status_code}")
+        except Exception as e:
+            self.log(f"   ⚠️  /api/billing/checkout error: {str(e)}")
+    
     def print_summary(self):
         """Print test summary"""
         self.log("\n" + "=" * 60)
@@ -605,6 +880,9 @@ def main():
     
     # Run Phase 16 tests
     tester.test_phase_16_user_paths()
+    
+    # Run Phase 17 tests
+    tester.test_phase_17_billing_status()
     
     # Print summary
     return tester.print_summary()

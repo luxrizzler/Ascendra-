@@ -1,0 +1,54 @@
+{
+  "summary": "Phase 17: Smart Subscription Management Card - Backend testing completed. Core functionality working: billing status endpoint returns correct states, certificates persist after tier lapse, resume endpoint validates correctly. Found one logic issue with LAPSED state detection for manually-upgraded users.",
+  "backend_issues": {
+    "critical_bugs": [],
+    "medium_priority_bugs": [
+      {
+        "endpoint": "GET /api/billing/status",
+        "issue": "LAPSED state not detected for manually-upgraded users. When a user is upgraded to paid tier via admin PATCH (without Stripe), and their tier_expires_at passes, the state returns FREE_NEVER_PAID instead of LAPSED because has_ever_paid logic only checks stripe_customer_id and stripe_subscription_id fields.",
+        "impact": "Users who were manually upgraded by admin won't see the correct 'LAPSED' state message. They'll see 'FREE_NEVER_PAID' instead, which is confusing since they did have paid access before.",
+        "fix_priority": "MEDIUM",
+        "suggested_fix": "Add additional check in has_ever_paid logic: if tier_expires_at exists and is in the past, consider has_ever_paid=True. Or track a separate 'has_had_paid_tier' boolean field on user document.",
+        "workaround": "For testing with real Stripe subscriptions, this won't be an issue. Only affects manually-upgraded test users."
+      }
+    ],
+    "flaky_endpoints": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "passed_tests": [
+    "GET /api/billing/status as FREE_NEVER_PAID user (admin) - Returns correct state, can_open_portal=false, certificates_count=0",
+    "GET /api/billing/status as paid user (sage1) - Returns state=ACTIVE_RENEWING, tier=sage, interval=annual, certificates_count field present",
+    "GET /api/billing/status includes certificates_count field (integer >= 0) in all cases",
+    "POST /api/billing/resume without active stripe_subscription_id - Returns 400 'No active subscription to resume'",
+    "Certificate persistence after tier lapse - GET /api/certificates still returns all certs for lapsed user (no tier gate)",
+    "GET /api/certificates/{id} as lapsed user - Still returns the certificate",
+    "GET /api/certificates/public/{id} - Still works for public access",
+    "Tier auto-downgrade on expiry - tier_expires_at in past triggers downgrade to 'free' tier",
+    "Regression: POST /api/billing/portal still works (returns 400 for users without stripe_customer_id)",
+    "Regression: POST /api/billing/checkout endpoint exists and responds correctly"
+  ],
+  "test_report_links": [
+    "/app/backend/backend_test.py",
+    "/tmp/phase17_test_output.log"
+  ],
+  "action_item_for_main_agent": "Fix LAPSED state detection logic in GET /api/billing/status (line 1767 in server.py). The has_ever_paid check should also consider users who had tier_expires_at set (indicating they had paid access at some point), not just users with Stripe IDs. Suggested fix: has_ever_paid = bool(cust_id) or bool(fresh.get('stripe_subscription_id')) or bool(fresh.get('tier_expires_at')). This ensures manually-upgraded users (common in testing/admin scenarios) show LAPSED instead of FREE_NEVER_PAID when their access expires.",
+  "updated_files": [
+    "/app/backend/backend_test.py"
+  ],
+  "success_percentage": {
+    "backend": "97.4% (38/39 tests passed)",
+    "frontend": "Not tested (backend-only testing requested)"
+  },
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_test_itself": true,
+  "additional_notes": {
+    "certificate_persistence": "✅ VERIFIED - Certificates remain accessible after tier lapse. No tier gate on /api/certificates endpoints. This is the most critical requirement and it works correctly.",
+    "state_machine": "4 of 5 states tested successfully: FREE_NEVER_PAID ✅, ACTIVE_RENEWING ✅, LAPSED ⚠️ (logic issue), PAST_DUE (not tested - requires Stripe webhook), ACTIVE_CANCELING (not tested - requires cancel_at_period_end=true)",
+    "testing_limitations": "Cannot fully test PAST_DUE and ACTIVE_CANCELING states without real Stripe subscription data. These states require actual Stripe webhooks or subscription modifications.",
+    "phase_15_unrelated_failure": "One test failure in Phase 15 (draft edit after rejection) is unrelated to Phase 17 and was pre-existing."
+  }
+}

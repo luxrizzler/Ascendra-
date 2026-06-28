@@ -59,6 +59,17 @@ Reduce risk of revenue loss / account compromise by:
 - Admin can approve (publish + choose tier) or reject (keeps private, optional notes).
 - Users can take lessons in any order (no forced sequencing), while UI presents recommended order.
 
+### NEW retention objective: Smart subscription management UX — PLANNED (Phase 17) 🟡
+Add a **Smart Subscription Management Card** that lets users “renew/reactivate/resume” from within the app:
+- (e) Smart card shows right state per user:
+  - Active + renewing
+  - Active + canceling (cancel at period end)
+  - Past-due
+  - Lapsed
+  - Free (never paid)
+- (f) The same widget appears on both **Dashboard** and **Profile**.
+- NEW: If someone’s subscription has elapsed, they must **keep certificates** and see that clearly.
+
 ---
 
 ## 2. Implementation Steps
@@ -189,7 +200,6 @@ Routes:
   - **Publish** (NEEDS REVIEW + has draft)
   - **Reject** (non-pending/non-published)
 - Added `rejected` status pill.
-- Verified via screenshots.
 
 4) **Testing**
 - Verified by backend testing agent (iteration_17) — 28/28 pass overall.
@@ -265,6 +275,69 @@ Routes:
 
 ---
 
+### Phase 17 — Smart Subscription Management Card (P0/P1 retention) — NOT STARTED 🟡
+**Goal:** Let users renew/reactivate/resume from inside the app without confusion, while keeping Stripe handling secure.
+
+**Confirmed requirements (e + f + certificate preservation):**
+- Smart card shows the right state:
+  1) Active + renewing
+  2) Active + canceling (cancel at period end)
+  3) Past-due
+  4) Lapsed
+  5) Free (never paid)
+- Same widget on **Dashboard** and **Profile**.
+- Lapsed users must keep certificates and see that clearly.
+
+**Certificate persistence — already works ✅ (verified):**
+- Certificates are stored in `certificates` collection by `user_id`.
+- No tier gate on:
+  - `GET /api/certificates`
+  - `GET /api/certificates/{cert_id}`
+  - `GET /api/certificates/public/{cert_id}`
+- Certificate docs are self-contained snapshots; subscription lapse does not invalidate them.
+
+**Implementation plan:**
+
+1) Backend
+- Replace `/api/billing/info` stub with a rich status endpoint that returns:
+  - `state` (ACTIVE_RENEWING | ACTIVE_CANCELING | PAST_DUE | LAPSED | FREE_NEVER_PAID)
+  - `tier`, `subscription_interval`, `tier_expires_at` (or `expires_at`)
+  - `stripe_customer_id` presence → `can_open_portal`
+  - `subscription_cancel_at_period_end`
+  - `subscription_status` (active/trialing/past_due/canceled)
+  - `certificates_count`
+- Add `POST /api/billing/resume`:
+  - For users with an active Stripe subscription where `cancel_at_period_end=true`, call Stripe to set `cancel_at_period_end=false`
+  - Return updated state
+- Add `POST /api/billing/reactivate` (optional, if needed):
+  - Shortcut that creates a Checkout Session for the user’s last paid tier/interval
+  - (Alternatively reuse existing `/api/billing/checkout` from the UI)
+- Ensure `auto_downgrade_if_expired()` continues to downgrade tier access while leaving certificates intact.
+
+2) Frontend
+- New shared component: `/app/frontend/src/components/SubscriptionCard.js`
+  - Calls `/api/billing/status` (new) and renders the correct CTA:
+    - ACTIVE_RENEWING → “Manage billing” → Stripe portal
+    - ACTIVE_CANCELING → “Resume” (calls `/billing/resume`) + “Manage”
+    - PAST_DUE → “Update payment method” → portal
+    - LAPSED → “Reactivate” → pricing/checkout + “Your X certificates are safe” + link to certificates
+    - FREE_NEVER_PAID → “View plans” → pricing
+- Add to:
+  - `Dashboard.js` (top section)
+  - `Profile.js` (replace/augment existing portal-only button)
+
+3) Testing
+- Backend tests:
+  - Free user shows FREE_NEVER_PAID
+  - Active subscription shows ACTIVE_RENEWING
+  - cancel_at_period_end shows ACTIVE_CANCELING and resume endpoint works
+  - Lapsed tier_expires_at shows LAPSED
+  - Certificates still listable after lapse
+- UI smoke test:
+  - Card renders on both Dashboard + Profile
+
+---
+
 ## 3. Next Actions
 
 ### Immediate (P0/P1): Deploy Phase 15 + 16 to production
@@ -274,18 +347,22 @@ Routes:
   - Verify `/paths` shows the Create Path CTA
   - Verify `/admin/paths-review` exists and lists pending submissions
 
-### Phase 17 — Stripe key hygiene hardening (P0) — IN PROGRESS 🟡
+### Phase 17 — Smart Subscription Management Card (P0/P1) — NEXT
+- Build the smart subscription card on Dashboard + Profile.
+- Ensure lapse states are understandable and certificates are explicitly preserved.
+
+### Stripe key hygiene hardening (P0) — IN PROGRESS 🟡
 Goal: eliminate risk of deploying Standard Secret keys and ensure key rotation hygiene.
 - Ensure production deployment secrets use `STRIPE_API_KEY=rk_live_…` (Restricted Key)
 - Verify `STRIPE_WEBHOOK_SECRET=whsec_…` set in production
 - Confirm no secret keys are ever pasted into chat/screenshots
 - Optional improvement: add a startup log check that validates key prefix (`rk_` only) and refuses to start if `sk_` is detected (preview-safe, production-safe).
 
-### Phase 18 — X (Twitter) auto-posting unblock (P1) — USER ACTION REQUIRED
+### X (Twitter) auto-posting unblock (P1) — USER ACTION REQUIRED
 - Fix 403 `client-not-enrolled` by attaching X App to a Project in X Developer Portal.
 - Once done, re-test `/api/admin/social/x/test-post`.
 
-### Phase 19 — Meta (FB/IG) manual post helper (P2) — NOT STARTED
+### Meta (FB/IG) manual post helper (P2) — NOT STARTED
 - Add one-click copy/export helpers for FB/IG posting.
 
 ---
@@ -330,6 +407,13 @@ Goal: eliminate risk of deploying Standard Secret keys and ensure key rotation h
 - ✅ Admin approve/reject works; approved becomes public and tier-gated.
 - ✅ Users can take lessons in any order.
 - ✅ Verified via backend testing (iteration_17) + UI screenshots.
+
+### Phase 17 (Smart subscription UX) — SUCCESS CRITERIA (planned)
+- ✅ Users can always find “Manage billing” from Dashboard and Profile.
+- ✅ Canceling users can “Resume subscription” in-app.
+- ✅ Past-due users are prompted to fix payment method.
+- ✅ Lapsed users can reactivate and are explicitly told **their certificates remain**.
+- ✅ Certificates remain accessible regardless of subscription status.
 
 ---
 

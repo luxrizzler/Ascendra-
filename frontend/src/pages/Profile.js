@@ -7,6 +7,7 @@ import TierBadge from "@/components/TierBadge";
 import { formatDate } from "@/lib/utils";
 import { Trophy, KeyRound, Shield, Mail, ArrowRight, LogOut } from "lucide-react";
 import { toast } from "sonner";
+import SubscriptionCard from "@/components/SubscriptionCard";
 
 export default function Profile() {
   const { user, logout, refresh } = useAuth();
@@ -114,42 +115,10 @@ export default function Profile() {
         </div>
       </section>
 
-      {user.tier !== "free" && (
-        <div className="asc-card p-6 mt-5">
-          <div className="flex items-center justify-between gap-4 flex-wrap">
-            <div>
-              <h2 className="font-bold">Subscription</h2>
-              <div className="text-sm text-[var(--asc-text-dim)] mt-1">
-                You're on <span className="font-black uppercase" style={{ color: "#FFB000" }}>{user.tier}</span> ({user.subscription_interval || "monthly"})
-                {user.tier_expires_at && <> · renews {formatDate(user.tier_expires_at)}</>}
-              </div>
-            </div>
-            <div className="flex gap-2 flex-wrap">
-              <BillingPortalButton />
-              <Link to="/pricing" className="asc-btn-secondary text-sm">Change plan</Link>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Subscription card — smart state-aware (active/canceling/lapsed/past_due/free) */}
+      <div className="mt-5">
+        <SubscriptionCard />
+      </div>
     </div>
-  );
-}
-
-function BillingPortalButton() {
-  const [busy, setBusy] = useState(false);
-  const open = async () => {
-    setBusy(true);
-    try {
-      const r = await api.post("/billing/portal", { return_url: window.location.href });
-      window.location.href = r.url;
-    } catch (e) {
-      toast.error(e.message || "Portal unavailable");
-      setBusy(false);
-    }
-  };
-  return (
-    <button onClick={open} disabled={busy} className="asc-btn-primary text-sm" data-testid="billing-portal-btn">
-      {busy ? "Opening…" : "Manage billing →"}
-    </button>
   );
 }

@@ -6,6 +6,7 @@ import Loader from "@/components/Loader";
 import TierBadge from "@/components/TierBadge";
 import { Flame, Sparkles, ArrowRight, Trophy, Layers, MessageSquare, BookOpen, ChevronRight, Library, Target } from "lucide-react";
 import { StreakCard } from "@/components/streak/StreakCard";
+import SubscriptionCard from "@/components/SubscriptionCard";
 
 export default function Dashboard() {
   const { user } = useAuth();
@@ -89,6 +90,11 @@ export default function Dashboard() {
       {/* Rich streak card with calendar + daily goal + milestones */}
       <div className="mt-4">
         <StreakCard />
+      </div>
+
+      {/* Subscription status card — smart state-aware widget */}
+      <div className="mt-4">
+        <SubscriptionCard compact />
       </div>
 
       {/* Quick links: Challenge + Prompt Library */}

@@ -1735,6 +1735,114 @@ async def billing_info():
     return {"uses_real_stripe": False}
 
 
+# ─── Smart subscription status (Phase 17) ───────────────────────────────────
+@api.get("/billing/status")
+async def billing_status(user=Depends(current_user)):
+    """Return the user's current billing state for the dashboard/profile card.
+
+    States:
+      - ACTIVE_RENEWING — paid, auto-renews on tier_expires_at
+      - ACTIVE_CANCELING — paid, but cancel_at_period_end → access ends on tier_expires_at
+      - PAST_DUE — Stripe says payment failed; user must update card
+      - LAPSED — was paid before, now on free; access ended
+      - FREE_NEVER_PAID — never paid; no stripe_customer_id
+
+    Includes `certificates_count` so the UI can reassure lapsed users that
+    their earned certificates remain theirs forever.
+    """
+    # Auto-downgrade if expired (this is the existing helper)
+    fresh = await users_col.find_one({"id": user["id"]}, {"_id": 0})
+    if fresh:
+        fresh = await auto_downgrade_if_expired(fresh)
+    else:
+        fresh = user
+    tier = fresh.get("tier", "free")
+    expires_at = fresh.get("tier_expires_at")
+    if expires_at and getattr(expires_at, "tzinfo", None) is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    cust_id = fresh.get("stripe_customer_id")
+    sub_status = fresh.get("subscription_status")
+    cap_end = bool(fresh.get("subscription_cancel_at_period_end", False))
+    interval = fresh.get("subscription_interval")
+    has_ever_paid = bool(cust_id) or bool(fresh.get("stripe_subscription_id"))
+
+    # Determine state
+    if tier == "free":
+        state = "LAPSED" if has_ever_paid else "FREE_NEVER_PAID"
+    elif sub_status == "past_due":
+        state = "PAST_DUE"
+    elif cap_end:
+        state = "ACTIVE_CANCELING"
+    else:
+        state = "ACTIVE_RENEWING"
+
+    # Certificate count for lapsed reassurance message
+    try:
+        cert_count = await certs_col.count_documents({"user_id": fresh["id"]})
+    except Exception:
+        cert_count = 0
+
+    # Look up renewal amount from TIERS table
+    tier_def = TIERS.get(tier) if tier != "free" else None
+    amount_usd = None
+    if tier_def and interval:
+        if interval == "annual":
+            amount_usd = float(tier_def.get("price_annual", 0))
+        else:
+            amount_usd = float(tier_def.get("price_monthly", 0))
+
+    return {
+        "state": state,
+        "tier": tier,
+        "interval": interval,
+        "amount_usd": amount_usd,
+        "expires_at": expires_at.isoformat() if expires_at else None,
+        "renews_at": expires_at.isoformat() if (expires_at and state == "ACTIVE_RENEWING") else None,
+        "ends_at": expires_at.isoformat() if (expires_at and state == "ACTIVE_CANCELING") else None,
+        "subscription_status": sub_status,
+        "cancel_at_period_end": cap_end,
+        "can_open_portal": bool(cust_id),
+        "can_resume": state == "ACTIVE_CANCELING" and bool(fresh.get("stripe_subscription_id")),
+        "has_ever_paid": has_ever_paid,
+        "certificates_count": cert_count,
+    }
+
+
+@api.post("/billing/resume")
+async def billing_resume(user=Depends(current_user)):
+    """Reverse a pending cancellation (cancel_at_period_end → false).
+
+    Requires an active Stripe subscription that is currently scheduled to cancel
+    at the end of the billing period. Free / lapsed users should use checkout.
+    """
+    sub_id = user.get("stripe_subscription_id")
+    if not sub_id:
+        raise HTTPException(400, "No active subscription to resume. Please use the Pricing page to start a new plan.")
+    if not user.get("subscription_cancel_at_period_end"):
+        return {"ok": True, "message": "Subscription is already set to renew.", "no_op": True}
+    try:
+        import stripe as _stripe
+        _stripe.api_key = STRIPE_API_KEY
+        sub = _stripe.Subscription.modify(sub_id, cancel_at_period_end=False)
+        new_cap_end = sub.get("cancel_at_period_end") if isinstance(sub, dict) else getattr(sub, "cancel_at_period_end", False)
+        await users_col.update_one(
+            {"id": user["id"]},
+            {"$set": {"subscription_cancel_at_period_end": bool(new_cap_end),
+                       "subscription_status": "active"}},
+        )
+        return {
+            "ok": True,
+            "message": "Your subscription will continue renewing.",
+            "cancel_at_period_end": bool(new_cap_end),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        msg = str(e)[:240]
+        log.warning(f"resume subscription failed: {msg}")
+        raise HTTPException(502, f"Could not resume subscription: {msg}")
+
+
 # ─── Stripe Customer Portal ─────────────────────────────────────────────────
 class PortalIn(BaseModel):
     return_url: Optional[str] = None
