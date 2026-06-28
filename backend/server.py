@@ -20,7 +20,7 @@ import bcrypt
 import httpx
 import jwt
 from dotenv import load_dotenv
-from fastapi import FastAPI, APIRouter, Depends, HTTPException, Request, Header
+from fastapi import FastAPI, APIRouter, Depends, HTTPException, Request, Header, BackgroundTasks
 from fastapi.responses import Response, PlainTextResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -35,6 +35,8 @@ from emergentintegrations.payments.stripe.checkout import (
 from curriculum_db import (
     ensure_seeded as _curric_ensure_seeded,
     list_paths as _curric_list_paths,
+    list_paths_by_creator as _curric_list_paths_by_creator,
+    list_paths_pending_review as _curric_list_paths_pending_review,
     get_path as _curric_get_path,
     get_lesson as _curric_get_lesson,
     path_summary,
@@ -51,6 +53,7 @@ from curriculum_db import (
 )
 from curriculum import AI_MODELS
 import ai_studio
+import path_generator
 import seo_studio
 import auto_content
 import lifecycle
@@ -244,6 +247,25 @@ async def current_user(creds: HTTPAuthorizationCredentials = Depends(bearer_sche
     if not user:
         raise HTTPException(401, "User not found")
     return user
+
+
+async def optional_user(
+    creds: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
+) -> Optional[dict]:
+    """Like current_user but returns None for missing/invalid tokens instead of 401.
+    Use on public endpoints that want to personalize when authenticated.
+    """
+    if not creds:
+        return None
+    try:
+        payload = jwt.decode(creds.credentials, JWT_SECRET, algorithms=[JWT_ALGO])
+        uid = payload.get("sub")
+    except Exception:
+        return None
+    if not uid:
+        return None
+    user = await users_col.find_one({"id": uid}, {"_id": 0, "password_hash": 0})
+    return user or None
 
 def serialize_user(u: dict) -> dict:
     return {
@@ -496,15 +518,154 @@ async def me(user=Depends(current_user)):
 
 # ─── Curriculum routes ──────────────────────────────────────────────────────
 @api.get("/paths")
-async def list_paths():
-    paths = await _curric_list_paths(db)
+async def list_paths(user=Depends(optional_user)):
+    """Public list of paths. If authenticated, also includes the user's own
+    private/pending/rejected user-generated paths so they can see their drafts.
+    """
+    viewer_id = (user or {}).get("id") if user else None
+    is_admin_viewer = bool((user or {}).get("is_admin"))
+    paths = await _curric_list_paths(
+        db, viewer_id=viewer_id, is_admin=is_admin_viewer,
+    )
     return {"paths": [path_summary(p) for p in paths]}
 
+
+@api.get("/paths/mine")
+async def list_my_paths(user=Depends(current_user)):
+    """List every path the current user has created (any status)."""
+    paths = await _curric_list_paths_by_creator(db, user["id"])
+    return {"paths": [path_summary(p) for p in paths]}
+
+
+class PathGenerateIn(BaseModel):
+    goal: str
+    # If True, also fills lesson content in the background. Otherwise the path
+    # is created with just lesson titles + scaffolding (faster, ~10s).
+    fill_lessons: bool = True
+
+
+@api.post("/paths/generate")
+async def generate_user_path(body: PathGenerateIn, background_tasks: BackgroundTasks,
+                              user=Depends(current_user)):
+    """Paid users generate a custom learning path from a free-text goal.
+
+    Stage 1 (sync, ~10-20s): Claude builds the path outline (title + 3 levels
+    × 5-7 lesson titles). Path is saved with visibility=pending_review.
+    Stage 2 (background, ~60-120s): every lesson's body + cards are generated
+    by Claude in a controlled-concurrency loop. Front-end polls the path
+    detail to watch lessons fill in.
+    """
+    if user.get("tier", "free") == "free":
+        raise HTTPException(
+            402,
+            "Custom path generation is a paid feature. Upgrade to Ascender to create your own learning paths.",
+        )
+    goal = (body.goal or "").strip()
+    if len(goal) < 8:
+        raise HTTPException(400, "Tell us a bit more about your goal (at least 8 characters).")
+    if len(goal) > 2000:
+        raise HTTPException(400, "Goal is too long (max 2000 chars).")
+    # Rate-limit: 1 path generation per user per 5 minutes (anti-abuse)
+    five_min_ago = datetime.now(timezone.utc) - timedelta(minutes=5)
+    recent = await db["curriculum_paths"].count_documents({
+        "created_by": user["id"],
+        "created_at": {"$gte": five_min_ago},
+    })
+    if recent > 0:
+        raise HTTPException(429, "You just generated a path. Please wait ~5 minutes before generating another.")
+
+    try:
+        outline = await path_generator.generate_user_path_outline(goal)
+    except Exception as e:
+        log.exception("user path outline generation failed")
+        raise HTTPException(502, f"Couldn't draft your path: {str(e)[:200]}")
+    # Persist with pending review status
+    outline["source"] = "user-generated"
+    outline["visibility"] = "pending_review"
+    outline["admin_review_status"] = "pending"
+    outline["is_user_generated"] = True
+    outline["created_by"] = user["id"]
+    outline["creator_email"] = user.get("email")
+    outline["tier"] = user.get("tier", "free")   # creator can take it; admin may re-tier on approve
+    outline["goal_prompt"] = goal[:2000]
+    created = await _curric_create_path(db, outline)
+
+    # Notify admin in background (email digest is daily, so just persist a flag).
+    background_tasks.add_task(_notify_admin_new_user_path, created)
+
+    # Optionally fill lessons in background
+    if body.fill_lessons:
+        background_tasks.add_task(
+            path_generator.fill_path_lessons, db, created["id"],
+            concurrency=2,
+            path_title=created["title"],
+            path_tagline=created.get("tagline", ""),
+        )
+        # And follow up with interactive-card generation
+        background_tasks.add_task(_interactivize_path_lessons_after_fill, created["id"])
+
+    return {
+        "ok": True,
+        "path": path_summary(created),
+        "fill_status": "queued" if body.fill_lessons else "skipped",
+    }
+
+
+async def _notify_admin_new_user_path(path: dict) -> None:
+    """Record an admin notification + best-effort email."""
+    try:
+        await db["admin_notifications"].insert_one({
+            "id": str(uuid.uuid4()),
+            "kind": "user_path_submitted",
+            "path_id": path["id"],
+            "path_title": path.get("title"),
+            "creator_id": path.get("created_by"),
+            "creator_email": path.get("creator_email"),
+            "created_at": datetime.now(timezone.utc),
+            "read": False,
+        })
+    except Exception as e:
+        log.warning(f"admin notif insert failed: {e}")
+    # Best-effort: include in next daily digest. We do NOT spam admin email
+    # per submission to keep inbox sane.
+
+
+async def _interactivize_path_lessons_after_fill(path_id: str) -> None:
+    """After lesson content is filled, upgrade each lesson with interactive cards.
+    Best-effort, sequential, swallows errors per-lesson."""
+    try:
+        # Small delay to let fill_path_lessons make progress first
+        await asyncio.sleep(15)
+        p = await db["curriculum_paths"].find_one({"id": path_id}, {"_id": 0})
+        if not p:
+            return
+        for m in p.get("modules", []):
+            for lsn in m.get("lessons", []):
+                if not lsn.get("cards"):
+                    continue
+                if int(lsn.get("interactive_v") or 0) >= 1:
+                    continue
+                try:
+                    await auto_content._interactivize_one(
+                        db, lsn["id"], path_id=path_id, module_id=m["id"]
+                    )
+                except Exception as e:
+                    log.warning(f"interactivize lesson {lsn['id']} failed: {e}")
+    except Exception as e:
+        log.warning(f"_interactivize_path_lessons_after_fill error: {e}")
+
 @api.get("/paths/{path_id}")
-async def get_path_detail(path_id: str):
+async def get_path_detail(path_id: str, user=Depends(optional_user)):
     p = await _curric_get_path(db, path_id)
     if not p:
         raise HTTPException(404, "Path not found")
+    # Restrict access to private user-generated paths: only creator + admin can view detail
+    visibility = p.get("visibility", "public")
+    if visibility in ("private", "pending_review", "rejected") and not p.get("admin_review_status") == "approved":
+        if not user:
+            raise HTTPException(404, "Path not found")
+        if user.get("id") != p.get("created_by") and not user.get("is_admin"):
+            raise HTTPException(404, "Path not found")
     modules = []
     for m in p["modules"]:
         lessons = []
@@ -515,8 +676,14 @@ async def get_path_detail(path_id: str):
                 "duration_min": lsn.get("duration_min", 5),
                 "xp": lsn.get("xp", 50),
                 "card_count": len(lsn.get("cards", [])),
+                "interactive_v": lsn.get("interactive_v", 0),
             })
-        modules.append({"id": m["id"], "title": m["title"], "lessons": lessons})
+        modules.append({
+            "id": m["id"],
+            "title": m["title"],
+            "level": m.get("level"),
+            "lessons": lessons,
+        })
     return {
         "id": p["id"],
         "title": p["title"],
@@ -528,6 +695,12 @@ async def get_path_detail(path_id: str):
         "image": p.get("image", ""),
         "tier": p.get("tier", "free"),
         "modules": modules,
+        "visibility": visibility,
+        "is_user_generated": bool(p.get("is_user_generated", False)),
+        "created_by": p.get("created_by"),
+        "creator_email": p.get("creator_email"),
+        "admin_review_status": p.get("admin_review_status", "approved"),
+        "admin_review_notes": p.get("admin_review_notes"),
     }
 
 @api.get("/lessons/{lesson_id}")
@@ -2020,6 +2193,124 @@ async def admin_auto_get_queue_item(queue_id: str, _admin=Depends(require_admin)
     return q
 
 
+@api.post("/admin/auto/queue/{queue_id}/regenerate")
+async def admin_auto_regenerate(queue_id: str, _admin=Depends(require_admin)):
+    """Re-run AI generation for a queue item that is FAILED or NEEDS_REVIEW.
+
+    Reuses the same topic/kind/level/tier/model_hint but re-runs Claude and the
+    quality gate. Drops the prior draft + error and updates regen_history.
+    """
+    q = await db["content_queue"].find_one({"id": queue_id}, {"_id": 0})
+    if not q:
+        raise HTTPException(404, "Queue item not found")
+    if q.get("status") not in ("failed", "needs_review", "rejected"):
+        raise HTTPException(
+            400,
+            f"Cannot regenerate from status '{q.get('status')}'. "
+            f"Allowed: failed, needs_review, rejected.",
+        )
+    # Reset the item back to pending so the standard run path can grab it.
+    # We force it to the front of its kind queue by setting priority = -1.
+    regen_history = q.get("regen_history", []) or []
+    regen_history.append({
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "from_status": q.get("status"),
+        "prior_grades": q.get("grades"),
+        "prior_error": q.get("error"),
+    })
+    await db["content_queue"].update_one(
+        {"id": queue_id},
+        {
+            "$set": {
+                "status": "pending",
+                "priority": -1,  # jump to head of queue
+                "regen_history": regen_history,
+                "regen_count": int(q.get("regen_count", 0)) + 1,
+                "updated_at": datetime.now(timezone.utc),
+            },
+            "$unset": {"error": "", "draft": "", "grades": ""},
+        },
+    )
+    # Immediately run generation for this specific kind so the operator sees
+    # results without waiting for the next scheduled tick.
+    kind = q.get("kind", "lesson")
+    try:
+        if kind == "path":
+            result = await auto_content.run_monday_path(db, source="manual:regenerate", force=True)
+        else:
+            result = await auto_content.run_daily_lesson(db, source="manual:regenerate")
+        # Pull the fresh state so the UI gets the new grades/draft.
+        fresh = await db["content_queue"].find_one({"id": queue_id}, {"_id": 0})
+        return {"ok": True, "run": result, "item": fresh}
+    except Exception as e:
+        log.exception("regenerate failed")
+        raise HTTPException(502, f"Regeneration failed: {str(e)[:200]}")
+
+
+class QueueRejectIn(BaseModel):
+    reason: Optional[str] = None
+
+
+@api.post("/admin/auto/queue/{queue_id}/reject")
+async def admin_auto_reject(queue_id: str, body: QueueRejectIn,
+                              _admin=Depends(require_admin)):
+    """Reject a queue item (audit-friendly delete).
+
+    Keeps the queue row for posterity (so we can show audit history)
+    but marks status=rejected so it stops cluttering the active queue.
+    """
+    q = await db["content_queue"].find_one({"id": queue_id}, {"_id": 0})
+    if not q:
+        raise HTTPException(404, "Queue item not found")
+    await db["content_queue"].update_one(
+        {"id": queue_id},
+        {"$set": {
+            "status": "rejected",
+            "reject_reason": (body.reason or "").strip()[:500] or None,
+            "rejected_at": datetime.now(timezone.utc),
+        }},
+    )
+    return {"ok": True, "status": "rejected"}
+
+
+class QueueDraftEditIn(BaseModel):
+    title: Optional[str] = None
+    body_text: Optional[str] = None  # raw body override (replaces all cards)
+    cards: Optional[list] = None     # full cards array override
+
+
+@api.patch("/admin/auto/queue/{queue_id}/draft")
+async def admin_auto_edit_draft(queue_id: str, body: QueueDraftEditIn,
+                                  _admin=Depends(require_admin)):
+    """Manually tweak a NEEDS_REVIEW draft before publishing it."""
+    q = await db["content_queue"].find_one({"id": queue_id}, {"_id": 0})
+    if not q:
+        raise HTTPException(404, "Queue item not found")
+    if q.get("status") != "needs_review":
+        raise HTTPException(400, "Can only edit drafts in 'needs_review' state")
+    draft = q.get("draft") or {}
+    if not draft:
+        raise HTTPException(400, "No draft attached to this queue item")
+    if body.title is not None:
+        draft["title"] = body.title.strip()[:200]
+    if body.cards is not None:
+        draft["cards"] = body.cards
+    elif body.body_text is not None:
+        # Convert a single body string into one card so the editor stays simple.
+        draft["cards"] = [{
+            "id": "body",
+            "kind": "text",
+            "title": draft.get("title", "Lesson"),
+            "body": body.body_text.strip()[:8000],
+        }]
+    draft["edited_by_admin_at"] = datetime.now(timezone.utc).isoformat()
+    await db["content_queue"].update_one(
+        {"id": queue_id},
+        {"$set": {"draft": draft, "updated_at": datetime.now(timezone.utc)}},
+    )
+    return {"ok": True, "draft": draft}
+
+
 # ─── Lead capture + Lifecycle ─────────────────────────────────────────────
 class LeadCaptureIn(BaseModel):
     email: EmailStr
@@ -2837,8 +3128,98 @@ class CoverGenIn(BaseModel):
 # ─── Curriculum CRUD (admin only) ───────────────────────────────────────────
 @api.get("/admin/curriculum/paths")
 async def admin_list_paths(_admin=Depends(require_admin)):
-    paths = await _curric_list_paths(db)
+    paths = await _curric_list_paths(db, is_admin=True)
     return {"paths": paths}
+
+
+# ─── User-generated path review (admin) ─────────────────────────────────────
+@api.get("/admin/paths/pending-review")
+async def admin_list_pending_paths(_admin=Depends(require_admin)):
+    """List user-generated paths awaiting admin approve/reject."""
+    paths = await _curric_list_paths_pending_review(db)
+    return {"paths": [path_summary(p) for p in paths], "count": len(paths)}
+
+
+class PathReviewIn(BaseModel):
+    notes: Optional[str] = None
+    new_tier: Optional[Literal["free", "ascender", "pathfinder", "sage"]] = None
+
+
+@api.post("/admin/paths/{path_id}/approve")
+async def admin_approve_path(path_id: str, body: PathReviewIn,
+                               _admin=Depends(require_admin)):
+    """Approve a user-generated path → makes it public for all tiered users.
+
+    Optionally re-tier (e.g., user is on Ascender but admin wants the path
+    available to all paid tiers — set new_tier=ascender; or restrict to sage
+    by setting new_tier=sage).
+    """
+    p = await _curric_get_path(db, path_id)
+    if not p:
+        raise HTTPException(404, "Path not found")
+    if not p.get("is_user_generated"):
+        raise HTTPException(400, "Only user-generated paths go through review")
+    patch = {
+        "visibility": "public",
+        "admin_review_status": "approved",
+        "admin_review_notes": (body.notes or "").strip()[:500] or None,
+    }
+    if body.new_tier:
+        patch["tier"] = body.new_tier
+    updated = await _curric_update_path(db, path_id, patch)
+    # Mark related admin notifications as read
+    try:
+        await db["admin_notifications"].update_many(
+            {"path_id": path_id, "kind": "user_path_submitted"},
+            {"$set": {"read": True, "resolved_at": datetime.now(timezone.utc), "resolution": "approved"}},
+        )
+    except Exception:
+        pass
+    return {"ok": True, "path": path_summary(updated)}
+
+
+@api.post("/admin/paths/{path_id}/reject")
+async def admin_reject_path(path_id: str, body: PathReviewIn,
+                              _admin=Depends(require_admin)):
+    """Reject a user-generated path. The creator keeps private access; not public."""
+    p = await _curric_get_path(db, path_id)
+    if not p:
+        raise HTTPException(404, "Path not found")
+    if not p.get("is_user_generated"):
+        raise HTTPException(400, "Only user-generated paths go through review")
+    patch = {
+        "visibility": "rejected",
+        "admin_review_status": "rejected",
+        "admin_review_notes": (body.notes or "").strip()[:500] or None,
+    }
+    updated = await _curric_update_path(db, path_id, patch)
+    try:
+        await db["admin_notifications"].update_many(
+            {"path_id": path_id, "kind": "user_path_submitted"},
+            {"$set": {"read": True, "resolved_at": datetime.now(timezone.utc), "resolution": "rejected"}},
+        )
+    except Exception:
+        pass
+    return {"ok": True, "path": path_summary(updated)}
+
+
+@api.get("/admin/notifications")
+async def admin_list_notifications(_admin=Depends(require_admin), unread_only: bool = False):
+    """Admin: list of in-app notifications (e.g., user-path submissions awaiting review)."""
+    q: dict = {}
+    if unread_only:
+        q["read"] = False
+    cur = db["admin_notifications"].find(q, {"_id": 0}).sort("created_at", -1).limit(200)
+    notifs = await cur.to_list(200)
+    return {"notifications": notifs, "unread_count": await db["admin_notifications"].count_documents({"read": False})}
+
+
+@api.post("/admin/notifications/{notif_id}/mark-read")
+async def admin_mark_notification_read(notif_id: str, _admin=Depends(require_admin)):
+    r = await db["admin_notifications"].update_one(
+        {"id": notif_id}, {"$set": {"read": True}}
+    )
+    return {"ok": True, "matched": r.matched_count}
 
 
 @api.get("/admin/curriculum/paths/{path_id}")

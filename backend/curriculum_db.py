@@ -49,8 +49,52 @@ async def ensure_seeded(db: AsyncIOMotorDatabase) -> None:
 
 
 # ─── Reads ──────────────────────────────────────────────────────────────────
-async def list_paths(db) -> List[dict]:
-    cur = db[PATHS_COLL].find({}, {"_id": 0}).sort("order", 1)
+async def list_paths(db, *, viewer_id: Optional[str] = None,
+                       is_admin: bool = False,
+                       include_private: bool = False) -> List[dict]:
+    """List paths.
+
+    Default (anonymous/regular user): public + approved only.
+    Authenticated user: also includes their own private/pending/rejected.
+    Admin (include_private=True): everything.
+    """
+    if is_admin or include_private:
+        q: dict = {}
+    elif viewer_id:
+        # Public OR mine
+        q = {"$or": [
+            {"$and": [
+                {"$or": [{"visibility": "public"}, {"visibility": {"$exists": False}}]},
+                {"$or": [{"admin_review_status": "approved"},
+                         {"admin_review_status": {"$exists": False}}]},
+            ]},
+            {"created_by": viewer_id},
+        ]}
+    else:
+        # Anonymous — only public + approved
+        q = {
+            "$and": [
+                {"$or": [{"visibility": "public"}, {"visibility": {"$exists": False}}]},
+                {"$or": [{"admin_review_status": "approved"},
+                         {"admin_review_status": {"$exists": False}}]},
+            ]
+        }
+    cur = db[PATHS_COLL].find(q, {"_id": 0}).sort("order", 1)
+    return [_norm_path(p) for p in await cur.to_list(500)]
+
+
+async def list_paths_by_creator(db, creator_id: str) -> List[dict]:
+    """List ALL paths created by a given user (any visibility)."""
+    cur = db[PATHS_COLL].find({"created_by": creator_id}, {"_id": 0}).sort("created_at", -1)
+    return [_norm_path(p) for p in await cur.to_list(500)]
+
+
+async def list_paths_pending_review(db) -> List[dict]:
+    """Admin: list paths awaiting review."""
+    cur = db[PATHS_COLL].find(
+        {"admin_review_status": "pending", "is_user_generated": True},
+        {"_id": 0},
+    ).sort("created_at", -1)
     return [_norm_path(p) for p in await cur.to_list(500)]
 
 
@@ -120,6 +164,15 @@ def path_summary(p: dict) -> dict:
         "tier": p.get("tier", "free"),
         "total_lessons": total_lessons,
         "total_xp": total_xp,
+        # User-generated path fields (Phase 16). Defaults preserve backward
+        # compatibility with admin-created paths (treated as public/approved).
+        "visibility": p.get("visibility", "public"),
+        "created_by": p.get("created_by"),
+        "creator_email": p.get("creator_email"),
+        "admin_review_status": p.get("admin_review_status", "approved"),
+        "admin_review_notes": p.get("admin_review_notes"),
+        "is_user_generated": bool(p.get("is_user_generated", False)),
+        "created_at": p.get("created_at"),
     }
 
 
@@ -150,6 +203,13 @@ async def create_path(db, payload: dict) -> dict:
         "modules": payload.get("modules", []),
         "order": order,
         "source": payload.get("source", "manual"),
+        # User-generated path metadata (defaults make admin-created paths "public")
+        "visibility": payload.get("visibility", "public"),
+        "created_by": payload.get("created_by"),
+        "creator_email": payload.get("creator_email"),
+        "admin_review_status": payload.get("admin_review_status", "approved"),
+        "admin_review_notes": payload.get("admin_review_notes"),
+        "is_user_generated": bool(payload.get("is_user_generated", False)),
         "created_at": datetime.now(timezone.utc),
         "updated_at": datetime.now(timezone.utc),
     }
@@ -158,7 +218,10 @@ async def create_path(db, payload: dict) -> dict:
 
 
 async def update_path(db, path_id: str, patch: dict) -> Optional[dict]:
-    allowed = {"title", "subtitle", "tagline", "color", "level", "duration", "image", "tier", "modules", "order"}
+    allowed = {"title", "subtitle", "tagline", "color", "level", "duration",
+               "image", "tier", "modules", "order",
+               "visibility", "admin_review_status", "admin_review_notes",
+               "created_by", "creator_email", "is_user_generated"}
     update = {k: v for k, v in patch.items() if k in allowed}
     if not update:
         return await get_path(db, path_id)

@@ -345,18 +345,19 @@ async def run_daily_lesson(db, *, source: str = "scheduler") -> dict:
         return {"status": "failed", "error": str(e)[:200], "run_id": rid}
 
 
-async def run_monday_path(db, *, source: str = "scheduler") -> dict:
-    """Generate a full path. Idempotent — checks if already ran today."""
+async def run_monday_path(db, *, source: str = "scheduler", force: bool = False) -> dict:
+    """Generate a full path. Idempotent — checks if already ran today (unless `force`)."""
     s = await get_settings(db)
     if s.get("paused"):
         rid = await log_run(db, kind="monday_path", status="skipped", summary={"reason": "paused"})
         return {"status": "skipped", "reason": "paused", "run_id": rid}
-    # Dedup: don't run twice in same UTC day
-    today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
-    col = await _runs_col(db)
-    if await col.count_documents({"kind": "monday_path", "status": {"$in": ["published", "drafted"]}, "created_at": {"$gte": today_start}}):
-        rid = await log_run(db, kind="monday_path", status="skipped", summary={"reason": "already_ran_today"})
-        return {"status": "skipped", "reason": "already_ran_today", "run_id": rid}
+    # Dedup: don't run twice in same UTC day (unless caller explicitly forces, e.g. manual regenerate)
+    if not force:
+        today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        col = await _runs_col(db)
+        if await col.count_documents({"kind": "monday_path", "status": {"$in": ["published", "drafted"]}, "created_at": {"$gte": today_start}}):
+            rid = await log_run(db, kind="monday_path", status="skipped", summary={"reason": "already_ran_today"})
+            return {"status": "skipped", "reason": "already_ran_today", "run_id": rid}
     item = await next_queued(db, kind="path")
     if not item:
         rid = await log_run(db, kind="monday_path", status="skipped", summary={"reason": "queue_empty"})

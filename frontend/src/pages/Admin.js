@@ -14,17 +14,20 @@ export default function Admin() {
   const [tab, setTab] = useState("stats");
   const [q, setQ] = useState("");
   const [loading, setLoading] = useState(true);
+  const [pendingPaths, setPendingPaths] = useState(0);
 
   const loadAll = async () => {
     setLoading(true);
     try {
-      const [s, u, sl, tr] = await Promise.all([
+      const [s, u, sl, tr, pp] = await Promise.all([
         api.get("/admin/stats"),
         api.get("/admin/users"),
         api.get("/admin/sales"),
         api.get("/admin/traffic"),
+        api.get("/admin/paths/pending-review").catch(() => ({ count: 0 })),
       ]);
       setStats(s); setUsers(u.users); setSales(sl.sales); setTraffic(tr);
+      setPendingPaths(pp.count || 0);
     } catch (e) {
       toast.error(e.message || "Could not load admin data");
     } finally {
@@ -65,6 +68,14 @@ export default function Admin() {
         <a href="/admin/studio" data-testid="admin-tab-studio" className="px-4 py-2 rounded-full text-sm font-bold transition border" style={{ background: "rgba(255,176,0,0.10)", color: "#FFB000", borderColor: "#FFB000" }}>AI STUDIO</a>
         <a href="/admin/seo" data-testid="admin-tab-seo" className="px-4 py-2 rounded-full text-sm font-bold transition border" style={{ background: "rgba(56,189,248,0.10)", color: "#38BDF8", borderColor: "rgba(56,189,248,0.5)" }}>SEO STUDIO</a>
         <a href="/admin/auto-content" data-testid="admin-tab-auto" className="px-4 py-2 rounded-full text-sm font-bold transition border" style={{ background: "rgba(255,176,0,0.10)", color: "#FFB000", borderColor: "rgba(255,176,0,0.5)" }}>AUTO-PILOT</a>
+        <a href="/admin/paths-review" data-testid="admin-tab-paths-review" className="px-4 py-2 rounded-full text-sm font-bold transition border relative" style={{ background: "rgba(191,180,255,0.10)", color: "#BFB4FF", borderColor: "rgba(191,180,255,0.5)" }}>
+          PATHS REVIEW
+          {pendingPaths > 0 && (
+            <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] grid place-items-center rounded-full text-[10px] font-black px-1" style={{ background: "#FB7185", color: "#0A0413" }} data-testid="admin-paths-review-badge">
+              {pendingPaths}
+            </span>
+          )}
+        </a>
         <a href="/admin/social" data-testid="admin-tab-social" className="px-4 py-2 rounded-full text-sm font-bold transition border" style={{ background: "rgba(236,72,153,0.10)", color: "#EC4899", borderColor: "rgba(236,72,153,0.5)" }}>SOCIAL</a>
         <a href="/admin/whats-new" data-testid="admin-tab-whats-new" className="px-4 py-2 rounded-full text-sm font-bold transition border" style={{ background: "rgba(124,58,237,0.10)", color: "#BFB4FF", borderColor: "rgba(191,180,255,0.4)" }}>WHAT'S NEW</a>
         <a href="/admin/subscribers" data-testid="admin-tab-subscribers" className="px-4 py-2 rounded-full text-sm font-bold transition border" style={{ background: "rgba(255,107,53,0.10)", color: "#FF6B35", borderColor: "rgba(255,107,53,0.5)" }}>SUBSCRIBERS</a>

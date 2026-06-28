@@ -3,10 +3,10 @@
 ## 1. Objectives
 - Deliver Ascendra as a **standalone responsive website**: React + FastAPI + MongoDB.
 - Preserve the full product loop:
-  - Curriculum (paths → modules → lessons → cards + quiz)
+  - Curriculum (paths → modules → lessons → cards)
   - Progress (XP, streak, levels)
   - Certificates (auto-issued on path completion)
-  - AI Tutor chat (Claude 4.5 via `emergentintegrations`)
+  - AI Tutor chat (Claude via `emergentintegrations`)
   - Pricing/checkout (Stripe **LIVE**, recurring subscriptions + Customer Portal)
   - Admin dashboard (stats/users/sales/traffic)
 - Web-first UX: responsive layout, navigation, accessible lesson player, share/print certificates.
@@ -21,7 +21,7 @@
 2) “What’s New” (admin + user-facing) surfacing recent AI-generated lessons + Admin Subscribers list
 - Promo/discount codes: **explicitly out of scope for now** (per user: “no discount available”)
 
-### New overarching objective (approved): Automation + Growth Flywheel — COMPLETED ✅
+### New overarching objective: Automation + Growth Flywheel — COMPLETED ✅
 Build a largely automated growth engine:
 - **Programmatic SEO** (`/learn` hubs with dynamically generated pages) to generate compounding traffic.
 - **Content auto-pilot** so “fun new courses” ship automatically (daily lessons + weekly flagship course).
@@ -39,6 +39,23 @@ Deliver an interactive learning experience comparable to “Coursiv-style” app
 
 ### NEW operational objective: Trustworthy business metrics — ACHIEVED ✅
 Ensure admin analytics reflect **real-world performance** by excluding internal QA/admin accounts from key dashboards.
+
+### NEW operational objective: Stripe key hygiene — IN PROGRESS 🟡
+Reduce risk of revenue loss / account compromise by:
+- Ensuring production deployments use **Stripe Restricted Keys (`rk_live_…`)** only
+- Ensuring rotated/revoked keys are not reused
+- Ensuring no secrets are ever pasted into chat/screenshots/logs
+
+### NEW product objectives (requested)
+**Phase 15: Admin Auto‑Pilot Queue UX Upgrade (P1)**
+- Fix immediate admin pain: items show `FAILED` / `NEEDS REVIEW` but operator cannot conveniently regenerate/approve/reject or quickly iterate.
+- Add regenerate + review controls (no full manual editor required for v1; optionally add minimal notes/edit in a controlled way).
+
+**Phase 16: User‑Generated Learning Paths (P1/P2 large feature)**
+- Paid users can generate custom learning paths (longer than 5–7 lessons) with Beginner/Intermediate/Advanced coverage.
+- Generated paths start private and trigger admin review notification.
+- Admin can approve to publish globally or reject with a reason.
+- Users can take lessons in any order (no forced sequencing), while the app still presents a recommended order.
 
 ---
 
@@ -74,354 +91,192 @@ Goal: validate external integrations + completion→certificate data flow before
 ### Phase 2 — V1 Website (MVP build, minimal bulk passes) (COMPLETED ✅)
 Goal: ship a working website covering the main learning + certificate flow.
 
-1) **Frontend foundation (React web)**
-- Implemented Ascendra “Celestial Phoenix” theme tokens + layout primitives.
+- Implemented Ascendra theme + layout primitives.
 - Implemented API client using `REACT_APP_BACKEND_URL` + bearer token storage.
 - Implemented auth context (`AuthProvider`) with token persistence + `/auth/me` refresh.
 
-2) **V1 routes (React Router)**
-- Implemented:
-  - `/` landing
-  - `/signup`, `/login`
-  - `/dashboard`
-  - `/paths`, `/paths/:id`
-  - `/lessons/:id` LessonPlayer (cards + quiz + completion)
-  - `/certificate/:id` printable certificate view
-
-3) **V1 UX rules**
-- Sticky web navigation + footer; responsive grids.
-- 403 for gated lessons triggers upgrade flow.
-- Errors surfaced via toasts; loading/empty states included.
-
-4) **Connect to backend (real data only)**
-- Uses real curriculum (migrated to MongoDB in later phase).
-
-5) **Testing**
-- Manual verification + automation screenshots confirmed core flows.
-
-**Phase 2 user stories (V1) — COMPLETED ✅**
-1. Visitor can land and start onboarding.
-2. User can sign up/log in.
-3. User can browse paths + see locked tiers.
-4. User can complete a lesson and see progress.
-5. User can view/print/share certificate.
+Routes:
+- `/` landing
+- `/signup`, `/login`
+- `/dashboard`
+- `/paths`, `/paths/:id`
+- `/lessons/:id` LessonPlayer
+- `/certificate/:id` printable certificate view
 
 ---
 
 ### Phase 3 — Feature expansion (production flows) (COMPLETED ✅)
-Goal: bring feature parity beyond the V1 learning loop.
-
-Implemented:
-1) **AI Tutor UI**
-- `/tutor` chat UI with persisted session.
-
-2) **Pricing + payments (Stripe LIVE, subscriptions)**
-- `/pricing` tier cards, monthly/annual toggle, $2.99 trial CTA.
-- Migrated checkout to **recurring subscriptions** and added **Stripe Customer Portal**.
-- `/checkout-success` polls `/api/billing/status/{session_id}` and refreshes tier.
-- UI auto-renewal disclosure text added.
-
-3) **Onboarding quiz → recommendation**
-- `/onboarding` → `PUT /api/auth/me/quiz` → recommended path routing.
-
-4) **Profile**
-- `/profile` includes billing management (Customer Portal).
-
-5) **Admin UI**
-- `/admin` admin-only route.
-- Stats, users list + inline tier editing, sales list, traffic charts.
-- AI Curriculum Studio (auto-generate courses + cover images).
-- Email template previewer.
-
-6) **Resend production emails (LIVE)**
-- Resend integration live with verified domain `ascendraacademy.com`.
-- Checkout-success email trigger implemented.
-
-**Phase 3 user stories — COMPLETED ✅**
-1. AI Tutor chat persists across reload and supports multi-turn.
-2. Onboarding quiz produces a recommended path.
-3. User can start Stripe checkout and return to success flow.
-4. User can manage password + view certificates + manage billing.
-5. Admin can view stats/users/sales/traffic and use AI Studio.
+- AI Tutor UI (`/tutor`)
+- Pricing + payments (Stripe LIVE subscriptions)
+- Onboarding quiz → recommendation
+- Profile billing portal
+- Admin UI (stats/users/sales/traffic, curriculum studio, email previewer)
+- Resend production emails
 
 ---
 
 ### Phase 4 — Testing, fixes, and polish (COMPLETED ✅)
-Goal: validate end-to-end reliability and improve conversion funnel.
+- E2E testing via `testing_agent_v3`
+- Free tier conversion fix (AI Fundamentals tier)
+- UX polish on landing/pricing
 
-1) **Automated E2E testing**
-- Ran `testing_agent_v3` with 97%+ pass rate across iterations.
+---
 
-2) **Key conversion fix**
-- Adjusted curriculum tiering so **free users can try lessons**:
-  - Set `AI Fundamentals` path tier from `ascender` → `free`.
+### Phase 5 — Renewal reminders (P1) — COMPLETED ✅
+- Stripe `invoice.upcoming` handling in `/api/billing/webhook`
+- Admin triggers + Resend templates
 
-3) **UX polish**
-- Pricing page now **leads with monthly amount**; annual shown as note.
-- Landing pricing teaser visibility fixed:
-  - Moved pricing teaser higher on the home page.
-  - Added fallback tier data so cards render even if `/api/pricing` is slow.
+---
+
+### Phase 6 — “What’s New” + Subscribers list (P2) — COMPLETED ✅
+- AI Studio tagging + endpoints + admin pages
+
+---
+
+### Phases 7–11 Roadmap expansion — COMPLETE ✅
+- Phase 7 Programmatic SEO
+- Phase 8 Content Auto‑Pilot (APScheduler) + quality gate
+- Phase 9 Lead magnet + welcome drip
+- Phase 10 Lifecycle emails
+- Phase 11 Social content pipeline + X integration readiness (blocked on X Project enrollment)
+
+**Interactive content auto-upgrade (future lessons) — VERIFIED ✅**
+- Inline interactivization after publish in `run_daily_lesson()` and sampled lessons in `run_monday_path()`
+- Safety-net: `interactive_sweep` hourly cron
+
+---
+
+### Phase 12 — Deployment readiness + production launch — COMPLETE ✅
+- Deployment blockers fixed (admin stats aggregation, .env parsing)
+
+---
+
+### Phase 13 — Social manual post helper for Meta — NOT STARTED (P2)
+- Planned manual copy/export helpers
+
+---
+
+### Phase 14 — P0 Bug Fix: Admin analytics must exclude internal accounts — COMPLETED ✅
+- Added `TEST_EMAIL_REGEX` + helper filters
+- Updated `/api/admin/stats`, `/api/admin/users`, `/api/admin/sales`, `/api/admin/subscribers`
+- Verified with backend tests (28/28 = 100%)
 
 ---
 
 ## 3. Next Actions
 
-### Phase 5 — Renewal reminders (P1) — COMPLETED ✅
-**Goal:** Send renewal reminder emails **7 days before renewal** for **both monthly and annual** subscriptions.
+### Phase 15 — Admin Auto‑Pilot Queue UX Upgrade (P1) — NOT STARTED
+**Goal:** Make the Auto‑Pilot queue actionable when items are `FAILED` / `NEEDS REVIEW`.
 
-Implementation delivered:
-- Stripe `invoice.upcoming` handling in `/api/billing/webhook`.
-- Idempotent helper `_try_send_renewal_reminder`.
-- Fallback + manual triggers:
-  - `POST /api/admin/billing/renewal-reminders/run`
-  - `POST /api/admin/billing/renewal-reminders/send`
-- Resend template `send_renewal_reminder()` + admin preview/test-send + UI button.
+**Current issue (user report):** On `/admin/auto-content` the operator cannot meaningfully act on queue items (no regenerate/retry workflow visible/available to resolve `FAILED` or `NEEDS REVIEW`).
 
-Testing:
-- Verified with `testing_agent_v3` (iteration_4): 95% pass.
+**Deliverables:**
+1) **Backend**
+- Add queue item regeneration endpoint:
+  - `POST /api/admin/auto/queue/{queue_id}/regenerate`
+    - Re-run generation for the same `topic/kind/level`
+    - Overwrite `draft` (if any), clear `error`, set `status=needs_review` (or `pending_review`) with new `grades`
+    - Increment `regen_count`, store `regen_history` (timestamp, short summary, grades)
+- Add reject endpoint:
+  - `POST /api/admin/auto/queue/{queue_id}/reject` with optional `{reason}`
+    - `status=rejected` and persists reason + timestamp
+- Add publish endpoint validation improvements (existing):
+  - Keep `POST /api/admin/auto/queue/{queue_id}/publish` but ensure it can publish from `needs_review` reliably
 
-**Operator requirement:** enable Stripe webhook event **`invoice.upcoming`**.
+2) **Frontend** (`/app/frontend/src/pages/AdminAutoContent.js`)
+- For `FAILED` and `NEEDS REVIEW` items show buttons:
+  - **Regenerate** (Refresh icon) → calls regenerate endpoint
+  - **Reject** (X icon) → calls reject endpoint
+  - **Publish anyway** remains (only for items with drafts)
+- Add a small “details drawer/modal” to show:
+  - grader notes, error text, last regeneration time
 
----
+3) **Testing**
+- Use backend testing agent:
+  - Seed a fake queue item in DB with `needs_review` + `draft`
+  - Regenerate → status changes, draft updated, regen_count increments
+  - Reject → status rejected
+  - Ensure endpoints are admin-protected
 
-### Phase 6 — “What’s New” + Subscribers list (P2) — COMPLETED ✅
-**Goal:** Increase engagement by surfacing newly AI-generated content and providing admin visibility into subscribers.
-
-Implementation delivered:
-- Tagged AI Studio output: `source="ai-studio"` + `created_at`.
-- Endpoints:
-  - User: `GET /api/whats-new`
-  - Admin: `GET /api/admin/whats-new`
-  - Admin: `GET /api/admin/subscribers` (MRR/ARR estimates)
-- Frontend:
-  - `/admin/whats-new`
-  - `/admin/subscribers`
-  - Dashboard “New this week” widget (conditional)
-
-Testing:
-- Verified with `testing_agent_v3` (iteration_5): 98% overall.
-
----
-
-### Roadmap expansion (approved) — Phases 7–11 COMPLETE ✅
-Sequence shipped: **Phase 7 → 8 → 9 → 10 → 11**.
-
-#### Phase 7 — Programmatic SEO — COMPLETE ✅
-**Goal:** Generate compounding organic traffic with AI-generated, indexable pages.
-
-Delivered:
-- Backend SEO Studio (`/app/backend/seo_studio.py`) storing pages in MongoDB `seo_pages`.
-- Public endpoints:
-  - `GET /api/seo/page/{model_slug}` (published only)
-  - `GET /api/seo/page/{model_slug}/{use_case_slug}` (published only)
-  - `GET /api/seo/published`
-  - `GET /api/seo/sitemap.xml`
-  - `GET /api/seo/robots.txt`
-- Admin endpoints:
-  - `GET /api/admin/seo/pages`
-  - `POST /api/admin/seo/generate-hub`
-  - `POST /api/admin/seo/generate-usecase`
-  - publish/archive/delete
-- Frontend:
-  - `/learn/:modelSlug` and `/learn/:modelSlug/:useCaseSlug` with `react-helmet-async` meta tags + JSON-LD
-  - `/admin/seo` (SEO Studio)
-  - Landing page internal links to published model hubs (`data-testid=landing-seo-links`)
-- Seeded pages:
-  - 6 hubs + 2 use-case pages (8 total), published and present in sitemap.
-
-Testing:
-- Verified with `testing_agent_v3` (iteration_6): 96% overall (backend generation endpoint timed out in test due to LLM latency; functionality works).
-
-Operator follow-up (recommended): submit sitemap to Google Search Console once custom domain points to production.
+**Notes:**
+- The user specifically requested “refresh/recreate” over manual editing; manual editing can be added later if needed.
 
 ---
 
-#### Phase 8 — Content Auto‑Pilot — COMPLETE ✅
-**Goal:** Add “fun new courses” automatically with minimal admin involvement.
-
-Delivered:
-- APScheduler-based automation (`/app/backend/auto_content.py`) booted on startup.
-- Default queue seeded (32 items: lessons + courses) in `content_queue`.
-- Jobs:
-  - Daily lesson generation (10:00 UTC)
-  - Monday full path generation (Mon 10:00 UTC)
-  - Daily digest email (11:00 UTC) via `send_digest()`
-- Quality gate:
-  - Claude grades (accuracy/clarity/brand_fit/depth) 1–10; auto-publish only if all ≥ threshold.
-  - Draft preservation for `needs_review` items.
-  - Manual override publish endpoint: `POST /api/admin/auto/queue/{id}/publish`
-- Admin UI:
-  - `/admin/auto-content` (pause, manual run, queue management, runs log)
-
-Testing:
-- Verified with `testing_agent_v3` (iteration_7): backend 100%, frontend 95% (non-critical modal interaction variance).
-
-**Scheduler stability update — COMPLETE ✅**
-- Fixed scheduler job registration to avoid `RuntimeError: no running event loop` by passing coroutine functions directly to `AsyncIOScheduler`.
-- Also fixed lifecycle scheduler job registration.
-- Verified by `testing_agent_v3` (iteration_9): **backend 100%**, **scheduler 100%**, **regressions 100%**.
-
-**Interactive content auto-upgrade (future lessons) — VERIFIED ✅**
-- Inline interactivization added after auto-publish in:
-  - `run_daily_lesson()`
-  - `run_monday_path()` (sampled lessons)
-- Safety-net scheduler job:
-  - `interactive_sweep` (Cron: every hour at `:15`) calling `run_interactive_sweep()`.
-- **Verified:** `interactive_sweep` is present in `/api/admin/auto/settings` → `next_runs.interactive_sweep`.
+### Phase 15.1 — Optional: Minimal Draft Editing (P2) — DEFERRED
+If needed after Phase 15:
+- `PATCH /api/admin/auto/queue/{id}/draft` to edit title/body only
+- Frontend modal editor + preview
 
 ---
 
-#### Phase 9 — Lead Magnet + Welcome Drip — COMPLETE ✅
-**Goal:** Convert visitors to email subscribers and trials.
+### Phase 16 — User‑Generated Learning Paths (P1/P2) — NOT STARTED
+**Goal:** Paid users can generate a custom path (longer than 5–7 lessons) spanning Beginner/Intermediate/Advanced, start learning immediately, and submit for admin approval to become public.
 
-Delivered:
-- Public lead capture endpoint:
-  - `POST /api/leads` (idempotent upsert) → sends lead magnet immediately.
-- Leads stored in MongoDB `leads`.
-- Resource page:
-  - `/resources/ai-roadmap` (free, no login)
-- Landing:
-  - Hero button opens lead capture modal (`LeadCaptureModal`).
-- Welcome drip (day 2/5/10/14) implemented in `lifecycle.py` and sent via Resend.
-- Admin:
-  - `GET /api/admin/leads`
+**Product rules (confirmed):**
+- Path generation is **paid-only** (no free users)
+- Generated path is **private to creator** initially and **notifies admin** for review
+- User **cannot edit** the generated path content, but **can take lessons in any order**
+- No caps on personal paths for paying users; however **tier gating controls which public paths are visible**
+- Over time, more public paths are added and tier catalog expands:
+  - Ascender: X paths
+  - Pathfinder: Ascender paths + additional set
+  - Sage: everything + sage-exclusive
 
-Testing:
-- Verified with `testing_agent_v3` (iteration_8): 100% backend + 100% frontend.
+**Deliverables:**
+1) **Schema additions** (`curriculum_paths` documents)
+- `visibility`: `private | pending_review | public | rejected`
+- `created_by`: user_id
+- `creator_email`: cached
+- `admin_review_status`: `pending | approved | rejected`
+- `admin_review_notes`: optional
+- `is_user_generated`: bool (optional convenience)
 
----
+2) **Backend endpoints**
+- `POST /api/paths/generate`
+  - Auth required; requires tier != `free`
+  - Input: `{ goal: string }`
+  - Output: created private path summary + first lesson IDs
+  - Generation format:
+    - 3 modules: Beginner/Intermediate/Advanced
+    - Total lessons: target 15–20 (configurable)
+    - Each lesson includes interactive cards (via `interactive_generator` inline)
+- `GET /api/paths/mine`
+  - Returns user’s private/pending/rejected paths + public ones they created
+- Tier gating updates:
+  - `GET /api/paths` should return:
+    - all `public` paths accessible by tier
+    - plus user’s own private/pending paths (regardless of tier gate for public catalog)
 
-#### Phase 10 — Lifecycle Emails — COMPLETE ✅
-**Goal:** Improve conversions, retention, and revenue with automated triggers.
+3) **Admin review workflow**
+- `GET /api/admin/paths/pending-review`
+- `POST /api/admin/paths/{path_id}/approve`
+  - Sets `visibility=public`, `admin_review_status=approved`
+- `POST /api/admin/paths/{path_id}/reject` with `{reason}`
+  - Sets `visibility=rejected`, keeps it visible only to creator
+- **Notifications**:
+  - In-app admin badge (simple count on admin home)
+  - Email via Resend to admin address (optional) when a new path is submitted
 
-Delivered (via daily scan at 09:00 UTC; manual trigger available):
-- Trial ending (T−1 day)
-- Winback (7 days after cancel)
-- Streak-saver (inactive ~14 days)
-- Annual upsell (monthly user at ~90 days)
-- Manual scan:
-  - `POST /api/admin/lifecycle/run` (kind=all or specific)
+4) **Frontend UX**
+- `/paths`:
+  - Add CTA: **“Don’t see your path? Create one”** (paid only; free sees upgrade prompt)
+  - Show public catalog + “My generated paths” section (private/pending)
+- Add `/paths/create` (or modal) with:
+  - goal prompt input
+  - generate button + loading state (30–90s)
+  - on success → route to newly created path detail
+- Update path detail / lesson list to allow “Start any lesson” (no forced order)
+- Admin page `/admin/paths-review`:
+  - list pending user paths, preview outline, approve/reject
 
-Testing:
-- Verified with `testing_agent_v3` (iteration_8): 100% backend.
-
----
-
-#### Phase 11 — Social Content Pipeline (Twitter/X + Instagram + TikTok) — FREE Generation — COMPLETE ✅
-**Goal:** Auto-generate social assets from lessons and support automated publishing where platform permissions allow.
-
-Constraints (explicit):
-- The system **cannot create** social accounts.
-- Auto-posting requires the user to create brand accounts + developer apps and provide API tokens.
-- Meta (Facebook/Instagram) auto-posting requires App Review for advanced permissions; until approved, use manual posting helpers.
-
-Delivered:
-- Backend social generator (`/app/backend/social_studio.py`):
-  - 5-tweet thread (Claude)
-  - 5-slide carousel: PIL-rendered branded PNGs (free)
-  - Silent MP4 slideshow: ffmpeg stitched from slides (free)
-  - Robust JSON parsing with retry to avoid LLM JSON formatting failures
-- Storage:
-  - MongoDB `social_posts` with binary blobs for slides + mp4.
-- Admin endpoints:
-  - `POST /api/admin/social/generate`
-  - `GET /api/admin/social/posts`
-  - `GET /api/admin/social/post/{id}`
-  - `GET /api/admin/social/post/{id}/slide/{i}.png`
-  - `GET /api/admin/social/post/{id}/video.mp4`
-- Admin UI:
-  - `/admin/social` (generate from lesson, preview tweets, copy buttons, slide previews, MP4 player + download)
-
-##### Phase 11.1 — X (Twitter) Integration — PARTIALLY COMPLETE ✅ / BLOCKED ⛔
-**What is working:**
-- OAuth 1.0a credentials validate successfully.
-  - `verify_credentials()` OK for `@Ascendraacademy`.
-  - `GET /api/admin/social/x/status` returns `ok: true`.
-
-**What is blocked (X-side):**
-- Posting via v2 `create_tweet` returns:
-  - `403 Forbidden` with reason `client-not-enrolled`.
-  - Message: App must be attached to a **Project** in X Developer Portal.
-
-**Backend additions:**
-- Added safe test endpoint:
-  - `POST /api/admin/social/x/test-post` with `{text, dry_run}`
-  - `dry_run=true` verifies creds without posting.
-
-**Next steps to complete X auto-posting:**
-- ⬜ Operator: Attach the X Developer App to a **Project** in the X Developer Portal (Projects & Apps).
-- ⬜ Retry: `POST /api/admin/social/x/test-post` with `dry_run=false`.
-- ⬜ Then validate full thread+media posting from `/admin/social`.
-
----
-
-### Phase 12 — Deployment Readiness + Production Launch (Cloudflare / Emergent Deploy) — COMPLETE ✅
-**Goal:** Safely deploy Ascendra to production at `ascendraacademy.com`.
-
-Deployment readiness audit (deployment_agent) — 3 passes:
-1) **Pass 1 (BLOCKER found → fixed):**
-   - Unbounded admin stats scan in `/app/backend/server.py`:
-     - Replaced `progress_col.find({})` loop with aggregation pipeline (`$project` + `$size` + `$sum` + `$group`).
-
-2) **Pass 2 (BLOCKER found → fixed):**
-   - `.env` parsing issue:
-     - `META_FB_PAGE_NAME=Ascendra Academy` → fixed to `META_FB_PAGE_NAME="Ascendra Academy"`.
-
-3) **Pass 3 (PASS with WARN):**
-   - Only warning: `curriculum_db.get_lesson` does an in-memory scan over paths to locate a lesson.
-   - Recommendation: deploy as-is, optimize post-launch.
-
-**Remaining go-live operator steps:**
-- ⬜ Run Emergent Built-in Deploy.
-- ⬜ DNS setup via Entri/Cloudflare:
-  - apex + www records
-  - SSL/TLS validation
-- ⬜ Post-launch validation:
-  - auth + billing + emails + sitemap + `/learn` pages.
-
----
-
-### Phase 13 — Social Manual Post Helper for Meta (FB/IG) — NOT STARTED (P2)
-**Goal:** Provide one-click copy/export workflows for FB/IG since Meta App Review blocks full auto-posting.
-
-Planned:
-- ⬜ Add “Manual Post Helper” section in `/admin/social`:
-  - one-click copy buttons (caption, hashtags)
-  - optimized formats for IG carousel + FB post
-  - download bundle (slides + mp4) for easy upload
-
----
-
-### Phase 14 — P0 Bug Fix: Admin analytics must exclude internal test/admin accounts — COMPLETED ✅
-**Goal:** Ensure admin dashboard metrics reflect real business performance by excluding internal QA/test/admin accounts.
-
-**What shipped (backend):**
-- `/app/backend/server.py`:
-  - Added `TEST_EMAIL_REGEX`
-  - Added helpers: `_real_users_filter()`, `_get_excluded_user_ids()`, `_and_filters()`
-- `GET /api/admin/stats`:
-  - Excludes internal accounts from:
-    - Users totals / tier breakdown / 30-day signups
-    - Revenue totals / paid sessions
-    - Engagement totals (DAU/WAU/lessons completed/certificates)
-  - Adds a new `filters` block in response for transparency (excluded_count, regex).
-- `GET /api/admin/users`, `GET /api/admin/sales`, `GET /api/admin/subscribers`:
-  - Exclude internal accounts by default
-  - Override available: `?include_internal=true`
-
-**Internal account patterns excluded:**
-- `sage*`, `admin@...`
-- `e2e_*`, `smoke_*`, `final_*` on `@ascendraacademy.com`
-- any `@test.ascendra.com` (e.g. `webhook_test_*`)
-
-**Major finding (business metrics):**
-- All 24 users in the current DB were internal/test artifacts.
-- Prior dashboard showing “4 paying subscribers / $39.96 MRR” was entirely from `webhook_test_*` QA accounts.
-- Dashboard now correctly shows **0 real customers / 0 real leads**, which is accurate.
-
-**Verification:**
-- Backend testing_agent ran and passed **28/28 tests (100%)**.
-- No regressions found (`/admin/traffic`, `/paths`, `/whats-new`, `/auth/login` still work).
+5) **Testing**
+- Backend testing agent:
+  - Paid user can generate path
+  - Free user forbidden
+  - Admin pending review list works
+  - Approve makes it appear in `/api/paths` for tiered users
+  - Reject keeps it private to creator
 
 ---
 
@@ -433,7 +288,7 @@ Planned:
 - ✅ Resend emails live on verified custom domain.
 - ✅ Renewal reminders shipped (monthly + annual) + admin tools.
 - ✅ “What’s New” shipped + AI content tagging.
-- ✅ Admin Subscribers list shipped (MRR/ARR + CSV + renewal email actions).
+- ✅ Admin Subscribers list shipped.
 
 ### Growth Flywheel — ACHIEVED ✅
 - ✅ Programmatic SEO pages + sitemap + schema.
@@ -447,26 +302,27 @@ Planned:
 - ✅ AI onboarding quiz + personalized plan.
 - ✅ 15-day challenge roadmap.
 - ✅ Interactive lesson cards + prompt libraries + browser-native TTS.
-- ✅ Auto-interactive future lessons verified via `interactive_sweep` scheduler.
+- ✅ Future auto-generated lessons auto-interactivized via `interactive_sweep`.
 
-### Current P0 quality bar (must pass before new feature work) — ACHIEVED ✅
+### Business metrics quality bar — ACHIEVED ✅
 - ✅ Admin analytics endpoints exclude internal accounts while keeping real free-tier leads.
 - ✅ Verified by backend testing agent (28/28 = 100%).
 
-### Remaining operator setup (recommended)
-1) **Stripe (billing automation)**
-- ⬜ Enable Stripe webhook event: **`invoice.upcoming`**.
+### New success criteria (to be achieved)
+**Phase 15 (Admin queue UX):**
+- ⬜ Admin can regenerate failed/review items and progress queue without leaving the page.
+- ⬜ Admin can reject items to keep queue clean and audited.
+- ⬜ Verified via backend testing.
 
-2) **SEO launch**
-- ⬜ When on your production/custom domain, submit sitemap to Google Search Console:
-  - `https://<your-domain>/api/seo/sitemap.xml`
+**Phase 16 (User-generated paths):**
+- ⬜ Paid users can create multi-level (Beginner/Intermediate/Advanced) long-form paths.
+- ⬜ Paths are private by default and notify admin for review.
+- ⬜ Admin approve/reject works; approved becomes public and tier-gated.
+- ⬜ Users can take lessons in any order.
 
-3) **X/Twitter publishing**
-- ✅ Credentials configured and verified.
-- ⬜ Attach X App to a Project (fix `client-not-enrolled`), then run a real post test.
+---
 
-4) **Post-launch performance improvements**
-- ⬜ Optimize `curriculum_db.get_lesson` to direct MongoDB lookup / denormalized lesson collection.
-
-5) **Meta (FB/IG)**
-- ⬜ Keep manual workflow until App Review grants advanced posting permissions.
+## 5. Operator / Environment Notes
+- Two environments exist (Preview vs Production). Code changes land in preview; operator redeploy is required to push to production.
+- **Stripe keys:** Production should use **Restricted Key (`rk_live_…`)** in deployment secrets; Standard Secret Key (`sk_live_…`) should never be used in deployments.
+- Avoid pasting any secrets into chat or screenshots. Rotate immediately if exposed.
