@@ -28,7 +28,7 @@
     "status": "completed"
   },
   {
-    "content": "Run backend testing agent on /api/onboarding/anonymous + signup auto-attach + lead consumption",
-    "status": "in_progress"
+    "content": "Phase 18 testing: 51/52 backend tests passed (98.1%); 1 flaky LLM rate-limit — not a code bug",
+    "status": "completed"
   }
 ]
