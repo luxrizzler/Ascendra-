@@ -40,6 +40,9 @@ import AdminPathsReview from "@/pages/AdminPathsReview";
 import AiRoadmap from "@/pages/AiRoadmap";
 import LearnHub from "@/pages/LearnHub";
 import AuthCallback from "@/pages/AuthCallback";
+import Terms from "@/pages/Terms";
+import Privacy from "@/pages/Privacy";
+import NoRefunds from "@/pages/NoRefunds";
 import NotFound from "@/pages/NotFound";
 import { api } from "@/lib/api";
 
@@ -98,6 +101,9 @@ function Shell() {
           <Route path="/learn/:modelSlug/:useCaseSlug" element={<LearnHub />} />
           <Route path="/resources/ai-roadmap" element={<AiRoadmap />} />
           <Route path="/auth/callback" element={<AuthCallback />} />
+          <Route path="/terms" element={<Terms />} />
+          <Route path="/privacy" element={<Privacy />} />
+          <Route path="/no-refunds" element={<NoRefunds />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </main>

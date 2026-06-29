@@ -27,7 +27,7 @@ Build a largely automated growth engine:
 - **Content auto-pilot** so “fun new courses” ship automatically (daily lessons + weekly flagship course).
 - **Lead magnet + drip sequences** to turn visitors into trials.
 - **Lifecycle automation** to improve conversion/retention.
-- **Social pipeline** using a **free-only content generation stack** (no paid video services), plus X/Twitter integration readiness.
+- **Social pipeline** using a **free-only content generation stack** (no paid video services).
 
 ### NEW overarching objective: Coursiv‑style engagement loop — LARGELY ACHIEVED ✅ / ONGOING 🟡
 Deliver an interactive learning experience comparable to “Coursiv-style” apps:
@@ -46,29 +46,11 @@ Reduce risk of revenue loss / account compromise by:
 - Ensuring rotated/revoked keys are not reused
 - Ensuring no secrets are ever pasted into chat/screenshots/logs
 
-### NEW product objectives (requested) — SHIPPED ✅
-**Phase 15: Admin Auto‑Pilot Queue UX Upgrade (P1) — COMPLETED ✅**
-- Provide actionable controls for `FAILED` / `NEEDS REVIEW` items:
-  - Regenerate (re-run Claude)
-  - Reject (clean queue, keep audit)
-  - Minimal draft edit before publishing
-
-**Phase 16: User‑Generated Learning Paths (P1/P2 large feature) — COMPLETED ✅**
-- Paid users can generate custom multi-level paths (Beginner/Intermediate/Advanced).
-- Generated paths start private/pending and notify admin for review.
-- Admin can approve (publish + choose tier) or reject (keeps private, optional notes).
-- Users can take lessons in any order (no forced sequencing), while UI presents recommended order.
-
-### NEW retention objective: Smart subscription management UX — PLANNED (Phase 17) 🟡
-Add a **Smart Subscription Management Card** that lets users “renew/reactivate/resume” from within the app:
-- (e) Smart card shows right state per user:
-  - Active + renewing
-  - Active + canceling (cancel at period end)
-  - Past-due
-  - Lapsed
-  - Free (never paid)
-- (f) The same widget appears on both **Dashboard** and **Profile**.
-- NEW: If someone’s subscription has elapsed, they must **keep certificates** and see that clearly.
+### NEW operational objective: Legal compliance baseline — ACHIEVED ✅
+Meet minimum legal/compliance expectations for:
+- Stripe payments review
+- Social platform developer portals (X, TikTok)
+- Email compliance (Resend footers / lawful basis)
 
 ---
 
@@ -151,7 +133,7 @@ Routes:
 - Phase 8 Content Auto‑Pilot (APScheduler) + quality gate
 - Phase 9 Lead magnet + welcome drip
 - Phase 10 Lifecycle emails
-- Phase 11 Social content pipeline + X integration readiness (blocked on X Project enrollment)
+- Phase 11 Social content pipeline + X integration readiness (later impacted by X Pay-Per-Use migration)
 
 **Interactive content auto-upgrade (future lessons) — VERIFIED ✅**
 - Inline interactivization after publish in `run_daily_lesson()` and sampled lessons in `run_monday_path()`
@@ -214,10 +196,6 @@ Routes:
 - Generated path is `pending_review` and not visible publicly until approved
 - User **cannot edit** the generated path content, but **can take lessons in any order**
 - No caps on personal paths for paying users (rate-limit exists to prevent abuse)
-- Tier catalog expansion continues over time:
-  - Ascender: baseline paid catalog
-  - Pathfinder: Ascender + additional
-  - Sage: everything + sage-exclusive
 
 **What shipped:**
 1) **New backend module**
@@ -226,144 +204,107 @@ Routes:
   - Stage 2: background fill lesson content (controlled concurrency)
 
 2) **Schema + queries** (`/app/backend/curriculum_db.py`)
-- Added fields:
-  - `visibility` (`public | pending_review | rejected | private`)
-  - `created_by`, `creator_email`
-  - `admin_review_status` (`pending | approved | rejected`)
-  - `admin_review_notes`
-  - `is_user_generated`
-- Added functions:
-  - `list_paths(viewer_id, is_admin, include_private)` — visibility-aware
-  - `list_paths_by_creator(creator_id)`
-  - `list_paths_pending_review()`
+- Added fields: `visibility`, `created_by`, `creator_email`, `admin_review_status`, `admin_review_notes`, `is_user_generated`
+- Added functions for visibility-aware listing and admin pending-review listing
 
 3) **Backend endpoints** (`/app/backend/server.py`)
 - `POST /api/paths/generate` (paid-only)
-  - Validates goal length, rate-limits (1 per user / 5 minutes)
-  - Creates path with `visibility=pending_review`, `admin_review_status=pending`
-  - Creates `admin_notifications` record
-  - Background-tasks: fill lessons + interactivize (best-effort)
 - `GET /api/paths/mine`
-- Updated `GET /api/paths` (anonymous: public+approved only; authed: also include own)
-- Updated `GET /api/paths/{id}` to protect non-public paths
+- Updated path listing/detail endpoints to protect non-public paths
 
 4) **Admin review workflow**
 - `GET /api/admin/paths/pending-review`
 - `POST /api/admin/paths/{id}/approve` (optional tier override)
 - `POST /api/admin/paths/{id}/reject` (notes)
-- In-app notifications:
-  - `GET /api/admin/notifications`
-  - `POST /api/admin/notifications/{id}/mark-read`
 
 5) **Frontend UX**
-- `/app/frontend/src/pages/Paths.js`
-  - “Create your own path” CTA + modal goal prompt
-  - “Your custom paths” section + status badges (Pending/Approved/Needs work)
-- `/app/frontend/src/pages/AdminPathsReview.js`
-  - Review list + approve/reject modal + tier override
-- `/app/frontend/src/pages/Admin.js`
-  - Added **PATHS REVIEW** tab with pending-count badge
-- `/app/frontend/src/App.js`
-  - Registered route `/admin/paths-review`
+- User UI: `/paths` “Create your own path” + “Your custom paths”
+- Admin UI: `/admin/paths-review` with approve/reject workflow + badge
 
 6) **Testing**
 - Verified by backend testing agent (iteration_17) — 28/28 pass.
 
-**Known minor limitations (non-blockers):**
-- LLM rate limits may cause some background lesson-fill failures under load; the hourly sweep/retries mitigate this.
-- 5-minute per-user generation rate limit is strict; can be relaxed later.
+---
+
+### Phase 17 — Smart Subscription Management Card (P0/P1 retention) — COMPLETED ✅
+**Goal:** Let users renew/reactivate/resume from inside the app without confusion, while keeping Stripe handling secure.
+
+**Shipped:**
+- Backend: `/api/billing/status`, `/api/billing/resume` (plus related status logic)
+- Frontend: `/app/frontend/src/components/SubscriptionCard.js` embedded in Dashboard (and/or Profile where applicable)
+- Certificate retention preserved for lapsed users (no tier-gate on certificate endpoints)
 
 ---
 
-### Phase 17 — Smart Subscription Management Card (P0/P1 retention) — NOT STARTED 🟡
-**Goal:** Let users renew/reactivate/resume from inside the app without confusion, while keeping Stripe handling secure.
+### Phase 18 — Landing-page onboarding quiz popup (COMPLETED ✅)
+- Moved onboarding quiz to a Landing Page popup with anonymous plan generation via `/api/onboarding/anonymous`.
 
-**Confirmed requirements (e + f + certificate preservation):**
-- Smart card shows the right state:
-  1) Active + renewing
-  2) Active + canceling (cancel at period end)
-  3) Past-due
-  4) Lapsed
-  5) Free (never paid)
-- Same widget on **Dashboard** and **Profile**.
-- Lapsed users must keep certificates and see that clearly.
+---
 
-**Certificate persistence — already works ✅ (verified):**
-- Certificates are stored in `certificates` collection by `user_id`.
-- No tier gate on:
-  - `GET /api/certificates`
-  - `GET /api/certificates/{cert_id}`
-  - `GET /api/certificates/public/{cert_id}`
-- Certificate docs are self-contained snapshots; subscription lapse does not invalidate them.
+### Phase 19 — Legal Compliance Pages (P0) — COMPLETED ✅
+**Goal:** Add Terms/Privacy/No-Refunds pages + UI enforcement to satisfy payment and platform compliance.
 
-**Implementation plan:**
+**What shipped:**
+1) **Frontend pages (NEW)**
+- `/app/frontend/src/pages/Terms.js` — Comprehensive Terms of Service with:
+  - “All sales final — no refunds” clause
+  - 17 sections
+  - Governing law: **State of Missouri**
+  - Contact: **ascendraacademy@yahoo.com**
+- `/app/frontend/src/pages/Privacy.js` — Privacy Policy (CCPA/GDPR-oriented), 14 sections:
+  - Explicit categories of data
+  - User rights section
+  - Lists third-party processors: **Stripe, Resend, Anthropic, OpenAI, Google, MongoDB Atlas**
+- `/app/frontend/src/pages/NoRefunds.js` — Standalone “All Sales Final — No Refunds” billing policy page (Stripe-friendly)
 
-1) Backend
-- Replace `/api/billing/info` stub with a rich status endpoint that returns:
-  - `state` (ACTIVE_RENEWING | ACTIVE_CANCELING | PAST_DUE | LAPSED | FREE_NEVER_PAID)
-  - `tier`, `subscription_interval`, `tier_expires_at` (or `expires_at`)
-  - `stripe_customer_id` presence → `can_open_portal`
-  - `subscription_cancel_at_period_end`
-  - `subscription_status` (active/trialing/past_due/canceled)
-  - `certificates_count`
-- Add `POST /api/billing/resume`:
-  - For users with an active Stripe subscription where `cancel_at_period_end=true`, call Stripe to set `cancel_at_period_end=false`
-  - Return updated state
-- Add `POST /api/billing/reactivate` (optional, if needed):
-  - Shortcut that creates a Checkout Session for the user’s last paid tier/interval
-  - (Alternatively reuse existing `/api/billing/checkout` from the UI)
-- Ensure `auto_downgrade_if_expired()` continues to downgrade tier access while leaving certificates intact.
+2) **Routing (UPDATED)**
+- `/app/frontend/src/App.js` — added routes:
+  - `/terms`, `/privacy`, `/no-refunds`
 
-2) Frontend
-- New shared component: `/app/frontend/src/components/SubscriptionCard.js`
-  - Calls `/api/billing/status` (new) and renders the correct CTA:
-    - ACTIVE_RENEWING → “Manage billing” → Stripe portal
-    - ACTIVE_CANCELING → “Resume” (calls `/billing/resume`) + “Manage”
-    - PAST_DUE → “Update payment method” → portal
-    - LAPSED → “Reactivate” → pricing/checkout + “Your X certificates are safe” + link to certificates
-    - FREE_NEVER_PAID → “View plans” → pricing
-- Add to:
-  - `Dashboard.js` (top section)
-  - `Profile.js` (replace/augment existing portal-only button)
+3) **Footer (UPDATED)**
+- `/app/frontend/src/components/WebFooter.js`
+  - Added **Legal** column with Terms / Privacy / No Refunds / Contact
+  - Added entity display: **Ascendra Academy LLC**
 
-3) Testing
-- Backend tests:
-  - Free user shows FREE_NEVER_PAID
-  - Active subscription shows ACTIVE_RENEWING
-  - cancel_at_period_end shows ACTIVE_CANCELING and resume endpoint works
-  - Lapsed tier_expires_at shows LAPSED
-  - Certificates still listable after lapse
-- UI smoke test:
-  - Card renders on both Dashboard + Profile
+4) **Signup compliance (UPDATED)**
+- `/app/frontend/src/pages/Signup.js`
+  - Added required agreement checkbox
+  - Submit disabled until checked
+  - Links open legal pages in a new tab
+
+5) **SEO discovery (UPDATED)**
+- `/app/frontend/public/sitemap.xml` — included `/terms`, `/privacy`, `/no-refunds`
+
+6) **Styling (UPDATED)**
+- `/app/frontend/src/index.css` — added `.asc-prose` styling to restore bullet lists + link styling
 
 ---
 
 ## 3. Next Actions
 
-### Immediate (P0/P1): Deploy Phase 15 + 16 to production
+### Immediate (P0): Deploy Phase 19 legal pages to production
 - User action: Redeploy via Emergent Deploy dashboard to push preview → `ascendraacademy.com`.
-- After redeploy:
-  - Verify `/admin/auto-content` shows Regenerate/Edit/Publish/Reject
-  - Verify `/paths` shows the Create Path CTA
-  - Verify `/admin/paths-review` exists and lists pending submissions
+- After redeploy verify:
+  - `/terms`, `/privacy`, `/no-refunds` load publicly
+  - Footer has Legal links site-wide
+  - Signup requires agreement checkbox
 
-### Phase 17 — Smart Subscription Management Card (P0/P1) — NEXT
-- Build the smart subscription card on Dashboard + Profile.
-- Ensure lapse states are understandable and certificates are explicitly preserved.
+### X (Twitter) posting (P1) — Platform decision + security action required
+- **Pricing reality:** X is now **Pay-Per-Use** (Free tier removed Feb 2026). Decide whether to pay per post or switch to manual copy workflow.
+- **Security:** Rotate all exposed OAuth 2.0 credentials immediately (client secret, access token, refresh token) since they were pasted in chat.
 
-### Stripe key hygiene hardening (P0) — IN PROGRESS 🟡
-Goal: eliminate risk of deploying Standard Secret keys and ensure key rotation hygiene.
-- Ensure production deployment secrets use `STRIPE_API_KEY=rk_live_…` (Restricted Key)
-- Verify `STRIPE_WEBHOOK_SECRET=whsec_…` set in production
-- Confirm no secret keys are ever pasted into chat/screenshots
-- Optional improvement: add a startup log check that validates key prefix (`rk_` only) and refuses to start if `sk_` is detected (preview-safe, production-safe).
+### TikTok posting (P2) — Feasibility & audit gating
+- TikTok posting API is dollar-free but requires:
+  - Business account
+  - App audit (1–4 weeks) for public posting
+  - Token refresh flow + domain verification
+- No code changes shipped yet; pending decision.
 
-### X (Twitter) auto-posting unblock (P1) — USER ACTION REQUIRED
-- Fix 403 `client-not-enrolled` by attaching X App to a Project in X Developer Portal.
-- Once done, re-test `/api/admin/social/x/test-post`.
+### Phase 13 — Meta manual post helper (P2) — still pending
+- Build one-click copy/export helpers for FB/IG (since full automation is blocked by app review).
 
-### Meta (FB/IG) manual post helper (P2) — NOT STARTED
-- Add one-click copy/export helpers for FB/IG posting.
+### Code health (P3)
+- Refactor `server.py` (approaching ~4,000 lines) into FastAPI `APIRouter` modules.
 
 ---
 
@@ -382,38 +323,25 @@ Goal: eliminate risk of deploying Standard Secret keys and ensure key rotation h
 - ✅ Content auto-pilot: daily lessons + Monday flagship paths + quality gate.
 - ✅ Lead magnet capture + AI Roadmap resource + welcome drip.
 - ✅ Lifecycle automation: trial-ending, winback, streak-saver, annual upsell.
-- ✅ Social pipeline: free-only asset generation + admin preview + MP4 export.
+- ✅ Social pipeline content generation and admin preview.
 
 ### Coursiv-style engagement loop — LARGELY ACHIEVED ✅ / ONGOING 🟡
 - ✅ Streak tracking + milestone celebrations.
 - ✅ AI onboarding quiz + personalized plan.
 - ✅ 15-day challenge roadmap.
 - ✅ Interactive lesson cards + prompt libraries + browser-native TTS.
-- ✅ Future auto-generated lessons auto-interactivized via `interactive_sweep`.
 
 ### Business metrics quality bar — ACHIEVED ✅
 - ✅ Admin analytics endpoints exclude internal accounts while keeping real free-tier leads.
-- ✅ Verified by backend testing agent (iteration_16).
 
-### Phase 15 (Admin queue UX) — ACHIEVED ✅
-- ✅ Admin can regenerate failed/review items and progress queue without leaving the page.
-- ✅ Admin can reject items to keep queue clean and audited.
-- ✅ Minimal draft edit available for needs_review.
-- ✅ Verified via backend testing (iteration_17) + UI screenshot.
+### Phase 19 (Legal compliance baseline) — ACHIEVED ✅
+- ✅ Terms / Privacy / No Refunds pages exist and are linked in footer.
+- ✅ Signup flow enforces agreement.
+- ✅ Sitemap includes legal URLs for discovery.
 
-### Phase 16 (User-generated paths) — ACHIEVED ✅
-- ✅ Paid users can create multi-level (Beginner/Intermediate/Advanced) long-form paths.
-- ✅ Paths are pending by default and notify admin for review.
-- ✅ Admin approve/reject works; approved becomes public and tier-gated.
-- ✅ Users can take lessons in any order.
-- ✅ Verified via backend testing (iteration_17) + UI screenshots.
-
-### Phase 17 (Smart subscription UX) — SUCCESS CRITERIA (planned)
-- ✅ Users can always find “Manage billing” from Dashboard and Profile.
-- ✅ Canceling users can “Resume subscription” in-app.
-- ✅ Past-due users are prompted to fix payment method.
-- ✅ Lapsed users can reactivate and are explicitly told **their certificates remain**.
-- ✅ Certificates remain accessible regardless of subscription status.
+### Social auto-posting — STATUS (platform-driven)
+- 🟡 X posting requires Pay-Per-Use credits (business decision) and credential rotation (security).
+- 🟡 TikTok posting requires audit approval and a full integration build; no code shipped.
 
 ---
 
@@ -421,3 +349,4 @@ Goal: eliminate risk of deploying Standard Secret keys and ensure key rotation h
 - Two environments exist (Preview vs Production). Code changes land in preview; operator redeploy is required to push to production.
 - **Stripe keys:** Production should use **Restricted Key (`rk_live_…`)** in deployment secrets; Standard Secret Key (`sk_live_…`) should never be used in deployments.
 - Avoid pasting any secrets into chat or screenshots. Rotate immediately if exposed.
+- **Active security action:** X OAuth 2.0 credentials were exposed in chat; rotate them in the X Developer Portal and update deployment env vars (do not share in chat).

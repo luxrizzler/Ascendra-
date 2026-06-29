@@ -15,6 +15,7 @@ export default function Signup() {
   const [email, setEmail] = useState(prefillEmail);
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
+  const [agree, setAgree] = useState(false);
   const [busy, setBusy] = useState(false);
 
   // Keep email in sync if the prefill param changes (rare, but safe)
@@ -23,6 +24,7 @@ export default function Signup() {
   const submit = async (e) => {
     e.preventDefault();
     if (password.length < 6) { toast.error("Password must be 6+ characters"); return; }
+    if (!agree) { toast.error("Please agree to the Terms, Privacy Policy, and No Refunds Policy"); return; }
     setBusy(true);
     try {
       await signup(email.trim().toLowerCase(), password, name.trim() || undefined);
@@ -54,13 +56,28 @@ export default function Signup() {
         <input className="asc-input" type="text" placeholder="Your name (optional)" value={name} onChange={(e) => setName(e.target.value)} data-testid="signup-name-input" />
         <input className="asc-input" type="email" placeholder="Email" required value={email} onChange={(e) => setEmail(e.target.value)} data-testid="signup-email-input" />
         <input className="asc-input" type="password" placeholder="Password (6+ chars)" required value={password} onChange={(e) => setPassword(e.target.value)} data-testid="signup-password-input" />
-        <button type="submit" disabled={busy} className="asc-btn-primary w-full justify-center" data-testid="signup-submit-btn">
+
+        <label className="flex items-start gap-2.5 text-xs text-[var(--asc-text-dim)] leading-relaxed cursor-pointer select-none pt-1" data-testid="signup-agree-label">
+          <input
+            type="checkbox"
+            checked={agree}
+            onChange={(e) => setAgree(e.target.checked)}
+            className="mt-0.5 w-4 h-4 rounded border-[var(--asc-border-strong)] bg-transparent accent-[#FFB000] cursor-pointer flex-shrink-0"
+            data-testid="signup-agree-checkbox"
+            aria-label="Agree to Terms, Privacy, and No Refunds policy"
+          />
+          <span>
+            I agree to the{" "}
+            <Link to="/terms" target="_blank" className="text-[var(--asc-brand)] hover:underline" data-testid="signup-terms-link">Terms of Service</Link>,{" "}
+            <Link to="/privacy" target="_blank" className="text-[var(--asc-brand)] hover:underline" data-testid="signup-privacy-link">Privacy Policy</Link>, and{" "}
+            <Link to="/no-refunds" target="_blank" className="text-[var(--asc-brand)] hover:underline" data-testid="signup-no-refunds-link">No Refunds Policy</Link>.
+          </span>
+        </label>
+
+        <button type="submit" disabled={busy || !agree} className="asc-btn-primary w-full justify-center disabled:opacity-50 disabled:cursor-not-allowed" data-testid="signup-submit-btn">
           {busy ? "Creating…" : "Create account"} <ArrowRight size={16} />
         </button>
       </form>
-      <p className="text-xs text-[var(--asc-text-muted)] mt-4 text-center">
-        By creating an account, you agree to our terms. By accessing this site, you accept that this is a demo.
-      </p>
       <div className="mt-5 text-sm text-center text-[var(--asc-text-dim)]">
         Already have an account? <Link to="/login" className="text-[var(--asc-brand)] hover:underline">Sign in</Link>
       </div>
