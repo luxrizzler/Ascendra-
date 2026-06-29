@@ -60,6 +60,21 @@ def _send(to: str, subject: str, html: str, text: str) -> dict:
         return {"ok": False, "error": str(e)}
 
 
+async def send_email(*, to: str, subject: str, html: str, text: str = "") -> dict:
+    """Public async wrapper for ad-hoc transactional sends.
+
+    Used for emails that don't have a dedicated template helper (e.g. the
+    anonymous-quiz personalized plan email). Falls back to a stripped text
+    body if `text` is omitted. Always safe to await; never raises.
+    """
+    import re
+    if not text:
+        # Strip HTML tags for a usable plain-text fallback.
+        text = re.sub(r"<[^>]+>", " ", html)
+        text = re.sub(r"\s+", " ", text).strip()
+    return _send(to=to, subject=subject, html=html, text=text)
+
+
 # ──────────────────────────────────────────────────────────────────────
 # Branded template (shared)
 # ──────────────────────────────────────────────────────────────────────
