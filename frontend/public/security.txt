@@ -1,0 +1,13 @@
+# Ascendra Academy Security Policy
+# RFC 9116: https://www.rfc-editor.org/rfc/rfc9116
+# The canonical location for this file is at /.well-known/security.txt
+# This copy exists at the site root for legacy scanners.
+
+Contact: mailto:ascendraacademy@yahoo.com
+Expires: 2027-07-01T00:00:00.000Z
+Preferred-Languages: en
+Canonical: https://ascendraacademy.com/.well-known/security.txt
+Policy: https://ascendraacademy.com/terms
+
+# Ascendra Academy LLC
+# State of Missouri, United States

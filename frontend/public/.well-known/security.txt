@@ -1,0 +1,21 @@
+# Ascendra Academy Security Policy
+# RFC 9116: https://www.rfc-editor.org/rfc/rfc9116
+
+Contact: mailto:ascendraacademy@yahoo.com
+Expires: 2027-07-01T00:00:00.000Z
+Preferred-Languages: en
+Canonical: https://ascendraacademy.com/.well-known/security.txt
+Policy: https://ascendraacademy.com/terms
+
+# If you have discovered a security vulnerability affecting
+# Ascendra Academy (ascendraacademy.com), please report it via the
+# Contact address above. We appreciate responsible disclosure and
+# will acknowledge your report within 5 business days.
+#
+# Please do NOT:
+#   - Publicly disclose the issue before we have had a chance to remediate
+#   - Access or modify user data that does not belong to you
+#   - Perform testing that degrades service for other users (DoS, brute force at scale, etc.)
+#
+# Ascendra Academy LLC
+# State of Missouri, United States
