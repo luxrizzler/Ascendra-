@@ -3,7 +3,7 @@ import { FileText, Mail, AlertTriangle } from "lucide-react";
 import SEO from "@/components/SEO";
 
 const EFFECTIVE_DATE = "January 1, 2026";
-const LAST_UPDATED = "January 1, 2026";
+const LAST_UPDATED = "July 3, 2026";
 const COMPANY = "Ascendra Academy LLC";
 const CONTACT_EMAIL = "ascendraacademy@yahoo.com";
 const SITE = "ascendraacademy.com";
@@ -20,13 +20,14 @@ const SECTIONS = [
   { id: "user-conduct", title: "8. User Conduct & Acceptable Use" },
   { id: "ip", title: "9. Intellectual Property" },
   { id: "third-parties", title: "10. Third-Party Services" },
-  { id: "termination", title: "11. Termination" },
-  { id: "disclaimers", title: "12. Disclaimers" },
-  { id: "liability", title: "13. Limitation of Liability" },
-  { id: "indemnification", title: "14. Indemnification" },
-  { id: "governing-law", title: "15. Governing Law & Disputes" },
-  { id: "changes", title: "16. Changes to These Terms" },
-  { id: "contact", title: "17. Contact Us" },
+  { id: "social-media", title: "11. Social Media Integrations" },
+  { id: "termination", title: "12. Termination" },
+  { id: "disclaimers", title: "13. Disclaimers" },
+  { id: "liability", title: "14. Limitation of Liability" },
+  { id: "indemnification", title: "15. Indemnification" },
+  { id: "governing-law", title: "16. Governing Law & Disputes" },
+  { id: "changes", title: "17. Changes to These Terms" },
+  { id: "contact", title: "18. Contact Us" },
 ];
 
 export default function Terms() {
@@ -222,16 +223,64 @@ export default function Terms() {
               </p>
             </Block>
 
-            <Block id="termination" title="11. Termination">
+            <Block id="social-media" title="11. Social Media Integrations">
               <p>
-                We may suspend or terminate your access to the Services at any time, for any reason, including
-                without limitation if we believe you have violated these Terms. Upon termination, your right to use
-                the Services ceases immediately. Sections of these Terms that by their nature should survive
-                termination will survive, including Sections 5 (No Refunds), 9, 12, 13, 14, and 15.
+                From time to time, {COMPANY} may publish, cross-post, or link to content on third-party social
+                media platforms including (but not limited to) TikTok, X (formerly Twitter), LinkedIn, YouTube,
+                Instagram, Facebook, Threads, and similar services (collectively, &ldquo;Social Platforms&rdquo;).
+                We may also offer optional features that allow you to connect your own Social Platform accounts to
+                the Services, or that allow the Services to post content on your behalf when you have explicitly
+                authorized such posting.
+              </p>
+              <p>
+                <b className="text-white">Platform terms apply.</b> Any content published by or on behalf of Ascendra
+                to a Social Platform, and any content or interactions you have on a Social Platform through the
+                Services, are also subject to the respective platform&rsquo;s own terms of service, community
+                guidelines, and privacy policies. You are responsible for reviewing and complying with those
+                policies.
+              </p>
+              <p>
+                <b className="text-white">Content limitations.</b> Social Platforms independently control what
+                content may be posted, when it may be posted, how quickly it appears, and how long it remains
+                available. Rate limits, moderation actions, account suspensions, API pricing changes, and outages
+                by Social Platforms are outside our control. We do not guarantee that any post published through
+                the Services will remain visible, indexed, unaltered, or accessible on any Social Platform.
+              </p>
+              <p>
+                <b className="text-white">Authorization &amp; revocation.</b> Where you connect a Social Platform
+                account, you authorize us to access and use the specific permissions you grant (for example,
+                posting on your behalf, reading basic profile information). You may revoke this authorization at
+                any time from your account settings or directly from the Social Platform. Revocation will stop
+                future actions but will not retroactively remove content already posted.
+              </p>
+              <p>
+                <b className="text-white">User-submitted social content.</b> If you submit content (captions,
+                images, video, or other material) to be posted through the Services to a Social Platform, you
+                represent and warrant that you own or have obtained all necessary rights to that content and that
+                its distribution will not violate any law or third-party right.
+              </p>
+              <p>
+                <b className="text-white">Endorsements.</b> Links from our Services to Social Platforms, or from a
+                Social Platform to our Services, do not imply endorsement, partnership, or affiliation unless
+                explicitly stated.
+              </p>
+              <p>
+                <b className="text-white">Third-party costs.</b> Some Social Platforms (for example, X) may charge
+                fees, meter API usage, or require paid tiers to enable posting. Where applicable, Ascendra is not
+                responsible for any such third-party fees you incur through your own connected accounts.
               </p>
             </Block>
 
-            <Block id="disclaimers" title="12. Disclaimers">
+            <Block id="termination" title="12. Termination">
+              <p>
+                We may suspend or terminate your access to the Services at any time, for any reason, including
+                without limitation if we believe you have violated these Terms. Upon termination, your right to
+                use the Services ceases immediately. Sections of these Terms that by their nature should survive
+                termination will survive, including Sections 5 (No Refunds), 9, 13, 14, 15, and 16.
+              </p>
+            </Block>
+
+            <Block id="disclaimers" title="13. Disclaimers">
               <p>
                 THE SERVICES ARE PROVIDED “AS IS” AND “AS AVAILABLE,” WITHOUT WARRANTIES OF ANY KIND, WHETHER
                 EXPRESS, IMPLIED, OR STATUTORY, INCLUDING WITHOUT LIMITATION WARRANTIES OF MERCHANTABILITY, FITNESS
@@ -241,7 +290,7 @@ export default function Terms() {
               </p>
             </Block>
 
-            <Block id="liability" title="13. Limitation of Liability">
+            <Block id="liability" title="14. Limitation of Liability">
               <p>
                 TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, IN NO EVENT WILL {COMPANY.toUpperCase()}, ITS
                 AFFILIATES, OR THEIR RESPECTIVE OFFICERS, EMPLOYEES, OR AGENTS BE LIABLE FOR ANY INDIRECT,
@@ -255,7 +304,7 @@ export default function Terms() {
               </p>
             </Block>
 
-            <Block id="indemnification" title="14. Indemnification">
+            <Block id="indemnification" title="15. Indemnification">
               <p>
                 You agree to indemnify, defend, and hold harmless {COMPANY} and its officers, directors, employees,
                 and agents from any claims, damages, losses, liabilities, and expenses (including reasonable
@@ -264,7 +313,7 @@ export default function Terms() {
               </p>
             </Block>
 
-            <Block id="governing-law" title="15. Governing Law & Disputes">
+            <Block id="governing-law" title="16. Governing Law & Disputes">
               <p>
                 These Terms are governed by the laws of the {JURISDICTION}, without regard to its conflict-of-laws
                 rules. The exclusive venue for any dispute arising out of or related to these Terms or the Services
@@ -276,7 +325,7 @@ export default function Terms() {
               </p>
             </Block>
 
-            <Block id="changes" title="16. Changes to These Terms">
+            <Block id="changes" title="17. Changes to These Terms">
               <p>
                 We may revise these Terms from time to time. The “Last updated” date at the top of this page
                 reflects the most recent revision. Material changes will be communicated by email or via a notice
@@ -285,7 +334,7 @@ export default function Terms() {
               </p>
             </Block>
 
-            <Block id="contact" title="17. Contact Us">
+            <Block id="contact" title="18. Contact Us">
               <p>
                 Questions about these Terms? Reach out:
               </p>
