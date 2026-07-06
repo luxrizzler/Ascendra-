@@ -1,6 +1,103 @@
 # Ascendra Academy — robots.txt
-# Updated: 2026
+# Updated: July 2026
+# Goal: maximum discoverability for search engines (Google, Bing, DuckDuckGo, Kagi,
+# and AI-assisted search like Perplexity) while protecting private user pages.
 
+# ============================================================
+# GOOGLEBOT — explicit welcome (crawl as fast as you like)
+# ============================================================
+User-agent: Googlebot
+Allow: /
+Allow: /learn/
+Allow: /paths
+Allow: /models
+Allow: /pricing
+Allow: /ai-roadmap
+Allow: /terms
+Allow: /privacy
+Allow: /no-refunds
+Disallow: /admin
+Disallow: /admin/
+Disallow: /api/admin
+Disallow: /api/admin/
+Disallow: /login
+Disallow: /signup
+Disallow: /forgot-password
+Disallow: /reset-password
+Disallow: /profile
+Disallow: /dashboard
+Disallow: /lessons/
+Disallow: /tutor
+Disallow: /certificates/
+Disallow: /certificate/
+Disallow: /onboarding
+Disallow: /challenge
+Disallow: /prompts
+Disallow: /checkout-success
+
+# ============================================================
+# Googlebot-Image / Googlebot-News / Googlebot-Video — allow media indexing
+# ============================================================
+User-agent: Googlebot-Image
+Allow: /
+
+User-agent: Googlebot-News
+Allow: /
+
+User-agent: Googlebot-Video
+Allow: /
+
+# ============================================================
+# Bingbot — allow (rules mirror Googlebot)
+# ============================================================
+User-agent: Bingbot
+Allow: /
+Disallow: /admin/
+Disallow: /api/admin/
+Disallow: /login
+Disallow: /signup
+Disallow: /forgot-password
+Disallow: /reset-password
+Disallow: /profile
+Disallow: /dashboard
+Disallow: /lessons/
+Disallow: /tutor
+Disallow: /certificate/
+Disallow: /onboarding
+Disallow: /challenge
+Disallow: /prompts
+Disallow: /checkout-success
+
+# ============================================================
+# DuckDuckBot, Applebot (search only) — allow
+# ============================================================
+User-agent: DuckDuckBot
+Allow: /
+Disallow: /admin/
+Disallow: /api/admin/
+Disallow: /login
+Disallow: /signup
+Disallow: /profile
+Disallow: /dashboard
+Disallow: /lessons/
+Disallow: /tutor
+Disallow: /certificate/
+
+User-agent: Applebot
+Allow: /
+Disallow: /admin/
+Disallow: /api/admin/
+Disallow: /login
+Disallow: /signup
+Disallow: /profile
+Disallow: /dashboard
+Disallow: /lessons/
+Disallow: /tutor
+Disallow: /certificate/
+
+# ============================================================
+# Default — all other crawlers
+# ============================================================
 User-agent: *
 Allow: /
 Disallow: /admin
@@ -16,13 +113,15 @@ Disallow: /dashboard
 Disallow: /lessons/
 Disallow: /tutor
 Disallow: /certificates/
+Disallow: /certificate/
 Disallow: /onboarding
+Disallow: /challenge
+Disallow: /prompts
+Disallow: /checkout-success
 
-# Crawl-delay for politeness on dynamic AI pages
-Crawl-delay: 2
-
-# Sitemap — primary (static, always available)
+# Sitemaps — search engines will fetch these to discover URLs
 Sitemap: https://ascendraacademy.com/sitemap.xml
-
-# Sitemap — dynamic (backend-generated, includes all paths + SEO Studio pages)
 Sitemap: https://ascendraacademy.com/api/seo/sitemap.xml
+
+# Host directive (Yandex, some crawlers)
+Host: https://ascendraacademy.com
