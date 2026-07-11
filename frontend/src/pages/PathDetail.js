@@ -7,6 +7,7 @@ import TierBadge from "@/components/TierBadge";
 import { canAccess } from "@/lib/utils";
 import { ArrowLeft, Lock, Play, CheckCircle2, ArrowRight, BookOpen, Clock, Zap } from "lucide-react";
 import { toast } from "sonner";
+import { CapstoneSection } from "@/components/CapstoneSection";
 
 export default function PathDetail() {
   const { pathId } = useParams();
@@ -129,6 +130,7 @@ export default function PathDetail() {
           </div>
         ))}
       </div>
+      <CapstoneSection pathId={pathId} />
     </div>
   );
 }

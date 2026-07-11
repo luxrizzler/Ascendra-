@@ -8,6 +8,7 @@ import { Flame, Sparkles, ArrowRight, Trophy, Layers, MessageSquare, BookOpen, C
 import { StreakCard } from "@/components/streak/StreakCard";
 import SubscriptionCard from "@/components/SubscriptionCard";
 import OnboardingModal from "@/components/OnboardingModal";
+import { DrillWidget } from "@/components/DrillWidget";
 
 export default function Dashboard() {
   const { user } = useAuth();
@@ -107,6 +108,11 @@ export default function Dashboard() {
       {/* Subscription status card — smart state-aware widget */}
       <div className="mt-4">
         <SubscriptionCard compact />
+      </div>
+
+      {/* Spaced practice drills (only renders if there are drills due) */}
+      <div className="mt-4">
+        <DrillWidget />
       </div>
 
       {/* Quick links: Challenge + Prompt Library */}

@@ -47,6 +47,7 @@ import Portfolio from "@/pages/Portfolio";
 import PublicPortfolio from "@/pages/PublicPortfolio";
 import AdminContentHealth from "@/pages/AdminContentHealth";
 import AdminPractice from "@/pages/AdminPractice";
+import CapstonePlayer from "@/pages/CapstonePlayer";
 import NotFound from "@/pages/NotFound";
 import { api } from "@/lib/api";
 

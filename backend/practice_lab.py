@@ -276,6 +276,8 @@ async def grade_attempt(
         "challenge_title": challenge.get("title"),
         "lesson_id": challenge.get("lesson_id"),
         "path_id": challenge.get("path_id"),
+        "module_id": challenge.get("module_id"),
+        "task_type": task_type,
         "attempt_text": attempt_text,
         "attempt_hash": _hash_attempt(attempt_text),
         "score": grading["score"],
@@ -292,6 +294,28 @@ async def grade_attempt(
         "is_public": False,  # Private by default
         "created_at": now,
     }
+
+    # Layer 3 · Spaced practice drills — schedule a re-attempt reminder for
+    # non-mastered attempts scoring 40-79 (the "learning" zone). Skip for
+    # scores <40 (fundamental misunderstanding — needs lesson revisit, not drill)
+    # and >=80 (already mastered). Interval doubles each retry.
+    if 40 <= grading["score"] < 80 and task_type != "capstone":
+        # How many previous drills for this challenge? Interval: 3d, 7d, 14d, 21d
+        prior_attempts = await db.practice_attempts.count_documents({
+            "user_id": user["id"], "challenge_id": challenge["id"],
+        })
+        intervals = [3, 7, 14, 21]
+        days_out = intervals[min(prior_attempts, len(intervals) - 1)]
+        from datetime import timedelta
+        doc["next_review_at"] = now + timedelta(days=days_out)
+        doc["drill_status"] = "scheduled"
+    elif mastered:
+        # Cancel any pending drills for this challenge (they hit mastery)
+        await db.practice_attempts.update_many(
+            {"user_id": user["id"], "challenge_id": challenge["id"], "drill_status": "scheduled"},
+            {"$set": {"drill_status": "resolved"}},
+        )
+
     await db.practice_attempts.insert_one(doc)
 
     # If mastered, also mark the "best" attempt for this (user, challenge)

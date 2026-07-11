@@ -426,6 +426,27 @@ async def _issue_certificate_if_complete(user: dict, path_id: str) -> Optional[d
     p = await _curric_get_path(db, path_id)
     if not p:
         return None
+    # Layer 2 · Capstone gating: if this path has any capstones (challenges of
+    # task_type="capstone"), the user must have mastered ALL of them before the
+    # certificate is issued.
+    capstones = []
+    async for c in db.practice_challenges.find({"path_id": path_id, "task_type": "capstone"}):
+        capstones.append(c)
+    if capstones:
+        capstone_ids = [c["id"] for c in capstones]
+        mastered = await db.practice_attempts.count_documents({
+            "user_id": user["id"],
+            "challenge_id": {"$in": capstone_ids},
+            "mastered": True,
+        })
+        # Every capstone must have at least one mastered attempt
+        mastered_ids = await db.practice_attempts.distinct(
+            "challenge_id",
+            {"user_id": user["id"], "challenge_id": {"$in": capstone_ids}, "mastered": True},
+        )
+        missing = [cid for cid in capstone_ids if cid not in mastered_ids]
+        if missing:
+            return None  # Not yet — capstones still pending
     serial = f"ASC-{path_id[:4].upper()}-{uuid.uuid4().hex[:6].upper()}"
     cert = {
         "id": str(uuid.uuid4()),
@@ -436,6 +457,7 @@ async def _issue_certificate_if_complete(user: dict, path_id: str) -> Optional[d
         "path_color": p["color"],
         "issued_at": datetime.now(timezone.utc),
         "serial": serial,
+        "capstones_passed": len(capstones) if capstones else 0,
     }
     await certs_col.insert_one(dict(cert))
     return cert
@@ -3947,6 +3969,161 @@ async def admin_list_challenges(_admin=Depends(require_admin), limit: int = 200)
 @api.post("/admin/practice/generate/{lesson_id}")
 async def admin_generate_challenge(lesson_id: str, _admin=Depends(require_admin)):
     """Auto-generate a practice challenge from an existing lesson's content."""
+
+# ─── Layer 2: Capstones ───────────────────────────────────────────────
+@api.get("/capstones/module/{path_id}/{module_id}")
+async def get_capstone_for_module(path_id: str, module_id: str, user=Depends(current_user)):
+    """Return the capstone challenge for a module (if any) plus this user's status on it."""
+    ch = await db.practice_challenges.find_one(
+        {"path_id": path_id, "module_id": module_id, "task_type": "capstone"},
+        {"_id": 0},
+    )
+    if not ch:
+        return {"capstone": None, "mastered": False, "best_score": 0}
+    attempts = await practice_lab.get_user_attempts_for_challenge(
+        db=db, user_id=user["id"], challenge_id=ch["id"], limit=5
+    )
+    best = max((a for a in attempts), key=lambda a: a.get("score", 0), default=None)
+    return {
+        "capstone": ch,
+        "attempts": attempts,
+        "best_score": best.get("score", 0) if best else 0,
+        "mastered": bool(best and best.get("mastered")),
+    }
+
+
+@api.get("/capstones/path/{path_id}")
+async def list_path_capstones(path_id: str, user=Depends(current_user)):
+    """All capstones for a path with per-capstone mastery status.
+    Used by the path detail page to show 'X of Y capstones passed' + certificate progress."""
+    capstones = []
+    async for c in db.practice_challenges.find({"path_id": path_id, "task_type": "capstone"}, {"_id": 0}):
+        # User's best attempt on this capstone
+        best = await db.practice_attempts.find_one(
+            {"user_id": user["id"], "challenge_id": c["id"]},
+            sort=[("score", -1)],
+        )
+        capstones.append({
+            **c,
+            "mastered": bool(best and best.get("mastered")),
+            "best_score": (best or {}).get("score", 0),
+        })
+    passed = sum(1 for c in capstones if c["mastered"])
+    return {"capstones": capstones, "total": len(capstones), "passed": passed}
+
+
+class CapstoneUpsertIn(BaseModel):
+    id: Optional[str] = None
+    title: str
+    instruction: str
+    success_criteria: List[str] = []
+    rubric: List[Dict] = []
+    path_id: str
+    module_id: str
+
+
+@api.post("/admin/capstones")
+async def admin_upsert_capstone(body: CapstoneUpsertIn, _admin=Depends(require_admin)):
+    """Create or update a capstone challenge for a module."""
+    data = body.model_dump(exclude_none=False)
+    data["task_type"] = "capstone"
+    data["seed_prompt"] = ""
+    ch = await practice_lab.upsert_challenge(db, data)
+    ch.pop("_id", None)
+    return ch
+
+
+@api.post("/admin/capstones/generate/{path_id}/{module_id}")
+async def admin_generate_capstone(
+    path_id: str, module_id: str, _admin=Depends(require_admin),
+):
+    """Auto-design a capstone using Claude from the module's lessons."""
+    path_doc = await db["curriculum_paths"].find_one({"id": path_id})
+    if not path_doc:
+        raise HTTPException(404, "Path not found")
+    module_doc = next((m for m in path_doc.get("modules", []) if m.get("id") == module_id), None)
+    if not module_doc:
+        raise HTTPException(404, "Module not found")
+    # Combine module title + first 2 lesson titles as context
+    combined_lesson = {
+        "id": f"capstone-{module_id}",
+        "title": f"Module Capstone: {module_doc.get('title')}",
+        "path_id": path_id,
+        "cards": [{"kind": "text", "title": module_doc.get("title", ""),
+                   "body": " · ".join([l.get("title","") for l in module_doc.get("lessons", [])[:6]])}],
+    }
+    try:
+        ch = await practice_lab.auto_generate_challenge_for_lesson(db=db, lesson=combined_lesson)
+        # Mark as capstone + attach module
+        await db.practice_challenges.update_one(
+            {"id": ch["id"]},
+            {"$set": {"task_type": "capstone", "module_id": module_id, "path_id": path_id}},
+        )
+        ch["task_type"] = "capstone"; ch["module_id"] = module_id; ch["path_id"] = path_id
+        return ch
+    except Exception as e:
+        log.exception("capstone generate failed")
+        raise HTTPException(503, str(e)[:200])
+
+
+# ─── Layer 3: Spaced Practice Drills ───────────────────────────────────
+@api.get("/practice/drills/today")
+async def get_today_drills(user=Depends(current_user)):
+    """Return spaced-repetition drills due for this user (now or overdue).
+    A drill is the challenge from a prior sub-mastery attempt, ready to retry."""
+    now_utc = datetime.now(timezone.utc)
+    # Find scheduled drills that are due
+    due_cursor = db.practice_attempts.find({
+        "user_id": user["id"],
+        "drill_status": "scheduled",
+        "next_review_at": {"$lte": now_utc},
+    }).sort("next_review_at", 1).limit(10)
+    drills = []
+    seen_challenges = set()
+    async for a in due_cursor:
+        cid = a.get("challenge_id")
+        if not cid or cid in seen_challenges:
+            continue
+        seen_challenges.add(cid)
+        # Look up the challenge — could be a stored one, or synthesized from
+        # the attempt itself (for inline challenges we only have the title).
+        ch = await practice_lab.get_challenge(db, cid)
+        drills.append({
+            "drill_id": a.get("id"),
+            "challenge_id": cid,
+            "challenge_title": a.get("challenge_title") or (ch or {}).get("title", "Practice"),
+            "last_score": a.get("score"),
+            "scheduled_for": (a.get("next_review_at") or now_utc).isoformat() if isinstance(a.get("next_review_at"), datetime) else a.get("next_review_at"),
+            "lesson_id": a.get("lesson_id"),
+            "path_id": a.get("path_id"),
+            "instruction": (ch or {}).get("instruction", ""),
+            "rubric": (ch or {}).get("rubric", []),
+            "task_type": (ch or a).get("task_type", "prompt"),
+        })
+
+    # Also count "upcoming" (scheduled but not yet due) as motivation
+    upcoming = await db.practice_attempts.count_documents({
+        "user_id": user["id"], "drill_status": "scheduled",
+        "next_review_at": {"$gt": now_utc},
+    })
+    return {"drills": drills, "due_count": len(drills), "upcoming_count": upcoming}
+
+
+@api.post("/practice/drills/{drill_id}/snooze")
+async def snooze_drill(drill_id: str, days: int = 3, user=Depends(current_user)):
+    """Push a drill's next_review_at further into the future."""
+    from datetime import timedelta
+    new_when = datetime.now(timezone.utc) + timedelta(days=max(1, min(days, 30)))
+    r = await db.practice_attempts.update_one(
+        {"id": drill_id, "user_id": user["id"]},
+        {"$set": {"next_review_at": new_when}},
+    )
+    if not r.matched_count:
+        raise HTTPException(404, "Drill not found")
+    return {"snoozed_until": new_when.isoformat()}
+
+
+
     # Find the lesson across curriculum_paths (paths -> modules -> lessons)
     lesson = None
     async for p in db["curriculum_paths"].find({}, {"modules": 1, "id": 1}):

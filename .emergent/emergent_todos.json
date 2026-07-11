@@ -1,34 +1,26 @@
 [
   {
-    "content": "Update OUTDATED_TERMS list to 2026 model names",
+    "content": "Backend: Extend practice_lab for capstones + drills scheduling (next_review_at)",
     "status": "completed"
   },
   {
-    "content": "Build content_scanner.py: model drift + time-based + dead-link detection",
+    "content": "Backend: Capstone endpoints + certificate gating logic",
     "status": "completed"
   },
   {
-    "content": "Build auto-update engine: backup → refresh via Claude → replace → audit log",
+    "content": "Backend: Spaced drill endpoints + auto-schedule after each attempt",
     "status": "completed"
   },
   {
-    "content": "Add weekly APScheduler job for auto-scan + auto-update",
+    "content": "Frontend: CapstoneCard component + PathDetail integration",
     "status": "completed"
   },
   {
-    "content": "Build /admin/content-health page (scan report + audit history + revert)",
+    "content": "Frontend: DrillWidget for dashboard + /practice/drills page",
     "status": "completed"
   },
   {
-    "content": "Build /admin/practice page (Practice Lab admin: challenges, attempts, auto-gen)",
-    "status": "completed"
-  },
-  {
-    "content": "Add nav links + route wiring for both new admin pages",
-    "status": "completed"
-  },
-  {
-    "content": "End-to-end test: scan finds outdated → auto-updates → audit shows revert works",
+    "content": "Seed capstone for AI Fundamentals path + verify end-to-end",
     "status": "completed"
   }
 ]
