@@ -3969,6 +3969,115 @@ async def toggle_portfolio_public(attempt_id: str, user=Depends(current_user)):
 async def get_public_portfolio(user_slug: str):
     """Public portfolio view — no auth required. Returns only items the user
     has explicitly toggled public. Supports lookup by email or user id."""
+
+# ─── Trophy Case (Phase 22) ────────────────────────────────────────────
+STREAK_MILESTONES = [
+    {"days": 7,   "name": "Week Warrior",       "icon": "flame"},
+    {"days": 30,  "name": "Monthly Master",     "icon": "flame"},
+    {"days": 100, "name": "Century Streak",     "icon": "flame"},
+    {"days": 365, "name": "Year of Learning",   "icon": "flame"},
+]
+MASTERY_MILESTONES = [
+    {"count": 5,   "name": "Apprentice",     "icon": "target"},
+    {"count": 15,  "name": "Journeyman",     "icon": "target"},
+    {"count": 30,  "name": "Master Crafter", "icon": "target"},
+    {"count": 75,  "name": "Grand Master",   "icon": "target"},
+]
+
+
+async def _build_trophy_case(user: dict, public_only: bool = False) -> dict:
+    """Aggregate every award a user has earned into one payload."""
+    user_id = user["id"]
+
+    # Certificates
+    certs = []
+    async for c in certs_col.find({"user_id": user_id}, {"_id": 0}).sort("issued_at", -1):
+        if isinstance(c.get("issued_at"), datetime):
+            c["issued_at"] = c["issued_at"].isoformat()
+        certs.append(c)
+
+    # Capstone badges (mastered capstones)
+    capstone_badges = []
+    async for a in db.practice_attempts.find({
+        "user_id": user_id, "task_type": "capstone", "mastered": True,
+    }).sort("created_at", -1):
+        a.pop("_id", None)
+        capstone_badges.append({
+            "attempt_id": a.get("id"),
+            "title": a.get("challenge_title"),
+            "path_id": a.get("path_id"),
+            "score": a.get("score"),
+            "earned_at": a.get("created_at").isoformat() if isinstance(a.get("created_at"), datetime) else a.get("created_at"),
+        })
+
+    # Mastery medals (based on total mastered practice attempts)
+    total_mastered = await db.practice_attempts.count_documents({"user_id": user_id, "mastered": True})
+    mastery_medals = [
+        {**m, "earned": total_mastered >= m["count"]}
+        for m in MASTERY_MILESTONES
+    ]
+
+    # Streak trophies (based on longest recorded streak)
+    p = user.get("progress") or {}
+    longest = int(p.get("longest_streak") or p.get("streak_days") or 0)
+    streak_trophies = [
+        {**m, "earned": longest >= m["days"]}
+        for m in STREAK_MILESTONES
+    ]
+
+    # Totals
+    total_earned = (
+        len(certs)
+        + len(capstone_badges)
+        + sum(1 for m in mastery_medals if m["earned"])
+        + sum(1 for s in streak_trophies if s["earned"])
+    )
+
+    payload = {
+        "certificates": certs,
+        "capstone_badges": capstone_badges,
+        "mastery_medals": mastery_medals,
+        "streak_trophies": streak_trophies,
+        "stats": {
+            "total_earned": total_earned,
+            "certificates": len(certs),
+            "capstones": len(capstone_badges),
+            "practices_mastered": total_mastered,
+            "longest_streak": longest,
+        },
+        "user": {
+            "name": user.get("name") or (user.get("email") or "").split("@")[0].title(),
+            "picture": user.get("picture"),
+            "member_since": (user.get("created_at").isoformat() if isinstance(user.get("created_at"), datetime) else user.get("created_at")),
+        },
+    }
+    return payload
+
+
+@api.get("/trophy-case/mine")
+async def get_my_trophy_case(user=Depends(current_user)):
+    """Private trophy case — the current user's own awards."""
+    return await _build_trophy_case(user)
+
+
+@api.get("/trophy-case/public/{user_slug}")
+async def get_public_trophy_case(user_slug: str):
+    """Public trophy case — no auth. Accepts email or user id as slug."""
+    u = await users_col.find_one(
+        {"email": user_slug.lower()},
+        {"_id": 0, "id": 1, "email": 1, "name": 1, "picture": 1, "created_at": 1, "progress": 1},
+    )
+    if not u:
+        u = await users_col.find_one(
+            {"id": user_slug},
+            {"_id": 0, "id": 1, "email": 1, "name": 1, "picture": 1, "created_at": 1, "progress": 1},
+        )
+    if not u:
+        raise HTTPException(404, "User not found")
+    return await _build_trophy_case(u, public_only=True)
+
+
+
     # Try lookup by email first (most common shareable form), then by id
     u = await users_col.find_one(
         {"email": user_slug.lower()},

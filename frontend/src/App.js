@@ -48,6 +48,7 @@ import PublicPortfolio from "@/pages/PublicPortfolio";
 import AdminContentHealth from "@/pages/AdminContentHealth";
 import AdminPractice from "@/pages/AdminPractice";
 import CapstonePlayer from "@/pages/CapstonePlayer";
+import TrophyCase from "@/pages/TrophyCase";
 import NotFound from "@/pages/NotFound";
 import { api } from "@/lib/api";
 
@@ -104,6 +105,9 @@ function Shell() {
           <Route path="/admin/paths-review" element={<RequireAuth admin><AdminPathsReview /></RequireAuth>} />
           <Route path="/admin/content-health" element={<RequireAuth admin><AdminContentHealth /></RequireAuth>} />
           <Route path="/admin/practice" element={<RequireAuth admin><AdminPractice /></RequireAuth>} />
+          <Route path="/capstone/:pathId/:moduleId" element={<RequireAuth><CapstonePlayer /></RequireAuth>} />
+          <Route path="/trophy-case" element={<RequireAuth><TrophyCase /></RequireAuth>} />
+          <Route path="/trophy-case/:userSlug" element={<TrophyCase isPublic />} />
           <Route path="/learn/:modelSlug" element={<LearnHub />} />
           <Route path="/learn/:modelSlug/:useCaseSlug" element={<LearnHub />} />
           <Route path="/resources/ai-roadmap" element={<AiRoadmap />} />
