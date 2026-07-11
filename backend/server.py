@@ -59,6 +59,7 @@ import auto_content
 import lifecycle
 import social_studio
 import x_publisher
+import practice_lab
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
@@ -3727,6 +3728,245 @@ async def admin_interactive_status(_admin=Depends(require_admin)):
                     interactive_lessons += 1
     return {**_INTERACTIVE_PROGRESS,
             "coverage": {"interactive": interactive_lessons, "total": total_lessons}}
+
+
+# ─── Practice Lab (Phase 20 · Try It Live + Portfolio) ────────────────────
+class PracticeAttemptIn(BaseModel):
+    attempt: str = Field(..., min_length=1, max_length=6000)
+
+
+class PracticeInlineAttemptIn(BaseModel):
+    """Attempt submission with the challenge carried inline in the request.
+    Used when the practice card in a lesson embeds the full challenge definition
+    (title, instruction, rubric) rather than referencing a stored challenge id.
+    A stable synthetic challenge_id is derived from the challenge content so
+    retries accumulate under the same id.
+    """
+    attempt: str = Field(..., min_length=1, max_length=6000)
+    title: str
+    instruction: str
+    task_type: str = "prompt"
+    rubric: List[Dict] = []
+    lesson_id: Optional[str] = None
+    path_id: Optional[str] = None
+
+
+@api.get("/practice/challenges/{challenge_id}")
+async def get_practice_challenge(challenge_id: str, user=Depends(current_user)):
+    """Fetch a challenge by id (private view — omits solutions/master answers)."""
+    ch = await practice_lab.get_challenge(db, challenge_id)
+    if not ch:
+        raise HTTPException(404, "Practice challenge not found")
+    # Also return any prior attempts by this user so the UI can show progress
+    attempts = await practice_lab.get_user_attempts_for_challenge(
+        db=db, user_id=user["id"], challenge_id=challenge_id, limit=5
+    )
+    best = max((a for a in attempts), key=lambda a: a.get("score", 0), default=None)
+    return {
+        "challenge": ch,
+        "attempts": attempts,
+        "best_score": best.get("score", 0) if best else 0,
+        "mastered": bool(best and best.get("mastered")),
+    }
+
+
+@api.get("/practice/challenges/lesson/{lesson_id}")
+async def list_practice_challenges_for_lesson(lesson_id: str, user=Depends(current_user)):
+    """List all practice challenges attached to a lesson."""
+    items = await practice_lab.list_challenges_for_lesson(db, lesson_id)
+    return {"lesson_id": lesson_id, "challenges": items, "count": len(items)}
+
+
+@api.post("/practice/attempt")
+async def submit_practice_attempt_inline(
+    body: PracticeInlineAttemptIn,
+    user=Depends(current_user),
+):
+    """Grade a practice attempt where the challenge is carried inline.
+    Derives a stable challenge_id from the title+instruction so retries of the
+    same challenge accumulate together and appear as one portfolio item."""
+    import hashlib as _hl
+    synth_id = "inline-" + _hl.sha256(
+        (body.title + "||" + body.instruction).encode("utf-8")
+    ).hexdigest()[:20]
+    challenge = {
+        "id": synth_id,
+        "title": body.title,
+        "instruction": body.instruction,
+        "task_type": body.task_type,
+        "rubric": body.rubric,
+        "lesson_id": body.lesson_id,
+        "path_id": body.path_id,
+    }
+    try:
+        result = await practice_lab.grade_attempt(
+            db=db, user=user, challenge=challenge, attempt_text=body.attempt
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:
+        log.exception(f"practice grade (inline) failed: {e}")
+        try:
+            from llm_retry import friendly_llm_error
+            raise HTTPException(503, friendly_llm_error(e))
+        except HTTPException:
+            raise
+        except Exception:
+            raise HTTPException(500, "Could not grade attempt. Please try again.")
+
+
+@api.post("/practice/challenges/{challenge_id}/attempt")
+async def submit_practice_attempt(
+    challenge_id: str,
+    body: PracticeAttemptIn,
+    user=Depends(current_user),
+):
+    """Grade a user's attempt on a practice challenge."""
+    ch = await practice_lab.get_challenge(db, challenge_id)
+    if not ch:
+        raise HTTPException(404, "Practice challenge not found")
+    try:
+        result = await practice_lab.grade_attempt(
+            db=db, user=user, challenge=ch, attempt_text=body.attempt
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:
+        log.exception(f"practice grade failed: {e}")
+        # Prefer friendly retry-oriented message from llm_retry
+        try:
+            from llm_retry import friendly_llm_error
+            raise HTTPException(503, friendly_llm_error(e))
+        except HTTPException:
+            raise
+        except Exception:
+            raise HTTPException(500, "Could not grade attempt. Please try again.")
+
+
+@api.get("/practice/portfolio/mine")
+async def get_my_portfolio(user=Depends(current_user)):
+    """Return the current user's private portfolio (all mastered attempts)."""
+    items = await practice_lab.get_user_portfolio(db=db, user_id=user["id"], only_public=False)
+    public_count = sum(1 for i in items if i.get("is_public"))
+    return {
+        "items": items,
+        "count": len(items),
+        "public_count": public_count,
+    }
+
+
+@api.post("/practice/portfolio/{attempt_id}/toggle-public")
+async def toggle_portfolio_public(attempt_id: str, user=Depends(current_user)):
+    """Toggle a portfolio item between public and private."""
+    try:
+        res = await practice_lab.toggle_portfolio_item_public(
+            db=db, user_id=user["id"], attempt_id=attempt_id
+        )
+        return res
+    except LookupError as e:
+        raise HTTPException(404, str(e))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@api.get("/practice/portfolio/public/{user_slug}")
+async def get_public_portfolio(user_slug: str):
+    """Public portfolio view — no auth required. Returns only items the user
+    has explicitly toggled public. Supports lookup by email or user id."""
+    # Try lookup by email first (most common shareable form), then by id
+    u = await users_col.find_one(
+        {"email": user_slug.lower()},
+        {"_id": 0, "id": 1, "email": 1, "name": 1, "picture": 1, "created_at": 1},
+    )
+    if not u:
+        u = await users_col.find_one(
+            {"id": user_slug},
+            {"_id": 0, "id": 1, "email": 1, "name": 1, "picture": 1, "created_at": 1},
+        )
+    if not u:
+        raise HTTPException(404, "User not found")
+
+    items = await practice_lab.get_user_portfolio(db=db, user_id=u["id"], only_public=True)
+    # Trim items to public-safe fields (no rubric_scores, no next_step)
+    public_items = [{
+        "attempt_id": it["attempt_id"],
+        "challenge_title": it["challenge_title"],
+        "attempt_text": it["attempt_text"],
+        "score": it["score"],
+        "strengths": it["strengths"],
+        "ai_response": it["ai_response"],
+        "created_at": it["created_at"],
+    } for it in items]
+
+    return {
+        "user": {
+            "name": u.get("name") or (u.get("email") or "").split("@")[0].title(),
+            "picture": u.get("picture"),
+            "member_since": (u.get("created_at").isoformat() if isinstance(u.get("created_at"), datetime) else u.get("created_at")),
+        },
+        "items": public_items,
+        "count": len(public_items),
+    }
+
+
+# --- Admin endpoints for practice lab ----------------------------------
+class PracticeChallengeIn(BaseModel):
+    id: Optional[str] = None
+    title: str
+    instruction: str
+    task_type: str = "prompt"
+    success_criteria: List[str] = []
+    rubric: List[Dict] = []
+    seed_prompt: Optional[str] = ""
+    lesson_id: Optional[str] = None
+    path_id: Optional[str] = None
+    order: int = 0
+
+
+@api.post("/admin/practice/challenges")
+async def admin_upsert_challenge(body: PracticeChallengeIn, _admin=Depends(require_admin)):
+    """Create or update a practice challenge."""
+    ch = await practice_lab.upsert_challenge(db, body.model_dump(exclude_none=False))
+    ch.pop("_id", None)
+    return ch
+
+
+@api.get("/admin/practice/challenges")
+async def admin_list_challenges(_admin=Depends(require_admin), limit: int = 200):
+    cursor = db.practice_challenges.find({}).sort("updated_at", -1).limit(min(limit, 500))
+    items = []
+    async for doc in cursor:
+        doc.pop("_id", None)
+        items.append(doc)
+    return {"challenges": items, "count": len(items)}
+
+
+@api.post("/admin/practice/generate/{lesson_id}")
+async def admin_generate_challenge(lesson_id: str, _admin=Depends(require_admin)):
+    """Auto-generate a practice challenge from an existing lesson's content."""
+    # Find the lesson across curriculum_paths (paths -> modules -> lessons)
+    lesson = None
+    async for p in db["curriculum_paths"].find({}, {"modules": 1, "id": 1}):
+        for m in p.get("modules", []):
+            for lsn in m.get("lessons", []):
+                if lsn.get("id") == lesson_id:
+                    lesson = {**lsn, "path_id": p.get("id")}
+                    break
+            if lesson: break
+        if lesson: break
+    if not lesson:
+        raise HTTPException(404, f"Lesson {lesson_id} not found")
+    try:
+        challenge = await practice_lab.auto_generate_challenge_for_lesson(db=db, lesson=lesson)
+        challenge.pop("_id", None)
+        return challenge
+    except Exception as e:
+        log.exception(f"auto-gen practice challenge failed: {e}")
+        raise HTTPException(500, f"Could not generate: {str(e)[:200]}")
+
+
 
 
 app.include_router(api)

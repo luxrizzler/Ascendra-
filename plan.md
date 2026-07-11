@@ -37,6 +37,13 @@ Deliver an interactive learning experience comparable to “Coursiv-style” app
 - Interactive lesson cards (Knowledge Checks, Fill‑in‑the‑blank, Playgrounds) generated dynamically by Claude
 - TTS narration + prompt libraries
 
+### NEW overarching objective: Practice-first learning (better-than-Coursiv) — IN PROGRESS 🟡
+Add **applied practice** throughout courses so users learn by doing, not just reading + quizzes:
+- Layer 1: **Try It Live** (rubric-graded practice tasks with AI feedback) + Portfolio
+- Layer 2: **Module Capstones** (mandatory to earn module/path certificates)
+- Layer 3: **Spaced Practice Drills** (3/7/21-day review prompts based on struggles)
+- Bonus: **Trophy Case** (publicly shareable showcase of achievements)
+
 ### NEW operational objective: Trustworthy business metrics — ACHIEVED ✅
 Ensure admin analytics reflect **real-world performance** by excluding internal QA/admin accounts from key dashboards.
 
@@ -184,7 +191,7 @@ Routes:
 - Added `rejected` status pill.
 
 4) **Testing**
-- Verified by backend testing agent (iteration_17) — 28/28 pass overall.
+- Verified by backend testing agent — 28/28 pass overall.
 
 ---
 
@@ -200,29 +207,24 @@ Routes:
 **What shipped:**
 1) **New backend module**
 - `/app/backend/path_generator.py`
-  - Stage 1: outline generation (3 modules × 5–7 lessons each)
-  - Stage 2: background fill lesson content (controlled concurrency)
 
 2) **Schema + queries** (`/app/backend/curriculum_db.py`)
-- Added fields: `visibility`, `created_by`, `creator_email`, `admin_review_status`, `admin_review_notes`, `is_user_generated`
-- Added functions for visibility-aware listing and admin pending-review listing
+- Added visibility + admin review status fields
 
 3) **Backend endpoints** (`/app/backend/server.py`)
 - `POST /api/paths/generate` (paid-only)
 - `GET /api/paths/mine`
-- Updated path listing/detail endpoints to protect non-public paths
+- Updated listing/detail endpoints to protect non-public paths
 
 4) **Admin review workflow**
-- `GET /api/admin/paths/pending-review`
-- `POST /api/admin/paths/{id}/approve` (optional tier override)
-- `POST /api/admin/paths/{id}/reject` (notes)
+- Pending-review list + approve/reject
 
 5) **Frontend UX**
-- User UI: `/paths` “Create your own path” + “Your custom paths”
-- Admin UI: `/admin/paths-review` with approve/reject workflow + badge
+- User UI: `/paths` custom path generator
+- Admin UI: `/admin/paths-review`
 
 6) **Testing**
-- Verified by backend testing agent (iteration_17) — 28/28 pass.
+- Verified by backend testing agent — 28/28 pass.
 
 ---
 
@@ -231,8 +233,8 @@ Routes:
 
 **Shipped:**
 - Backend: `/api/billing/status`, `/api/billing/resume` (plus related status logic)
-- Frontend: `/app/frontend/src/components/SubscriptionCard.js` embedded in Dashboard (and/or Profile where applicable)
-- Certificate retention preserved for lapsed users (no tier-gate on certificate endpoints)
+- Frontend: `/app/frontend/src/components/SubscriptionCard.js` embedded in Dashboard
+- Certificate retention preserved for lapsed users
 
 ---
 
@@ -241,53 +243,125 @@ Routes:
 
 ---
 
-### Phase 19 — Legal Compliance Pages (P0) — COMPLETED ✅
-**Goal:** Add Terms/Privacy/No-Refunds pages + UI enforcement to satisfy payment and platform compliance.
+### Phase 19 — Legal + Security Compliance (P0) — COMPLETED ✅
+**Goal:** Add compliance pages and verification/security artifacts to satisfy payment + platform requirements.
 
 **What shipped:**
 1) **Frontend pages (NEW)**
-- `/app/frontend/src/pages/Terms.js` — Comprehensive Terms of Service with:
-  - “All sales final — no refunds” clause
-  - 17 sections
-  - Governing law: **State of Missouri**
-  - Contact: **ascendraacademy@yahoo.com**
-- `/app/frontend/src/pages/Privacy.js` — Privacy Policy (CCPA/GDPR-oriented), 14 sections:
-  - Explicit categories of data
-  - User rights section
-  - Lists third-party processors: **Stripe, Resend, Anthropic, OpenAI, Google, MongoDB Atlas**
-- `/app/frontend/src/pages/NoRefunds.js` — Standalone “All Sales Final — No Refunds” billing policy page (Stripe-friendly)
+- `/terms`, `/privacy`, `/no-refunds`
 
-2) **Routing (UPDATED)**
-- `/app/frontend/src/App.js` — added routes:
-  - `/terms`, `/privacy`, `/no-refunds`
+2) **Routing + footer + signup enforcement (UPDATED)**
+- Routes added, footer Legal links, signup agreement checkbox
 
-3) **Footer (UPDATED)**
-- `/app/frontend/src/components/WebFooter.js`
-  - Added **Legal** column with Terms / Privacy / No Refunds / Contact
-  - Added entity display: **Ascendra Academy LLC**
+3) **security.txt (NEW)**
+- `/.well-known/security.txt` + `/security.txt` (RFC 9116)
 
-4) **Signup compliance (UPDATED)**
-- `/app/frontend/src/pages/Signup.js`
-  - Added required agreement checkbox
-  - Submit disabled until checked
-  - Links open legal pages in a new tab
+4) **Terms enhancement (UPDATED)**
+- Added **Section 11: Social Media Integrations** covering platform terms, posting limitations, authorization/revocation, content warranties, third-party costs.
 
-5) **SEO discovery (UPDATED)**
-- `/app/frontend/public/sitemap.xml` — included `/terms`, `/privacy`, `/no-refunds`
+5) **TikTok domain verification artifact (NEW)**
+- Added `tiktoklkxs3T9JjlCjJNh3jIZzlheOa0um2ntP.txt` at site root.
+- Updated to be **byte-for-byte exact** match with TikTok-provided original (no trailing newline).
 
-6) **Styling (UPDATED)**
-- `/app/frontend/src/index.css` — added `.asc-prose` styling to restore bullet lists + link styling
+6) **SEO / reach hardening (UPDATED)**
+- Updated `robots.txt` to explicitly allow Googlebot, Bingbot, etc. and disallow private routes.
+- Added `robots` + `googlebot` meta tags and JSON-LD schema to `public/index.html` (Organization + WebSite SearchAction).
+
+---
+
+### Phase 20 — Practice Lab (Try It Live + Portfolio) — IN PROGRESS 🟡
+**Goal:** Add applied practice throughout lessons with AI feedback, then expand to capstones and spaced repetition.
+
+#### Product decisions (user-confirmed)
+- **Grading tone:** Balanced (encouraging opening + honest critique + actionable next step)
+- **Portfolio default:** **Private**; user can toggle items public per attempt/item
+- **Certificates:** Require **lesson completion + capstone pass**
+- **Rollout:** Ship Layer 1 first → user review → then Layer 2 and 3
+- **Future:** Add a **Trophy Case** to show off awards
+
+#### Layer 1 — Try It Live + Portfolio MVP (ship first)
+**Backend**
+- NEW module: `/app/backend/practice_lab.py`
+  - Rubric-based grading using Claude (via `emergentintegrations`)
+  - Must use `llm_retry.py` for transient retries + friendly errors
+  - Stores attempts + scores + feedback + “best attempt” pointers
+- NEW MongoDB collections:
+  - `practice_challenges` (per lesson/card; includes rubric + expected behaviors)
+  - `practice_attempts` (user submissions, scores, feedback, timestamps)
+- NEW API endpoints (server.py):
+  - `POST /api/practice/{challenge_id}/attempt` — submit attempt, receive score + feedback
+  - `GET /api/practice/portfolio/mine` — list mastered attempts + best artifacts
+  - `POST /api/practice/portfolio/{attempt_id}/toggle-public` — privacy toggle
+  - `GET /api/practice/portfolio/public/{user_slug}` — public portfolio page data
+  - `POST /api/admin/practice/generate/{lesson_id}` — generate a practice challenge for an existing lesson (admin tool)
+
+**Frontend**
+- NEW card kind: `try_it_live`
+  - New component: `PracticeCard.js`
+  - Update `CardRouter.js` + `isInteractive()` to include `try_it_live`
+  - UX: attempt box → Run → AI feedback panel → allow retries → “Mastery” threshold gate
+- NEW pages:
+  - `/portfolio` — private portfolio (mastered items, best attempts, copy/share)
+  - `/portfolio/:userSlug` — public portfolio (SEO-friendly)
+- Navigation:
+  - Add Portfolio entry in user menu/dashboard
+
+**Content rollout**
+- Add Try-It-Live practice cards to 2–3 high-traffic demo lessons first for immediate feel.
+- Then expand via automated generation in the content pipeline.
+
+**Success criteria (Layer 1)**
+- Users can complete a practice task, get a score, iterate, and “master” it.
+- Best attempt saved privately; can be toggled public.
+- Public portfolio page is crawlable and SEO-safe (no private content leaks).
+
+#### Layer 2 — Module Capstones (queued; after Layer 1 approval)
+- New capstone at end of each module (multi-step mini-project)
+- **Mandatory** to earn module/path certificates (per decision 3a)
+
+Backend
+- New `capstones` collection + capstone submissions collection
+- Endpoints:
+  - `GET /api/capstones/{module_id}`
+  - `POST /api/capstones/{capstone_id}/submit`
+  - Admin review/override endpoints if needed
+- Certificate unlock logic updates: requires capstone pass
+
+Frontend
+- `CapstoneSubmission.js` (structured submission + rubric + AI feedback)
+- Module UI: show capstone requirements + pass/fail + retry
+
+#### Layer 3 — Spaced Practice Drills (queued; after Layer 2)
+- Reinforce weak areas at 3/7/21 day intervals
+
+Backend
+- Drill scheduler (APScheduler): selects “weak skills” from attempts and schedules prompts
+- Endpoints:
+  - `GET /api/practice/drills/today`
+  - `POST /api/practice/drills/{drill_id}/attempt`
+
+Frontend
+- `DrillWidget.js` on dashboard + optional lesson warm-up
+- Streak synergy: drills can count as “practice streak” (separate from lesson streak) or blended
+
+#### Bonus — Trophy Case (future phase; after Layer 1–3)
+- Shareable “trophy case” showing:
+  - Certificates earned
+  - Capstone badges
+  - Streak milestones
+  - Top portfolio items
+- Public URL: `/trophies/:userSlug` (optional) + privacy controls
 
 ---
 
 ## 3. Next Actions
 
-### Immediate (P0): Deploy Phase 19 legal pages to production
-- User action: Redeploy via Emergent Deploy dashboard to push preview → `ascendraacademy.com`.
-- After redeploy verify:
-  - `/terms`, `/privacy`, `/no-refunds` load publicly
-  - Footer has Legal links site-wide
-  - Signup requires agreement checkbox
+### Immediate (P0): Practice Lab Layer 1 kickoff
+- Implement new Practice Lab backend module + collections
+- Add `try_it_live` card type to the lesson UI
+- Ship `/portfolio` (private) + public portfolio toggle
+- Seed 2–3 demo lessons with practice cards
+- Request user review after Layer 1 ships
 
 ### X (Twitter) posting (P1) — Platform decision + security action required
 - **Pricing reality:** X is now **Pay-Per-Use** (Free tier removed Feb 2026). Decide whether to pay per post or switch to manual copy workflow.
@@ -298,13 +372,13 @@ Routes:
   - Business account
   - App audit (1–4 weeks) for public posting
   - Token refresh flow + domain verification
-- No code changes shipped yet; pending decision.
+- Domain verification file now hosted correctly; complete portal verification.
 
-### Phase 13 — Meta manual post helper (P2) — still pending
-- Build one-click copy/export helpers for FB/IG (since full automation is blocked by app review).
+### Phase 13 — Meta manual post helper (P2)
+- Build one-click copy/export helpers for FB/IG (full automation blocked by Meta app review)
 
 ### Code health (P3)
-- Refactor `server.py` (approaching ~4,000 lines) into FastAPI `APIRouter` modules.
+- Refactor `server.py` (~4,000 lines) into FastAPI `APIRouter` modules.
 
 ---
 
@@ -319,7 +393,7 @@ Routes:
 - ✅ Admin Subscribers list shipped.
 
 ### Growth Flywheel — ACHIEVED ✅
-- ✅ Programmatic SEO pages + sitemap + schema.
+- ✅ Programmatic SEO pages + sitemap.
 - ✅ Content auto-pilot: daily lessons + Monday flagship paths + quality gate.
 - ✅ Lead magnet capture + AI Roadmap resource + welcome drip.
 - ✅ Lifecycle automation: trial-ending, winback, streak-saver, annual upsell.
@@ -331,17 +405,24 @@ Routes:
 - ✅ 15-day challenge roadmap.
 - ✅ Interactive lesson cards + prompt libraries + browser-native TTS.
 
+### Practice-first learning — TARGET STATE (Phase 20)
+- 🟡 Layer 1: Try-It-Live practice + Portfolio ships and measurably increases lesson completion and retention.
+- 🔜 Layer 2: Capstones required for certificates.
+- 🔜 Layer 3: Spaced practice drills improve long-term retention.
+- 🔜 Trophy Case enables shareable outcomes (social proof).
+
 ### Business metrics quality bar — ACHIEVED ✅
 - ✅ Admin analytics endpoints exclude internal accounts while keeping real free-tier leads.
 
-### Phase 19 (Legal compliance baseline) — ACHIEVED ✅
+### Legal + security baseline — ACHIEVED ✅
 - ✅ Terms / Privacy / No Refunds pages exist and are linked in footer.
 - ✅ Signup flow enforces agreement.
-- ✅ Sitemap includes legal URLs for discovery.
+- ✅ security.txt hosted.
+- ✅ TikTok verification file hosted.
 
 ### Social auto-posting — STATUS (platform-driven)
 - 🟡 X posting requires Pay-Per-Use credits (business decision) and credential rotation (security).
-- 🟡 TikTok posting requires audit approval and a full integration build; no code shipped.
+- 🟡 TikTok posting requires audit approval and a full integration build; verification in progress.
 
 ---
 

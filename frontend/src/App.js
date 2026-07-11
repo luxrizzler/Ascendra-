@@ -43,6 +43,8 @@ import AuthCallback from "@/pages/AuthCallback";
 import Terms from "@/pages/Terms";
 import Privacy from "@/pages/Privacy";
 import NoRefunds from "@/pages/NoRefunds";
+import Portfolio from "@/pages/Portfolio";
+import PublicPortfolio from "@/pages/PublicPortfolio";
 import NotFound from "@/pages/NotFound";
 import { api } from "@/lib/api";
 
@@ -104,6 +106,8 @@ function Shell() {
           <Route path="/terms" element={<Terms />} />
           <Route path="/privacy" element={<Privacy />} />
           <Route path="/no-refunds" element={<NoRefunds />} />
+          <Route path="/portfolio" element={<RequireAuth><Portfolio /></RequireAuth>} />
+          <Route path="/portfolio/:userSlug" element={<PublicPortfolio />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </main>

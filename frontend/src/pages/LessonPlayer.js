@@ -168,6 +168,7 @@ export default function LessonPlayer() {
                 total={total}
                 lessonTitle={lesson.title}
                 lessonId={lessonId}
+                pathId={lesson.path_id}
                 onAdvance={next}
                 autoplay={playAll}
               />

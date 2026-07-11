@@ -8,6 +8,7 @@ const NAV_LINKS = [
   { to: "/paths", label: "Paths", auth: true },
   { to: "/tutor", label: "AI Tutor", auth: true },
   { to: "/models", label: "Models", auth: true },
+  { to: "/portfolio", label: "Portfolio", auth: true },
 ];
 
 export default function WebNav() {

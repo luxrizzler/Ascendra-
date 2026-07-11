@@ -1,38 +1,26 @@
 [
   {
-    "content": "Fix index.html: remove duplicate title+meta tags, set clean defaults",
+    "content": "Build backend practice_lab.py module with Claude rubric grading",
     "status": "completed"
   },
   {
-    "content": "Create SEO component using react-helmet-async (already installed)",
+    "content": "Add practice_lab endpoints to server.py + register in main",
     "status": "completed"
   },
   {
-    "content": "Add unique title+meta+canonical to: Landing, Paths, Models, Tutor, Pricing, Login, Signup, ForgotPassword",
+    "content": "Build PracticeCard.js component + wire into CardRouter",
     "status": "completed"
   },
   {
-    "content": "Create static /public/robots.txt as text/plain with Sitemap directive",
+    "content": "Build Portfolio.js (private) + PublicPortfolio.js pages + routing",
     "status": "completed"
   },
   {
-    "content": "Create static /public/sitemap.xml with all main routes",
+    "content": "Add Portfolio nav link + practice challenge seed data",
     "status": "completed"
   },
   {
-    "content": "Create static /public/llms.txt with proper formatting",
-    "status": "completed"
-  },
-  {
-    "content": "Add cross-links between /learn/* guide pages (Related guides section)",
-    "status": "completed"
-  },
-  {
-    "content": "Add visible text content to Tutor + Models + Paths intros (low word count)",
-    "status": "completed"
-  },
-  {
-    "content": "Run testing agent to verify all 8 fixes (18/18 passed = 100%)",
+    "content": "Test end-to-end: attempt → grade → mastery → portfolio → toggle public",
     "status": "completed"
   }
 ]
