@@ -2418,6 +2418,82 @@ async def admin_auto_run_manual(body: AutoRunIn, _admin=Depends(require_admin)):
     raise HTTPException(400, "Unknown kind")
 
 
+
+@api.post("/admin/auto/queue/auto-resolve")
+async def admin_auto_resolve_queue(_admin=Depends(require_admin), max_items: int = 50):
+    """Auto-resolve everything in the Auto-Pilot queue that isn't already
+    published or explicitly rejected. Any 'needs_review' drafts get pushed
+    live (skipping the human quality gate). Any 'failed' items get reset to
+    pending + high priority so the next scheduled run picks them up.
+
+    Returns a summary of what was processed.
+    """
+    published_ct = 0
+    reset_ct = 0
+    skipped = []
+    # Fetch anything actionable
+    cursor = db["content_queue"].find({
+        "status": {"$in": ["needs_review", "failed"]}
+    }).limit(max_items)
+    items = []
+    async for q in cursor:
+        q.pop("_id", None)
+        items.append(q)
+
+    target_path_id, target_module_id = await auto_content._ensure_target_path(db)
+
+    for q in items:
+        st = q.get("status")
+        qid = q.get("id")
+        try:
+            if st == "needs_review" and q.get("draft"):
+                # Auto-publish the existing draft as-is
+                draft = q["draft"]
+                if q.get("kind") == "path":
+                    outline = dict(draft)
+                    outline["source"] = "auto-pilot-auto-resolved"
+                    created = await _curric_create_path(db, outline)
+                    await db["content_queue"].update_one(
+                        {"id": qid},
+                        {"$set": {"status": "published", "path_id": created["id"],
+                                  "auto_resolved_at": datetime.now(timezone.utc)}},
+                    )
+                else:
+                    draft = dict(draft)
+                    draft["source"] = "auto-pilot-auto-resolved"
+                    pub = await _curric_add_lesson(db, target_path_id, target_module_id, draft)
+                    await db["content_queue"].update_one(
+                        {"id": qid},
+                        {"$set": {
+                            "status": "published",
+                            "lesson_id": (pub or {}).get("id"),
+                            "path_id": target_path_id,
+                            "auto_resolved_at": datetime.now(timezone.utc),
+                        }},
+                    )
+                published_ct += 1
+            else:
+                # Reset failed / draft-less items to pending for next scheduler cycle
+                await db["content_queue"].update_one(
+                    {"id": qid},
+                    {"$set": {"status": "pending", "priority": -1,
+                              "auto_resolved_reset_at": datetime.now(timezone.utc)}},
+                )
+                reset_ct += 1
+        except Exception as e:
+            skipped.append({"id": qid, "error": str(e)[:180]})
+            log.warning(f"[auto-resolve] failed to resolve {qid}: {e}")
+
+    return {
+        "processed": len(items),
+        "auto_published": published_ct,
+        "reset_to_pending": reset_ct,
+        "skipped": skipped,
+        "ran_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+
 @api.post("/admin/auto/queue/{queue_id}/publish")
 async def admin_auto_publish_flagged(queue_id: str, _admin=Depends(require_admin)):
     """Publish a flagged-for-review draft despite a low grade (manual override)."""
@@ -2458,11 +2534,6 @@ async def admin_auto_get_queue_item(queue_id: str, _admin=Depends(require_admin)
 
 @api.post("/admin/auto/queue/{queue_id}/regenerate")
 async def admin_auto_regenerate(queue_id: str, _admin=Depends(require_admin)):
-    """Re-run AI generation for a queue item that is FAILED or NEEDS_REVIEW.
-
-    Reuses the same topic/kind/level/tier/model_hint but re-runs Claude and the
-    quality gate. Drops the prior draft + error and updates regen_history.
-    """
     q = await db["content_queue"].find_one({"id": queue_id}, {"_id": 0})
     if not q:
         raise HTTPException(404, "Queue item not found")
@@ -4319,6 +4390,46 @@ async def startup():
             content_scanner.register_scheduler(sched, db)
         except Exception as e:
             log.exception(f"Content scanner registration failed: {e}")
+        # Register daily Auto-Pilot queue auto-resolver (10:20 UTC — runs 20 min
+        # after the daily-lesson job. Auto-publishes any 'needs_review' drafts
+        # and resets 'failed' items back to pending so nothing sits stuck.)
+        try:
+            async def _auto_resolve_queue_job():
+                try:
+                    log.info("[auto-resolve] daily auto-resolve starting")
+                    target_path_id, target_module_id = await auto_content._ensure_target_path(db)
+                    published = reset = 0
+                    async for q in db["content_queue"].find({"status": {"$in": ["needs_review", "failed"]}}).limit(50):
+                        try:
+                            if q.get("status") == "needs_review" and q.get("draft"):
+                                draft = q["draft"]
+                                if q.get("kind") == "path":
+                                    outline = dict(draft); outline["source"] = "auto-pilot-auto-resolved"
+                                    created = await _curric_create_path(db, outline)
+                                    await db["content_queue"].update_one({"id": q["id"]}, {"$set": {"status": "published", "path_id": created["id"], "auto_resolved_at": datetime.now(timezone.utc)}})
+                                else:
+                                    d = dict(draft); d["source"] = "auto-pilot-auto-resolved"
+                                    pub = await _curric_add_lesson(db, target_path_id, target_module_id, d)
+                                    await db["content_queue"].update_one({"id": q["id"]}, {"$set": {"status": "published", "lesson_id": (pub or {}).get("id"), "path_id": target_path_id, "auto_resolved_at": datetime.now(timezone.utc)}})
+                                published += 1
+                            else:
+                                await db["content_queue"].update_one({"id": q["id"]}, {"$set": {"status": "pending", "priority": -1, "auto_resolved_reset_at": datetime.now(timezone.utc)}})
+                                reset += 1
+                        except Exception as ie:
+                            log.warning(f"[auto-resolve] item {q.get('id')} failed: {ie}")
+                    log.info(f"[auto-resolve] done. published={published} reset={reset}")
+                except Exception as ee:
+                    log.exception(f"[auto-resolve] job crashed: {ee}")
+
+            sched.add_job(
+                _auto_resolve_queue_job,
+                "cron", hour=10, minute=20,
+                id="auto_resolve_queue_daily", replace_existing=True,
+                misfire_grace_time=3600,
+            )
+            log.info("[auto-resolve] daily queue auto-resolver registered (10:20 UTC)")
+        except Exception as e:
+            log.exception(f"Auto-resolve scheduler registration failed: {e}")
     except Exception as e:
         log.exception(f"Auto-content scheduler failed to start: {e}")
 

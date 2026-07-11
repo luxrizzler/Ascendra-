@@ -143,6 +143,21 @@ export default function AdminAutoContent() {
     }
   };
 
+  const [resolving, setResolving] = useState(false);
+  const autoResolveAll = async () => {
+    if (!confirm("Auto-publish every draft awaiting review and reset any failed items back to pending? This bypasses the quality gate for existing drafts.")) return;
+    setResolving(true);
+    try {
+      const r = await api.post("/admin/auto/queue/auto-resolve");
+      toast.success(`Auto-resolved: ${r.auto_published} published, ${r.reset_to_pending} reset to pending`);
+      load();
+    } catch (e) {
+      toast.error(e.message || "Auto-resolve failed");
+    } finally {
+      setResolving(false);
+    }
+  };
+
   const publishFlagged = async (id, topic) => {
     if (!confirm(`Publish flagged draft "${topic}" anyway?\n\nThis will add it live even though it failed the quality gate.`)) return;
     try {
@@ -328,6 +343,9 @@ export default function AdminAutoContent() {
                 <option>Beginner</option><option>Intermediate</option><option>Advanced</option>
               </select>
               <button onClick={addToQueue} disabled={adding} className="asc-btn-primary text-sm" data-testid="auto-queue-add-btn"><Plus size={14} /> Add</button>
+              <button onClick={autoResolveAll} disabled={resolving} className="asc-btn-secondary text-sm" data-testid="auto-queue-resolve-all-btn" title="Auto-publish all 'needs review' drafts + reset failed items to pending">
+                {resolving ? "Resolving…" : (<><Zap size={14} /> Auto-resolve all</>)}
+              </button>
             </div>
           </div>
           <div className="space-y-2 max-h-[600px] overflow-y-auto pr-1" data-testid="auto-queue-list">
