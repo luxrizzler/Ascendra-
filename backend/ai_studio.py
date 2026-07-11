@@ -100,9 +100,27 @@ REFRESH_SYSTEM = (
 
 
 OUTDATED_TERMS = [
-    "GPT-4", "GPT-3.5", "GPT-3", "DALL-E 2", "DALL-E 3", "Bard",
-    "Claude 3 Opus", "Claude 3 Sonnet", "Claude 3 Haiku", "Claude 2",
-    "PaLM", "Stable Diffusion 1", "Stable Diffusion 2", "Codex",
+    # OpenAI — pre-GPT-5.2 era
+    "GPT-4o", "GPT-4 Turbo", "GPT-4", "GPT-3.5", "GPT-3", "GPT-2",
+    "DALL-E 3", "DALL-E 2", "DALL-E", "Codex", "ChatGPT Plus",
+    # Anthropic — pre-Claude 4.5 era
+    "Claude 3.5 Sonnet", "Claude 3.5 Haiku",
+    "Claude 3 Opus", "Claude 3 Sonnet", "Claude 3 Haiku",
+    "Claude 3.7 Sonnet", "Claude 2.1", "Claude 2", "Claude Instant",
+    # Google — pre-Gemini 3 era
+    "Gemini 2.0 Flash", "Gemini 2.0 Pro", "Gemini 2.5 Pro",
+    "Gemini 1.5 Pro", "Gemini 1.5 Flash", "Gemini 1.5",
+    "Gemini 1.0", "Gemini Pro", "Bard", "PaLM 2", "PaLM",
+    # Video / Image gen — pre-Sora 2 / Nano Banana era
+    "Sora 1", "Runway Gen-2", "Runway Gen-3", "Pika 1.0",
+    "Stable Diffusion 1", "Stable Diffusion 2", "Stable Diffusion 3",
+    "SDXL 1.0", "Midjourney v5", "Midjourney v6",
+    # Meta / open-source — older versions
+    "Llama 2", "Llama 3", "Llama 3.1",
+    # Voice / audio — older
+    "ElevenLabs v1", "ElevenLabs Multilingual v1",
+    # Coding / dev tools — older
+    "Copilot X", "Cody 1",
 ]
 
 

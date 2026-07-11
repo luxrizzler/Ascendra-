@@ -60,6 +60,7 @@ import lifecycle
 import social_studio
 import x_publisher
 import practice_lab
+import content_scanner
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
@@ -3969,6 +3970,138 @@ async def admin_generate_challenge(lesson_id: str, _admin=Depends(require_admin)
 
 
 
+# ─── Content Health / Autoscan (Phase 21) ─────────────────────────────
+@api.get("/admin/content-health/scan")
+async def admin_content_health_scan(
+    _admin=Depends(require_admin),
+    stale_days: int = 120,
+    check_dead_links: bool = True,
+):
+    """Full read-only scan report. Doesn't modify anything."""
+    r = await content_scanner.scan_all_lessons(
+        db=db, stale_days=stale_days, check_dead_links=check_dead_links
+    )
+    return r
+
+
+@api.post("/admin/content-health/run")
+async def admin_content_health_run(
+    _admin=Depends(require_admin),
+    stale_days: int = 120,
+    check_dead_links: bool = True,
+    max_updates: int = 25,
+):
+    """Trigger scan + auto-update pipeline immediately."""
+    r = await content_scanner.scan_and_auto_update(
+        db=db, stale_days=stale_days, check_dead_links=check_dead_links,
+        max_updates_per_run=max_updates, trigger="admin-manual",
+    )
+    return r
+
+
+@api.get("/admin/content-health/status")
+async def admin_content_health_status(_admin=Depends(require_admin)):
+    return content_scanner.get_last_run_status()
+
+
+@api.get("/admin/content-health/audit")
+async def admin_content_health_audit(_admin=Depends(require_admin), limit: int = 100):
+    cursor = db["content_audit"].find({}).sort("created_at", -1).limit(min(limit, 500))
+    items = []
+    async for doc in cursor:
+        doc.pop("_id", None)
+        # Convert datetime to iso for JSON
+        if isinstance(doc.get("created_at"), datetime):
+            doc["created_at"] = doc["created_at"].isoformat()
+        items.append(doc)
+    return {"audit": items, "count": len(items)}
+
+
+@api.post("/admin/content-health/revert/{history_id}")
+async def admin_content_health_revert(history_id: str, _admin=Depends(require_admin)):
+    try:
+        r = await content_scanner.revert_lesson(db=db, history_id=history_id)
+        return r
+    except LookupError as e:
+        raise HTTPException(404, str(e))
+
+
+@api.post("/admin/content-health/update-lesson/{path_id}/{module_id}/{lesson_id}")
+async def admin_content_health_update_one(
+    path_id: str, module_id: str, lesson_id: str,
+    _admin=Depends(require_admin),
+):
+    """Force-refresh a single lesson (admin-triggered, bypasses scan)."""
+    # Build a minimal finding so auto_update_lesson has context
+    finding = {
+        "path_id": path_id, "module_id": module_id, "lesson_id": lesson_id,
+        "outdated_terms": [], "is_stale": True, "dead_links": [],
+    }
+    try:
+        r = await content_scanner.auto_update_lesson(db=db, finding=finding, trigger="admin-manual-one")
+        return r
+    except LookupError as e:
+        raise HTTPException(404, str(e))
+    except Exception as e:
+        log.exception("manual auto-update failed")
+        raise HTTPException(503, f"Refresh failed: {str(e)[:200]}")
+
+
+# ─── Practice Lab admin controls ──────────────────────────────────────
+@api.get("/admin/practice/stats")
+async def admin_practice_stats(_admin=Depends(require_admin)):
+    """Aggregate practice-lab statistics for the admin dashboard."""
+    total_challenges = await db["practice_challenges"].count_documents({})
+    total_attempts = await db["practice_attempts"].count_documents({})
+    mastered = await db["practice_attempts"].count_documents({"mastered": True})
+    unique_users = len(await db["practice_attempts"].distinct("user_id"))
+    # Score distribution
+    pipeline = [
+        {"$group": {
+            "_id": {
+                "$switch": {
+                    "branches": [
+                        {"case": {"$lt": ["$score", 40]}, "then": "0-39"},
+                        {"case": {"$lt": ["$score", 60]}, "then": "40-59"},
+                        {"case": {"$lt": ["$score", 80]}, "then": "60-79"},
+                    ],
+                    "default": "80-100"
+                }
+            },
+            "count": {"$sum": 1}
+        }}
+    ]
+    dist_cursor = db["practice_attempts"].aggregate(pipeline)
+    distribution = {"0-39": 0, "40-59": 0, "60-79": 0, "80-100": 0}
+    async for d in dist_cursor:
+        distribution[d["_id"]] = d["count"]
+
+    # Recent 10 attempts
+    recent = []
+    async for a in db["practice_attempts"].find({}).sort("created_at", -1).limit(10):
+        a.pop("_id", None)
+        if isinstance(a.get("created_at"), datetime):
+            a["created_at"] = a["created_at"].isoformat()
+        recent.append({
+            "attempt_id": a.get("id"),
+            "user_email": a.get("user_email"),
+            "challenge_title": a.get("challenge_title"),
+            "score": a.get("score"),
+            "mastered": a.get("mastered"),
+            "created_at": a.get("created_at"),
+        })
+    return {
+        "total_challenges": total_challenges,
+        "total_attempts": total_attempts,
+        "mastered_attempts": mastered,
+        "unique_users_practicing": unique_users,
+        "score_distribution": distribution,
+        "recent_attempts": recent,
+    }
+
+
+
+
 app.include_router(api)
 
 app.add_middleware(
@@ -4004,6 +4137,11 @@ async def startup():
             lifecycle.register_jobs(sched, db)
         except Exception as e:
             log.exception(f"Lifecycle scheduler registration failed: {e}")
+        # Register weekly content-health scanner (Sun 03:00 UTC)
+        try:
+            content_scanner.register_scheduler(sched, db)
+        except Exception as e:
+            log.exception(f"Content scanner registration failed: {e}")
     except Exception as e:
         log.exception(f"Auto-content scheduler failed to start: {e}")
 

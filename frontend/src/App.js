@@ -45,6 +45,8 @@ import Privacy from "@/pages/Privacy";
 import NoRefunds from "@/pages/NoRefunds";
 import Portfolio from "@/pages/Portfolio";
 import PublicPortfolio from "@/pages/PublicPortfolio";
+import AdminContentHealth from "@/pages/AdminContentHealth";
+import AdminPractice from "@/pages/AdminPractice";
 import NotFound from "@/pages/NotFound";
 import { api } from "@/lib/api";
 
@@ -99,6 +101,8 @@ function Shell() {
           <Route path="/admin/auto-content" element={<RequireAuth admin><AdminAutoContent /></RequireAuth>} />
           <Route path="/admin/social" element={<RequireAuth admin><AdminSocial /></RequireAuth>} />
           <Route path="/admin/paths-review" element={<RequireAuth admin><AdminPathsReview /></RequireAuth>} />
+          <Route path="/admin/content-health" element={<RequireAuth admin><AdminContentHealth /></RequireAuth>} />
+          <Route path="/admin/practice" element={<RequireAuth admin><AdminPractice /></RequireAuth>} />
           <Route path="/learn/:modelSlug" element={<LearnHub />} />
           <Route path="/learn/:modelSlug/:useCaseSlug" element={<LearnHub />} />
           <Route path="/resources/ai-roadmap" element={<AiRoadmap />} />

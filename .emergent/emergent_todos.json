@@ -1,26 +1,34 @@
 [
   {
-    "content": "Build backend practice_lab.py module with Claude rubric grading",
+    "content": "Update OUTDATED_TERMS list to 2026 model names",
     "status": "completed"
   },
   {
-    "content": "Add practice_lab endpoints to server.py + register in main",
+    "content": "Build content_scanner.py: model drift + time-based + dead-link detection",
     "status": "completed"
   },
   {
-    "content": "Build PracticeCard.js component + wire into CardRouter",
+    "content": "Build auto-update engine: backup → refresh via Claude → replace → audit log",
     "status": "completed"
   },
   {
-    "content": "Build Portfolio.js (private) + PublicPortfolio.js pages + routing",
+    "content": "Add weekly APScheduler job for auto-scan + auto-update",
     "status": "completed"
   },
   {
-    "content": "Add Portfolio nav link + practice challenge seed data",
+    "content": "Build /admin/content-health page (scan report + audit history + revert)",
     "status": "completed"
   },
   {
-    "content": "Test end-to-end: attempt → grade → mastery → portfolio → toggle public",
+    "content": "Build /admin/practice page (Practice Lab admin: challenges, attempts, auto-gen)",
+    "status": "completed"
+  },
+  {
+    "content": "Add nav links + route wiring for both new admin pages",
+    "status": "completed"
+  },
+  {
+    "content": "End-to-end test: scan finds outdated → auto-updates → audit shows revert works",
     "status": "completed"
   }
 ]

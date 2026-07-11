@@ -80,6 +80,8 @@ export default function Admin() {
         <a href="/admin/whats-new" data-testid="admin-tab-whats-new" className="px-4 py-2 rounded-full text-sm font-bold transition border" style={{ background: "rgba(124,58,237,0.10)", color: "#BFB4FF", borderColor: "rgba(191,180,255,0.4)" }}>WHAT'S NEW</a>
         <a href="/admin/subscribers" data-testid="admin-tab-subscribers" className="px-4 py-2 rounded-full text-sm font-bold transition border" style={{ background: "rgba(255,107,53,0.10)", color: "#FF6B35", borderColor: "rgba(255,107,53,0.5)" }}>SUBSCRIBERS</a>
         <a href="/admin/email" data-testid="admin-tab-email" className="px-4 py-2 rounded-full text-sm font-bold transition border" style={{ background: "rgba(52,211,153,0.10)", color: "#34D399", borderColor: "rgba(52,211,153,0.4)" }}>EMAIL</a>
+        <a href="/admin/content-health" data-testid="admin-tab-content-health" className="px-4 py-2 rounded-full text-sm font-bold transition border" style={{ background: "rgba(239,68,68,0.10)", color: "#EF4444", borderColor: "rgba(239,68,68,0.5)" }}>CONTENT HEALTH</a>
+        <a href="/admin/practice" data-testid="admin-tab-practice" className="px-4 py-2 rounded-full text-sm font-bold transition border" style={{ background: "rgba(34,197,94,0.10)", color: "#22c55e", borderColor: "rgba(34,197,94,0.5)" }}>PRACTICE LAB</a>
       </div>
 
       {tab === "stats" && stats && (
