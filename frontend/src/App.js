@@ -36,6 +36,7 @@ import AdminSubscribers from "@/pages/AdminSubscribers";
 import AdminSeoStudio from "@/pages/AdminSeoStudio";
 import AdminAutoContent from "@/pages/AdminAutoContent";
 import AdminSocial from "@/pages/AdminSocial";
+import AdminSocialSettings from "@/pages/AdminSocialSettings";
 import AdminPathsReview from "@/pages/AdminPathsReview";
 import AiRoadmap from "@/pages/AiRoadmap";
 import LearnHub from "@/pages/LearnHub";
@@ -102,6 +103,7 @@ function Shell() {
           <Route path="/admin/seo" element={<RequireAuth admin><AdminSeoStudio /></RequireAuth>} />
           <Route path="/admin/auto-content" element={<RequireAuth admin><AdminAutoContent /></RequireAuth>} />
           <Route path="/admin/social" element={<RequireAuth admin><AdminSocial /></RequireAuth>} />
+          <Route path="/admin/social/settings" element={<RequireAuth admin><AdminSocialSettings /></RequireAuth>} />
           <Route path="/admin/paths-review" element={<RequireAuth admin><AdminPathsReview /></RequireAuth>} />
           <Route path="/admin/content-health" element={<RequireAuth admin><AdminContentHealth /></RequireAuth>} />
           <Route path="/admin/practice" element={<RequireAuth admin><AdminPractice /></RequireAuth>} />

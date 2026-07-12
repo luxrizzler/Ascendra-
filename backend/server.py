@@ -11,6 +11,7 @@ import os
 import asyncio
 import logging
 import uuid
+import secrets
 import hashlib
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -59,6 +60,9 @@ import auto_content
 import lifecycle
 import social_studio
 import x_publisher
+import meta_publisher
+import tiktok_publisher
+import social_media_signer
 import practice_lab
 import content_scanner
 
@@ -2776,6 +2780,71 @@ async def admin_delete_social_post(post_id: str, _admin=Depends(require_admin)):
     return {"ok": True}
 
 
+# ─── Platform Settings (unified config status) ────────────────────────────
+@api.get("/admin/social/settings")
+async def admin_social_settings(_admin=Depends(require_admin)):
+    """Report which platform API credentials are configured in .env.
+    Returns per-platform status for the Distribution Panel and Settings page.
+    """
+    # X — fully wired for auto-posting
+    x_configured = x_publisher.is_configured()
+    x_verify = x_publisher.verify_credentials() if x_configured else {"ok": False}
+
+    # Meta (Facebook + Instagram) — Phase B
+    meta_app_id = os.environ.get("META_APP_ID", "").strip()
+    meta_app_secret = os.environ.get("META_APP_SECRET", "").strip()
+    meta_page_token = os.environ.get("META_PAGE_ACCESS_TOKEN", "").strip()
+    meta_page_id = os.environ.get("META_PAGE_ID", "").strip()
+    meta_ig_id = os.environ.get("META_IG_BUSINESS_ID", "").strip()
+    fb_ready = bool(meta_app_id and meta_app_secret and meta_page_token and meta_page_id)
+    ig_ready = bool(fb_ready and meta_ig_id)
+
+    # TikTok — Phase B
+    tt_client_key = os.environ.get("TIKTOK_CLIENT_KEY", "").strip()
+    tt_client_secret = os.environ.get("TIKTOK_CLIENT_SECRET", "").strip()
+    tt_access_token = os.environ.get("TIKTOK_ACCESS_TOKEN", "").strip()
+    tiktok_ready = bool(tt_client_key and tt_client_secret and tt_access_token)
+
+    return {
+        "x": {
+            "configured": x_configured,
+            "verified": x_verify.get("ok", False),
+            "handle": x_publisher.handle() if x_configured else None,
+            "screen_name": x_verify.get("screen_name"),
+            "auto_post": bool(x_configured and x_verify.get("ok")),
+            "capabilities": ["thread", "images", "auto_post"],
+            "env_keys": ["X_API_KEY", "X_API_SECRET", "X_ACCESS_TOKEN",
+                         "X_ACCESS_TOKEN_SECRET", "X_HANDLE"],
+        },
+        "facebook": {
+            "configured": fb_ready,
+            "verified": fb_ready,
+            "auto_post": fb_ready,
+            "page_id": meta_page_id if fb_ready else None,
+            "capabilities": ["text", "image", "carousel", "auto_post"],
+            "env_keys": ["META_APP_ID", "META_APP_SECRET",
+                         "META_PAGE_ACCESS_TOKEN", "META_PAGE_ID"],
+        },
+        "instagram": {
+            "configured": ig_ready,
+            "verified": ig_ready,
+            "auto_post": ig_ready,
+            "ig_business_id": meta_ig_id if ig_ready else None,
+            "capabilities": ["image", "carousel", "reels", "auto_post"],
+            "env_keys": ["META_APP_ID", "META_APP_SECRET",
+                         "META_PAGE_ACCESS_TOKEN", "META_IG_BUSINESS_ID"],
+        },
+        "tiktok": {
+            "configured": tiktok_ready,
+            "verified": tiktok_ready,
+            "auto_post": tiktok_ready,
+            "capabilities": ["video", "auto_post"],
+            "env_keys": ["TIKTOK_CLIENT_KEY", "TIKTOK_CLIENT_SECRET",
+                         "TIKTOK_ACCESS_TOKEN"],
+        },
+    }
+
+
 # ─── X (Twitter) auto-posting ─────────────────────────────────────────────
 @api.get("/admin/social/x/status")
 async def admin_x_status(_admin=Depends(require_admin)):
@@ -2841,6 +2910,302 @@ async def admin_post_to_x(post_id: str, _admin=Depends(require_admin)):
         "x_posted_at": datetime.now(timezone.utc),
     }})
     return result
+
+
+# ─── Meta (Facebook Page + Instagram Business) auto-posting (Phase B) ────
+class _OAuthStateStore:
+    """Small helper to store OAuth state / PKCE verifier in-memory + Mongo.
+
+    We keep it in Mongo (collection oauth_states) so restarts don't kill flows in progress.
+    """
+    col_name = "oauth_states"
+
+
+async def _oauth_save(admin_id: str, provider: str, state: str, extra: Optional[dict] = None) -> None:
+    doc = {
+        "admin_id": admin_id, "provider": provider, "state": state,
+        "extra": extra or {}, "created_at": datetime.now(timezone.utc),
+    }
+    await db[_OAuthStateStore.col_name].insert_one(doc)
+    # Clean up stale states (>15 min old)
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=15)
+    await db[_OAuthStateStore.col_name].delete_many({"created_at": {"$lt": cutoff}})
+
+
+async def _oauth_consume(state: str, provider: str) -> Optional[dict]:
+    doc = await db[_OAuthStateStore.col_name].find_one_and_delete(
+        {"state": state, "provider": provider}
+    )
+    if not doc:
+        return None
+    return doc
+
+
+@api.get("/admin/social/meta/auth-url")
+async def admin_meta_auth_url(admin=Depends(require_admin)):
+    """Return the URL to redirect the admin to for Meta OAuth."""
+    if not meta_publisher.is_app_configured():
+        raise HTTPException(400, "Meta app not configured. Set META_APP_ID / META_APP_SECRET / META_REDIRECT_URI in backend .env, then restart backend.")
+    state = secrets.token_urlsafe(24)
+    await _oauth_save(admin["id"], "meta", state)
+    return {"url": meta_publisher.build_auth_url(state), "state": state}
+
+
+@api.get("/social/meta/callback")
+async def meta_oauth_callback(code: Optional[str] = None, state: Optional[str] = None,
+                                error: Optional[str] = None, error_reason: Optional[str] = None):
+    """Meta redirects the admin's browser here after they grant permissions.
+
+    We accept unauthenticated, look up the pre-stored state to know which admin this belongs to,
+    then exchange the code and store credentials. This is public (as required by OAuth), but
+    protected by the state parameter (single-use, 15-min TTL, CSRF-proof).
+    """
+    if error:
+        # Redirect back to settings with error banner
+        return _oauth_redirect_html("meta", ok=False, msg=f"{error}: {error_reason or ''}")
+    if not code or not state:
+        return _oauth_redirect_html("meta", ok=False, msg="Missing code or state")
+    entry = await _oauth_consume(state, "meta")
+    if not entry:
+        return _oauth_redirect_html("meta", ok=False, msg="Invalid or expired OAuth state")
+    try:
+        result = await meta_publisher.exchange_code_and_store(db, entry["admin_id"], code)
+        return _oauth_redirect_html("meta", ok=True,
+                                     msg=f"Connected Page: {result.get('fb_page_name')}"
+                                          + (" + Instagram" if result.get("ig_business_id") else ""))
+    except Exception as e:
+        log.exception("Meta OAuth callback failed")
+        return _oauth_redirect_html("meta", ok=False, msg=str(e)[:400])
+
+
+@api.get("/admin/social/meta/status")
+async def admin_meta_status(admin=Depends(require_admin)):
+    creds = await meta_publisher.get_credentials(db, admin["id"])
+    if not creds:
+        return {"connected": False}
+    v = await meta_publisher.verify_connection(db, admin["id"])
+    return {
+        "connected": True,
+        "verified": v.get("ok"),
+        "fb_page_id": creds.get("fb_page_id"),
+        "fb_page_name": creds.get("fb_page_name"),
+        "ig_business_id": creds.get("ig_business_id"),
+        "connected_at": creds.get("connected_at"),
+        "expires_at": creds.get("expires_at"),
+        "verify": v,
+    }
+
+
+@api.post("/admin/social/meta/disconnect")
+async def admin_meta_disconnect(admin=Depends(require_admin)):
+    ok = await meta_publisher.disconnect(db, admin["id"])
+    return {"ok": ok}
+
+
+def _build_signed_urls_for_post(post: dict, request: Request) -> tuple:
+    """Return (image_urls: list, video_url: str|None) signed for external pull."""
+    # Prefer explicit PUBLIC_BASE_URL env for signing (in case ingress rewrites host)
+    base = os.environ.get("PUBLIC_BASE_URL", "").strip() or str(request.base_url).rstrip("/")
+    slide_count = int(post.get("slide_count") or 0)
+    imgs = [social_media_signer.make_slide_url(base, post["id"], i) for i in range(slide_count)]
+    video = social_media_signer.make_video_url(base, post["id"]) if post.get("has_video") else None
+    return imgs, video
+
+
+@api.post("/admin/social/post/{post_id}/post-to-facebook")
+async def admin_post_to_facebook(post_id: str, request: Request, admin=Depends(require_admin)):
+    post = await social_studio.get_post(db, post_id)
+    if not post:
+        raise HTTPException(404, "Post not found")
+    if post.get("platforms", {}).get("facebook") == "posted":
+        raise HTTPException(400, "Already posted to Facebook.")
+    caption = (post.get("caption") or "").strip()
+    hashtags = " ".join(post.get("hashtags") or [])
+    if hashtags:
+        caption = f"{caption}\n\n{hashtags}" if caption else hashtags
+    image_urls, _ = _build_signed_urls_for_post(post, request)
+    result = await meta_publisher.post_to_facebook_page(
+        db, admin["id"], caption=caption, image_urls=image_urls,
+    )
+    if not result.get("ok"):
+        raise HTTPException(502, result.get("error", "Facebook post failed"))
+    col = await social_studio._col(db)
+    await col.update_one({"id": post_id}, {"$set": {
+        "platforms.facebook": "posted",
+        "fb_post_id": result.get("post_id"),
+        "fb_post_url": result.get("url"),
+        "fb_posted_at": datetime.now(timezone.utc),
+    }})
+    return result
+
+
+@api.post("/admin/social/post/{post_id}/post-to-instagram")
+async def admin_post_to_instagram(post_id: str, request: Request,
+                                    as_reel: bool = False, admin=Depends(require_admin)):
+    post = await social_studio.get_post(db, post_id)
+    if not post:
+        raise HTTPException(404, "Post not found")
+    if post.get("platforms", {}).get("instagram") == "posted":
+        raise HTTPException(400, "Already posted to Instagram.")
+    caption = (post.get("caption") or "").strip()
+    hashtags = " ".join(post.get("hashtags") or [])
+    if hashtags:
+        caption = f"{caption}\n\n{hashtags}" if caption else hashtags
+    image_urls, video_url = _build_signed_urls_for_post(post, request)
+    if as_reel and video_url:
+        result = await meta_publisher.post_to_instagram(
+            db, admin["id"], caption=caption, video_url=video_url, as_reel=True,
+        )
+    else:
+        result = await meta_publisher.post_to_instagram(
+            db, admin["id"], caption=caption, image_urls=image_urls,
+        )
+    if not result.get("ok"):
+        raise HTTPException(502, result.get("error", "Instagram post failed"))
+    col = await social_studio._col(db)
+    await col.update_one({"id": post_id}, {"$set": {
+        "platforms.instagram": "posted",
+        "ig_post_id": result.get("post_id"),
+        "ig_post_url": result.get("url"),
+        "ig_posted_at": datetime.now(timezone.utc),
+    }})
+    return result
+
+
+# ─── TikTok Content Posting API (Phase B) ────────────────────────────────
+@api.get("/admin/social/tiktok/auth-url")
+async def admin_tiktok_auth_url(admin=Depends(require_admin)):
+    if not tiktok_publisher.is_app_configured():
+        raise HTTPException(400, "TikTok app not configured. Set TIKTOK_CLIENT_KEY / TIKTOK_CLIENT_SECRET / TIKTOK_REDIRECT_URI in backend .env, then restart backend.")
+    state = secrets.token_urlsafe(24)
+    verifier, challenge = tiktok_publisher.make_pkce()
+    await _oauth_save(admin["id"], "tiktok", state, extra={"code_verifier": verifier})
+    return {"url": tiktok_publisher.build_auth_url(state, challenge), "state": state}
+
+
+@api.get("/social/tiktok/callback")
+async def tiktok_oauth_callback(code: Optional[str] = None, state: Optional[str] = None,
+                                  error: Optional[str] = None, error_description: Optional[str] = None):
+    if error:
+        return _oauth_redirect_html("tiktok", ok=False, msg=f"{error}: {error_description or ''}")
+    if not code or not state:
+        return _oauth_redirect_html("tiktok", ok=False, msg="Missing code or state")
+    entry = await _oauth_consume(state, "tiktok")
+    if not entry:
+        return _oauth_redirect_html("tiktok", ok=False, msg="Invalid or expired OAuth state")
+    verifier = (entry.get("extra") or {}).get("code_verifier")
+    if not verifier:
+        return _oauth_redirect_html("tiktok", ok=False, msg="Missing PKCE verifier")
+    try:
+        result = await tiktok_publisher.exchange_code_and_store(db, entry["admin_id"], code, verifier)
+        return _oauth_redirect_html("tiktok", ok=True, msg=f"Connected TikTok ({result.get('open_id','')[:8]}…)")
+    except Exception as e:
+        log.exception("TikTok OAuth callback failed")
+        return _oauth_redirect_html("tiktok", ok=False, msg=str(e)[:400])
+
+
+@api.get("/admin/social/tiktok/status")
+async def admin_tiktok_status(admin=Depends(require_admin)):
+    creds = await tiktok_publisher.get_credentials(db, admin["id"], refresh=False)
+    if not creds:
+        return {"connected": False}
+    v = await tiktok_publisher.verify_connection(db, admin["id"])
+    return {
+        "connected": True,
+        "verified": v.get("ok"),
+        "open_id": creds.get("open_id"),
+        "scope": creds.get("scope"),
+        "connected_at": creds.get("connected_at"),
+        "token_expires_at": creds.get("token_expires_at"),
+        "verify": v,
+    }
+
+
+@api.post("/admin/social/tiktok/disconnect")
+async def admin_tiktok_disconnect(admin=Depends(require_admin)):
+    ok = await tiktok_publisher.disconnect(db, admin["id"])
+    return {"ok": ok}
+
+
+class TikTokPostIn(BaseModel):
+    privacy: str = Field(default="SELF_ONLY",
+                         pattern="^(SELF_ONLY|MUTUAL_FOLLOW_FRIENDS|PUBLIC_TO_EVERYONE)$")
+
+
+@api.post("/admin/social/post/{post_id}/post-to-tiktok")
+async def admin_post_to_tiktok(post_id: str, body: TikTokPostIn, request: Request,
+                                 admin=Depends(require_admin)):
+    post = await social_studio.get_post(db, post_id)
+    if not post:
+        raise HTTPException(404, "Post not found")
+    if not post.get("has_video"):
+        raise HTTPException(400, "This post has no video. Regenerate with video enabled.")
+    if post.get("platforms", {}).get("tiktok") == "posted":
+        raise HTTPException(400, "Already posted to TikTok.")
+    caption = (post.get("caption") or post.get("lesson_title") or "").strip()
+    hashtags = " ".join(post.get("hashtags") or [])
+    if hashtags:
+        caption = f"{caption}\n\n{hashtags}" if caption else hashtags
+    _, video_url = _build_signed_urls_for_post(post, request)
+    if not video_url:
+        raise HTTPException(400, "Could not sign video URL.")
+    result = await tiktok_publisher.direct_post_video(
+        db, admin["id"], video_url=video_url, caption=caption, privacy=body.privacy,
+    )
+    if not result.get("ok"):
+        raise HTTPException(502, result.get("error", "TikTok post failed"))
+    col = await social_studio._col(db)
+    await col.update_one({"id": post_id}, {"$set": {
+        "platforms.tiktok": "posted",
+        "tiktok_publish_id": result.get("publish_id"),
+        "tiktok_privacy": body.privacy,
+        "tiktok_posted_at": datetime.now(timezone.utc),
+    }})
+    return result
+
+
+@api.get("/admin/social/tiktok/publish/{publish_id}/status")
+async def admin_tiktok_publish_status(publish_id: str, admin=Depends(require_admin)):
+    return await tiktok_publisher.fetch_publish_status(db, admin["id"], publish_id)
+
+
+# ─── Signed public media endpoints (for Meta/TikTok PULL_FROM_URL) ───────
+@api.get("/social/media/{token}/slide/{idx}.png", response_class=Response)
+async def social_signed_slide(token: str, idx: int):
+    """Public signed URL for a slide PNG. Verified via HMAC + expiry.
+    Meta/TikTok servers hit these anonymously to fetch our assets.
+    """
+    v = social_media_signer.verify(token)
+    if not v or v.get("kind") != "slide" or v.get("index") != idx:
+        raise HTTPException(403, "Invalid or expired media token")
+    png = await social_studio.get_slide_bytes(db, v["post_id"], idx)
+    if not png:
+        raise HTTPException(404, "Slide not found")
+    return Response(content=png, media_type="image/png",
+                     headers={"Cache-Control": "public, max-age=600"})
+
+
+@api.get("/social/media/{token}/video.mp4", response_class=Response)
+async def social_signed_video(token: str):
+    v = social_media_signer.verify(token)
+    if not v or v.get("kind") != "video":
+        raise HTTPException(403, "Invalid or expired media token")
+    mp4 = await social_studio.get_mp4_bytes(db, v["post_id"])
+    if not mp4:
+        raise HTTPException(404, "Video not found")
+    return Response(content=mp4, media_type="video/mp4",
+                     headers={"Cache-Control": "public, max-age=600"})
+
+
+def _oauth_redirect_html(provider: str, ok: bool, msg: str) -> Response:
+    """After OAuth callback, redirect the admin's browser back to the settings page
+    with a query param so the frontend can show a success/error toast.
+    """
+    from urllib.parse import quote_plus
+    base = os.environ.get("PUBLIC_FRONTEND_URL", "").strip() or "/"
+    status = "success" if ok else "error"
+    dest = f"{base.rstrip('/')}/admin/social/settings?connected={provider}&status={status}&msg={quote_plus(msg[:200])}"
+    return Response(status_code=307, headers={"Location": dest})
 
 
 # ─── Health ─────────────────────────────────────────────────────────────────

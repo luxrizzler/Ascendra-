@@ -1,26 +1,70 @@
 [
   {
-    "content": "Backend: Extend practice_lab for capstones + drills scheduling (next_review_at)",
+    "content": "Fix bug: Wire the missing 'Post to X' button in AdminSocial.js UI (backend already exists)",
     "status": "completed"
   },
   {
-    "content": "Backend: Capstone endpoints + certificate gating logic",
+    "content": "Fix bug: Add Facebook to the Posting Status section (currently missing)",
     "status": "completed"
   },
   {
-    "content": "Backend: Spaced drill endpoints + auto-schedule after each attempt",
+    "content": "Phase A: Build Manual Post Helper distribution panel (X, FB, IG, TikTok) with copy-caption, download-asset, and deep-link buttons per platform",
     "status": "completed"
   },
   {
-    "content": "Frontend: CapstoneCard component + PathDetail integration",
+    "content": "Phase A: Create /admin/social/settings page showing which platform credentials are configured + how-to-get-tokens checklist",
     "status": "completed"
   },
   {
-    "content": "Frontend: DrillWidget for dashboard + /practice/drills page",
+    "content": "Phase A: Add backend endpoint /api/admin/social/settings returning per-platform config status",
     "status": "completed"
   },
   {
-    "content": "Seed capstone for AI Fundamentals path + verify end-to-end",
+    "content": "Phase A: Test visual rendering (Unicode chars, layout, buttons)",
     "status": "completed"
+  },
+  {
+    "content": "Phase B: Get integration playbook for Meta Graph API",
+    "status": "completed"
+  },
+  {
+    "content": "Phase B: Get integration playbook for TikTok Content Posting API",
+    "status": "completed"
+  },
+  {
+    "content": "Phase B: Implement meta_publisher.py (OAuth flow + post text/image/carousel to FB Page + IG Business)",
+    "status": "completed"
+  },
+  {
+    "content": "Phase B: Implement tiktok_publisher.py (OAuth flow + PKCE + video upload/publish + token refresh)",
+    "status": "completed"
+  },
+  {
+    "content": "Phase B: Implement social_media_signer.py (HMAC-signed public URLs for Meta/TikTok PULL_FROM_URL)",
+    "status": "completed"
+  },
+  {
+    "content": "Phase B: Wire OAuth callback routes + storage of long-lived tokens in server.py",
+    "status": "completed"
+  },
+  {
+    "content": "Phase B: Add Meta/TikTok Connect/Disconnect buttons in Settings page",
+    "status": "completed"
+  },
+  {
+    "content": "Phase B: Wire Post-to-FB, Post-to-IG, Post-to-TikTok buttons in Social Studio (gated on connection status)",
+    "status": "completed"
+  },
+  {
+    "content": "Phase B: Backend smoke test (endpoints respond, signed URL crypto works)",
+    "status": "completed"
+  },
+  {
+    "content": "Phase B: User to create Meta App + TikTok App + provide API keys (BLOCKED on user)",
+    "status": "pending"
+  },
+  {
+    "content": "Phase B: End-to-end live testing once credentials are in .env (BLOCKED on user credentials)",
+    "status": "pending"
   }
 ]
