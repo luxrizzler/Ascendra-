@@ -186,79 +186,10 @@ export default function AdminSocialSettings() {
           }
         />
 
-        {/* Facebook */}
-        <PlatformSection
-          testId="settings-facebook"
-          icon={Facebook}
-          iconColor="#93B7FF"
-          accent="rgba(66,103,178,0.14)"
-          label="Facebook Page"
-          badge={metaStatus?.connected ? "Connected" : "Phase B — Graph API"}
-          badgeTone={metaStatus?.connected ? "ok" : "warn"}
-          cfg={{ ...(settings?.facebook || {}), auto_post: !!metaStatus?.connected, configured: !!metaStatus?.connected || !!settings?.facebook?.configured }}
-          docsUrl="https://developers.facebook.com/apps/"
-          steps={[
-            <>Confirm your <strong>Facebook Page</strong> for Ascendra exists inside <a className="underline text-[var(--asc-brand)]" href="https://business.facebook.com/" target="_blank" rel="noreferrer">Meta Business Suite</a>.</>,
-            <>Create an app at <a className="underline text-[var(--asc-brand)]" href="https://developers.facebook.com/apps/" target="_blank" rel="noreferrer">developers.facebook.com/apps</a> — pick <strong>Business</strong> type.</>,
-            <>Add products: <strong>Facebook Login for Business</strong> + <strong>Instagram Graph API</strong>.</>,
-            <>Set the OAuth redirect URI to: <CopyRow value={oauthMeta} onCopy={copy} testId="settings-fb-callback" /></>,
-            <>Save <code className="asc-mono">META_APP_ID</code>, <code className="asc-mono">META_APP_SECRET</code>, and <code className="asc-mono">META_REDIRECT_URI={oauthMeta}</code> into <code className="asc-mono text-[var(--asc-brand)]">/app/backend/.env</code>. Restart backend.</>,
-            <>Click <strong>Connect Facebook</strong> below. You&apos;ll be sent to Facebook to grant permissions, then redirected back here. We store a long-lived Page Access Token in Mongo (never in browser storage).</>,
-            <><strong>App Review required</strong> before you can post as a non-tester. Add your FB account as a tester at App Roles → Testers to iterate immediately.</>,
-          ]}
-          extra={
-            <div className="mt-3 space-y-2">
-              <div className="flex flex-wrap gap-2">
-                {metaStatus?.connected ? (
-                  <>
-                    <span className="asc-btn-secondary text-xs cursor-default" data-testid="settings-fb-connected-page">
-                      <CheckCircle2 size={12} className="text-[#4ADE80]" /> {metaStatus.fb_page_name || metaStatus.fb_page_id}
-                    </span>
-                    <button onClick={connectMeta} disabled={connecting === "meta"} className="asc-btn-secondary text-xs" data-testid="settings-fb-reconnect"><RefreshCcw size={12} /> Reconnect</button>
-                    <button onClick={disconnectMeta} className="asc-btn-secondary text-xs" data-testid="settings-fb-disconnect">Disconnect</button>
-                  </>
-                ) : (
-                  <button onClick={connectMeta} disabled={connecting === "meta"} className="asc-btn-primary text-xs" data-testid="settings-fb-connect">
-                    <LinkIcon size={12} /> {connecting === "meta" ? "Redirecting…" : "Connect Facebook + Instagram"}
-                  </button>
-                )}
-              </div>
-              {metaStatus?.verify?.error && (
-                <div className="text-[10px] text-[#FB7185] flex items-start gap-1"><AlertTriangle size={10} className="mt-0.5" /> {metaStatus.verify.error}</div>
-              )}
-            </div>
-          }
-        />
-
-        {/* Instagram */}
-        <PlatformSection
-          testId="settings-instagram"
-          icon={Instagram}
-          iconColor="#FF9CB0"
-          accent="rgba(228,64,95,0.14)"
-          label="Instagram"
-          badge={metaStatus?.ig_business_id ? "Connected" : "Phase B — Graph API"}
-          badgeTone={metaStatus?.ig_business_id ? "ok" : "warn"}
-          cfg={{ ...(settings?.instagram || {}), auto_post: !!metaStatus?.ig_business_id, configured: !!metaStatus?.ig_business_id }}
-          docsUrl="https://developers.facebook.com/docs/instagram-api"
-          steps={[
-            <><strong>Instagram must be a Business or Creator account</strong>, linked to your Facebook Page. Convert inside the IG mobile app: Settings → Account → Switch to Professional.</>,
-            <>Reuses the same <strong>Meta App</strong> and OAuth callback as Facebook. Just connect Facebook above and we auto-detect the linked IG account.</>,
-            <>Once connected, you can auto-publish single images, carousels (2–10 slides), and Reels (video) to your IG feed.</>,
-            <><strong>App Review required</strong> for <code className="asc-mono">instagram_content_publish</code> + <code className="asc-mono">instagram_basic</code>. Approval usually needs a demo video screen-recording your admin flow.</>,
-          ]}
-          extra={
-            metaStatus?.connected && (
-              <div className="mt-3 text-xs text-[var(--asc-text-muted)]" data-testid="settings-ig-status">
-                {metaStatus.ig_business_id ? (
-                  <span className="inline-flex items-center gap-1"><CheckCircle2 size={12} className="text-[#4ADE80]" /> IG Business ID: <code className="asc-mono text-[var(--asc-brand)]">{metaStatus.ig_business_id}</code></span>
-                ) : (
-                  <span className="inline-flex items-center gap-1"><AlertTriangle size={12} className="text-[#FFB000]" /> No Instagram Business account linked to this Facebook Page. Convert IG to Business/Creator first, then click Reconnect above.</span>
-                )}
-              </div>
-            )
-          }
-        />
+        {/* Facebook + Instagram (Meta) integrations disabled per user request 2026-07-12.
+            Backend code (meta_publisher.py, /api/admin/social/meta/*, /api/social/meta/callback)
+            remains intact for future reactivation. Uncomment these <PlatformSection> blocks +
+            uncomment META_* env vars to re-enable. */}
 
         {/* TikTok */}
         <PlatformSection

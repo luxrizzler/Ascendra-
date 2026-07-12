@@ -2790,20 +2790,12 @@ async def admin_social_settings(_admin=Depends(require_admin)):
     x_configured = x_publisher.is_configured()
     x_verify = x_publisher.verify_credentials() if x_configured else {"ok": False}
 
-    # Meta (Facebook + Instagram) — Phase B
-    meta_app_id = os.environ.get("META_APP_ID", "").strip()
-    meta_app_secret = os.environ.get("META_APP_SECRET", "").strip()
-    meta_page_token = os.environ.get("META_PAGE_ACCESS_TOKEN", "").strip()
-    meta_page_id = os.environ.get("META_PAGE_ID", "").strip()
-    meta_ig_id = os.environ.get("META_IG_BUSINESS_ID", "").strip()
-    fb_ready = bool(meta_app_id and meta_app_secret and meta_page_token and meta_page_id)
-    ig_ready = bool(fb_ready and meta_ig_id)
+    # Meta (Facebook + Instagram) — App-level config lives in env.
+    # Page/IG access tokens are obtained via OAuth flow and stored in Mongo.
+    meta_app_ready = meta_publisher.is_app_configured()
 
-    # TikTok — Phase B
-    tt_client_key = os.environ.get("TIKTOK_CLIENT_KEY", "").strip()
-    tt_client_secret = os.environ.get("TIKTOK_CLIENT_SECRET", "").strip()
-    tt_access_token = os.environ.get("TIKTOK_ACCESS_TOKEN", "").strip()
-    tiktok_ready = bool(tt_client_key and tt_client_secret and tt_access_token)
+    # TikTok — App-level config in env. Access tokens via OAuth, stored in Mongo.
+    tiktok_app_ready = tiktok_publisher.is_app_configured()
 
     return {
         "x": {
@@ -2817,30 +2809,26 @@ async def admin_social_settings(_admin=Depends(require_admin)):
                          "X_ACCESS_TOKEN_SECRET", "X_HANDLE"],
         },
         "facebook": {
-            "configured": fb_ready,
-            "verified": fb_ready,
-            "auto_post": fb_ready,
-            "page_id": meta_page_id if fb_ready else None,
+            "configured": meta_app_ready,
+            "verified": meta_app_ready,
+            "auto_post": meta_app_ready,
             "capabilities": ["text", "image", "carousel", "auto_post"],
-            "env_keys": ["META_APP_ID", "META_APP_SECRET",
-                         "META_PAGE_ACCESS_TOKEN", "META_PAGE_ID"],
+            "env_keys": ["META_APP_ID", "META_APP_SECRET", "META_REDIRECT_URI"],
         },
         "instagram": {
-            "configured": ig_ready,
-            "verified": ig_ready,
-            "auto_post": ig_ready,
-            "ig_business_id": meta_ig_id if ig_ready else None,
+            "configured": meta_app_ready,
+            "verified": meta_app_ready,
+            "auto_post": meta_app_ready,
             "capabilities": ["image", "carousel", "reels", "auto_post"],
-            "env_keys": ["META_APP_ID", "META_APP_SECRET",
-                         "META_PAGE_ACCESS_TOKEN", "META_IG_BUSINESS_ID"],
+            "env_keys": ["META_APP_ID", "META_APP_SECRET", "META_REDIRECT_URI"],
         },
         "tiktok": {
-            "configured": tiktok_ready,
-            "verified": tiktok_ready,
-            "auto_post": tiktok_ready,
+            "configured": tiktok_app_ready,
+            "verified": tiktok_app_ready,
+            "auto_post": tiktok_app_ready,
             "capabilities": ["video", "auto_post"],
             "env_keys": ["TIKTOK_CLIENT_KEY", "TIKTOK_CLIENT_SECRET",
-                         "TIKTOK_ACCESS_TOKEN"],
+                         "TIKTOK_REDIRECT_URI"],
         },
     }
 

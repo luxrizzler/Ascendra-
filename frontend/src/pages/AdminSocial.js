@@ -228,12 +228,10 @@ export default function AdminSocial() {
         </div>
       </div>
 
-      {/* Global platform status strip */}
+      {/* Global platform status strip (Facebook + Instagram disabled per user request 2026-07-12) */}
       {settings && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-6" data-testid="social-platform-strip">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-6" data-testid="social-platform-strip">
           <PlatformStatusChip icon={Twitter} label="X" cfg={settings.x} />
-          <PlatformStatusChip icon={Facebook} label="Facebook" cfg={{ ...(settings.facebook || {}), auto_post: !!metaStatus?.connected, configured: !!metaStatus?.connected || !!settings.facebook?.configured }} />
-          <PlatformStatusChip icon={Instagram} label="Instagram" cfg={{ ...(settings.instagram || {}), auto_post: !!metaStatus?.ig_business_id, configured: !!metaStatus?.ig_business_id }} />
           <PlatformStatusChip icon={Music2} label="TikTok" cfg={{ ...(settings.tiktok || {}), auto_post: !!tiktokStatus?.connected, configured: !!tiktokStatus?.connected || !!settings.tiktok?.configured }} />
         </div>
       )}
@@ -326,62 +324,9 @@ export default function AdminSocial() {
                     ]}
                   />
 
-                  {/* Facebook */}
-                  <PlatformCard
-                    testId="platform-card-facebook"
-                    icon={Facebook}
-                    iconColor="#93B7FF"
-                    accent="rgba(66,103,178,0.14)"
-                    label="Facebook Page"
-                    cfg={{ auto_post: !!metaStatus?.connected, configured: !!metaStatus?.connected }}
-                    alreadyPosted={selected.platforms?.facebook === "posted"}
-                    postedUrl={selected.fb_post_url}
-                    primary={metaStatus?.connected ? {
-                      label: posting === "facebook" ? "Posting…" : (selected.platforms?.facebook === "posted" ? "Posted ✓" : `Post to ${metaStatus.fb_page_name || "Page"}`),
-                      onClick: postToFacebook,
-                      disabled: !!posting || selected.platforms?.facebook === "posted",
-                      testId: "platform-fb-post-btn",
-                      icon: Send,
-                    } : null}
-                    hint={!metaStatus?.connected ? "Connect Facebook in Platform Settings to unlock auto-posting." : undefined}
-                    actions={[
-                      { label: "Copy Caption", onClick: () => copyText(composeCaption(true), "Caption copied"), icon: Copy, testId: "platform-fb-copy-caption" },
-                      { label: "Download Slides", onClick: downloadAllSlides, icon: Download, testId: "platform-fb-download-slides" },
-                      { label: "Open Composer", onClick: () => window.open("https://www.facebook.com/", "_blank", "noopener,noreferrer"), icon: ExternalLink, testId: "platform-fb-open" },
-                    ]}
-                  />
-
-                  {/* Instagram */}
-                  <PlatformCard
-                    testId="platform-card-instagram"
-                    icon={Instagram}
-                    iconColor="#FF9CB0"
-                    accent="rgba(228,64,95,0.14)"
-                    label="Instagram"
-                    cfg={{ auto_post: !!metaStatus?.ig_business_id, configured: !!metaStatus?.ig_business_id }}
-                    alreadyPosted={selected.platforms?.instagram === "posted"}
-                    postedUrl={selected.ig_post_url}
-                    primary={metaStatus?.ig_business_id ? {
-                      label: posting === "instagram" ? "Posting…" : (selected.platforms?.instagram === "posted" ? "Posted ✓" : "Publish Carousel"),
-                      onClick: () => postToInstagram(false),
-                      disabled: !!posting || selected.platforms?.instagram === "posted",
-                      testId: "platform-ig-post-btn",
-                      icon: Send,
-                    } : null}
-                    secondary={metaStatus?.ig_business_id && selected.has_video ? {
-                      label: posting === "instagram" ? "Posting…" : "Publish as Reel",
-                      onClick: () => postToInstagram(true),
-                      disabled: !!posting || selected.platforms?.instagram === "posted",
-                      testId: "platform-ig-reel-btn",
-                      icon: Send,
-                    } : null}
-                    hint={!metaStatus?.connected ? "Connect Facebook first — IG uses the same Meta app." : (!metaStatus?.ig_business_id ? "No Instagram Business account linked to this FB Page. Convert IG to Business in the app." : "Requires images to have the same aspect ratio for carousels.")}
-                    actions={[
-                      { label: "Copy Caption", onClick: () => copyText(composeCaption(true), "Caption copied"), icon: Copy, testId: "platform-ig-copy-caption" },
-                      { label: "Download Slides", onClick: downloadAllSlides, icon: Download, testId: "platform-ig-download-slides" },
-                      { label: "Open Business Suite", onClick: () => window.open("https://business.facebook.com/latest/composer", "_blank", "noopener,noreferrer"), icon: ExternalLink, testId: "platform-ig-open" },
-                    ]}
-                  />
+                  {/* Facebook + Instagram cards removed per user request 2026-07-12.
+                      Backend code + endpoints preserved. To re-enable, restore the two
+                      <PlatformCard> blocks that used metaStatus + postToFacebook/postToInstagram. */}
 
                   {/* TikTok */}
                   <PlatformCard
