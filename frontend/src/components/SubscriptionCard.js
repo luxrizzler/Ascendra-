@@ -23,6 +23,7 @@ const TIER_LABEL = {
   ascender:   "Ascender",
   pathfinder: "Pathfinder",
   sage:       "Sage",
+  business:   "Business",
 };
 
 /**

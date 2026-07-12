@@ -6,7 +6,7 @@ import TierBadge from "@/components/TierBadge";
 import { ArrowLeft, Plus, Trash2, Save, Sparkles, RefreshCw, Image as ImageIcon, ChevronDown, ChevronRight, Edit3 } from "lucide-react";
 import { toast } from "sonner";
 
-const TIERS = ["free", "ascender", "pathfinder", "sage"];
+const TIERS = ["free", "ascender", "pathfinder", "sage", "business"];
 const COLORS = ["#FFB000", "#FF6B35", "#BFB4FF", "#7C3AED", "#E8C572", "#34D399", "#FB7185", "#38BDF8"];
 
 export default function AdminCurriculumEdit() {

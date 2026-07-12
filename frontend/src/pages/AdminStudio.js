@@ -202,7 +202,7 @@ function PathGenerator() {
           <div>
             <div className="asc-label mb-1">Tier (gating)</div>
             <select className="asc-input" value={tier} onChange={(e) => setTier(e.target.value)} data-testid="path-gen-tier">
-              {["free", "ascender", "pathfinder", "sage"].map((t) => <option key={t}>{t}</option>)}
+              {["free", "ascender", "pathfinder", "sage", "business"].map((t) => <option key={t}>{t}</option>)}
             </select>
           </div>
         </div>

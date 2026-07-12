@@ -16,7 +16,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 
-const TIERS = ["ascender", "pathfinder", "sage"];
+const TIERS = ["ascender", "pathfinder", "sage", "business"];
 
 export default function AdminPathsReview() {
   const nav = useNavigate();
@@ -143,6 +143,7 @@ export default function AdminPathsReview() {
                     <SelectItem value="ascender">Ascender (and above)</SelectItem>
                     <SelectItem value="pathfinder">Pathfinder (and above)</SelectItem>
                     <SelectItem value="sage">Sage only</SelectItem>
+                    <SelectItem value="business">Business only</SelectItem>
                   </SelectContent>
                 </Select>
                 <div className="text-xs text-[var(--asc-text-muted)] mt-1">

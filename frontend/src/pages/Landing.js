@@ -42,6 +42,19 @@ const FALLBACK_TIERS = [
     blurb: "Master the craft. Build the business.",
     features: ["Everything in Pathfinder, plus:", "Sage: AI-First Startup Playbook", "Sage: AI Sales & Marketing Engine", "Real founder case studies", "Lifetime price lock"],
   },
+  {
+    id: "business", name: "Business", price_monthly: 149.0, price_annual: 1490.0,
+    founding_price_monthly: 99.0, founding_price_annual: 990.0,
+    blurb: "Equip your team to learn, govern, and apply AI across everyday business operations.",
+    features: [
+      "Up to 5 team members",
+      "Business-focused AI learning paths",
+      "Employee progress & certificate tracking",
+      "Shared company prompt library",
+      "Business templates & SOPs",
+      "AI-readiness assessment",
+    ],
+  },
 ];
 
 export default function Landing() {
@@ -203,7 +216,7 @@ export default function Landing() {
 
       {/* PRICING TEASER */}
       <Section kicker="Pricing" title="Start free. Rise on your terms.">
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5" data-testid="landing-pricing-teaser">
+        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4" data-testid="landing-pricing-teaser">
           {tiers.map((t) => (
             <div key={t.id} data-testid={`landing-tier-${t.id}`} className={`asc-card p-7 relative ${t.highlight ? "border-[var(--asc-brand)]" : ""}`}
               style={t.highlight ? { borderColor: "#FFB000", background: "rgba(255,176,0,0.04)" } : {}}>

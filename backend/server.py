@@ -218,7 +218,7 @@ class ChatOut(BaseModel):
     reply: str
 
 class CheckoutIn(BaseModel):
-    tier: Literal["ascender", "pathfinder", "sage"]
+    tier: Literal["ascender", "pathfinder", "sage", "business"]
     interval: Literal["monthly", "annual", "trial"] = "monthly"
     origin_url: str
 
@@ -1465,6 +1465,12 @@ async def lesson_playground(body: PlaygroundIn, user=Depends(current_user)):
 
 
 # ─── Pricing & Stripe ───────────────────────────────────────────────────────
+# Founding-member pricing for the Business tier is granted while the number of
+# active Business subscribers is below FOUNDING_BUSINESS_SEATS. After that,
+# checkout falls back to the standard $149/mo price. See _load_stripe_config()
+# for how price IDs are resolved.
+FOUNDING_BUSINESS_SEATS = 25
+
 TIERS = {
     "ascender": {
         "id": "ascender", "name": "Ascender",
@@ -1506,11 +1512,78 @@ TIERS = {
             "Lifetime price lock",
         ],
     },
+    "business": {
+        "id": "business", "name": "Business",
+        # Standard pricing shown to anyone after founding seats fill.
+        "price_monthly": 149.00, "price_annual": 1490.00,
+        # Founding-member pricing is displayed as promotional copy on the Pricing
+        # page while remaining_seats > 0. It is NOT wired into checkout price
+        # selection — the operator is responsible for setting the correct Stripe
+        # price in stripe_config.json and rotating it when founding seats fill.
+        # The seat counter is informational, driven by count of active business subscribers.
+        "founding_price_monthly": 99.00, "founding_price_annual": 990.00,
+        "founding_seats_total": FOUNDING_BUSINESS_SEATS,
+        "blurb": "Equip your team to learn, govern, and apply AI across everyday business operations.",
+        "features": [
+            "Up to 5 team members",
+            "Business-focused AI learning paths",
+            "Employee progress & certificate tracking",
+            "Shared company prompt library",
+            "Business templates & SOPs",
+            "AI-readiness assessment",
+            "Responsible-AI policy starter kit",
+            "Marketing / Customer Service / Sales / Ops workflow library",
+            "Monthly group implementation workshop",
+            "One business workflow review per month",
+            "Implementation-service discount",
+        ],
+        "audience": "Small businesses and teams implementing AI in their operations.",
+    },
 }
+
+
+async def _business_founding_status() -> dict:
+    """How many founding Business seats remain?
+    Counts currently-active Business subscribers (any interval).
+    Returns {"seats_used": int, "seats_total": int, "seats_remaining": int,
+    "founding_active": bool}.
+    """
+    total = int(TIERS["business"].get("founding_seats_total") or 0)
+    try:
+        used = await users_col.count_documents({"tier": "business"})
+    except Exception as e:
+        log.warning(f"business founding count failed: {e}")
+        used = 0
+    remaining = max(0, total - used)
+    return {
+        "seats_used": used,
+        "seats_total": total,
+        "seats_remaining": remaining,
+        "founding_active": remaining > 0,
+    }
+
 
 @api.get("/pricing")
 async def pricing():
-    return {"tiers": list(TIERS.values())}
+    tiers = [dict(t) for t in TIERS.values()]  # shallow copy so we can annotate
+    # Annotate the Business tier with live founding-availability so the UI can
+    # render the correct promo state without an extra round-trip.
+    biz_status = await _business_founding_status()
+    for t in tiers:
+        if t["id"] == "business":
+            t["founding_seats_used"] = biz_status["seats_used"]
+            t["founding_seats_total"] = biz_status["seats_total"]
+            t["founding_seats_remaining"] = biz_status["seats_remaining"]
+            t["founding_active"] = biz_status["founding_active"]
+            # Effective price shown on the pricing page = founding while seats remain,
+            # else the standard price.
+            if biz_status["founding_active"]:
+                t["effective_price_monthly"] = t.get("founding_price_monthly") or t["price_monthly"]
+                t["effective_price_annual"] = t.get("founding_price_annual") or t["price_annual"]
+            else:
+                t["effective_price_monthly"] = t["price_monthly"]
+                t["effective_price_annual"] = t["price_annual"]
+    return {"tiers": tiers, "business_founding": biz_status}
 
 @api.post("/billing/checkout")
 async def create_checkout(body: CheckoutIn, request: Request, user=Depends(current_user)):
@@ -1676,7 +1749,7 @@ async def _scan_and_send_renewal_reminders(window_days_min: float = 6.5, window_
     window_end = now + timedelta(days=window_days_max)
     cur = users_col.find({
         "subscription_status": "active",
-        "tier": {"$in": ["ascender", "pathfinder", "sage"]},
+        "tier": {"$in": ["ascender", "pathfinder", "sage", "business"]},
         "tier_expires_at": {"$gte": window_start, "$lte": window_end},
         "subscription_interval": {"$in": ["monthly", "annual"]},
     }, {"_id": 0})
@@ -2364,7 +2437,7 @@ class AutoQueueItemIn(BaseModel):
     kind: Literal["lesson", "path"] = "lesson"
     level: Literal["Beginner", "Intermediate", "Advanced"] = "Beginner"
     model_hint: Optional[str] = None
-    tier: Optional[Literal["free", "ascender", "pathfinder", "sage"]] = None
+    tier: Optional[Literal["free", "ascender", "pathfinder", "sage", "business"]] = None
     priority: Optional[int] = 9999
 
 
@@ -3401,7 +3474,7 @@ async def admin_stats(_admin=Depends(require_admin)):
 
     user_count = await users_col.count_documents(real_users)
     tier_breakdown = {}
-    for tier in ["free", "ascender", "pathfinder", "sage"]:
+    for tier in ["free", "ascender", "pathfinder", "sage", "business"]:
         tier_breakdown[tier] = await users_col.count_documents(
             _and_filters(real_users, {"tier": tier})
         )
@@ -3721,7 +3794,7 @@ async def admin_subscribers(_admin=Depends(require_admin),
                               include_internal: bool = False,
                               limit: int = 500):
     """Admin: list of paying subscribers w/ plan, interval, status, renewal date."""
-    query: dict = {"tier": {"$in": ["ascender", "pathfinder", "sage"]}}
+    query: dict = {"tier": {"$in": ["ascender", "pathfinder", "sage", "business"]}}
     if not include_canceled:
         # Show users currently with a non-free tier (active OR canceled-but-still-within-period).
         # Exclude those who have been fully reverted to free already.
@@ -3769,7 +3842,7 @@ async def admin_subscribers(_admin=Depends(require_admin),
             "auth_provider": u.get("auth_provider", "email"),
         })
     # Counts by tier for the header
-    by_tier = {"ascender": 0, "pathfinder": 0, "sage": 0}
+    by_tier = {"ascender": 0, "pathfinder": 0, "sage": 0, "business": 0}
     for r in rows:
         if r["tier"] in by_tier:
             by_tier[r["tier"]] += 1
@@ -3819,7 +3892,7 @@ class PathUpsert(BaseModel):
     level: Optional[str] = "Beginner"
     duration: Optional[str] = "~2 hours"
     image: Optional[str] = ""
-    tier: Optional[Literal["free", "ascender", "pathfinder", "sage"]] = "free"
+    tier: Optional[Literal["free", "ascender", "pathfinder", "sage", "business"]] = "free"
     modules: Optional[List[ModuleUpsert]] = None
 
 
@@ -3834,7 +3907,7 @@ class LessonGenIn(BaseModel):
 class PathGenIn(BaseModel):
     concept: str
     level: str = "Beginner"
-    tier: Literal["free", "ascender", "pathfinder", "sage"] = "free"
+    tier: Literal["free", "ascender", "pathfinder", "sage", "business"] = "free"
     generate_lessons: bool = False
     auto_cover: bool = True
 
@@ -3861,7 +3934,7 @@ async def admin_list_pending_paths(_admin=Depends(require_admin)):
 
 class PathReviewIn(BaseModel):
     notes: Optional[str] = None
-    new_tier: Optional[Literal["free", "ascender", "pathfinder", "sage"]] = None
+    new_tier: Optional[Literal["free", "ascender", "pathfinder", "sage", "business"]] = None
 
 
 @api.post("/admin/paths/{path_id}/approve")

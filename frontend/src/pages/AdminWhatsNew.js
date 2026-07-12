@@ -91,7 +91,7 @@ export default function AdminWhatsNew() {
                   </div>
                   <div className="text-xs text-[var(--asc-text-dim)] mt-0.5 truncate">
                     {it.type === "lesson" && (<><span style={{ color: it.path_color }}>{it.path_title}</span> · {it.module_title} · </>)}
-                    <span className="uppercase font-bold tracking-wider" style={{ color: it.tier === "sage" ? "#FFB000" : it.tier === "pathfinder" ? "#7C3AED" : "#34D399" }}>{it.tier}</span>
+                    <span className="uppercase font-bold tracking-wider" style={{ color: it.tier === "sage" ? "#FFB000" : it.tier === "pathfinder" ? "#7C3AED" : it.tier === "business" ? "#3B82F6" : "#34D399" }}>{it.tier}</span>
                   </div>
                 </div>
                 <Link to={it.type === "path" ? `/admin/curriculum/${it.path_id}` : `/admin/curriculum/${it.path_id}`} className="asc-btn-secondary text-xs shrink-0" data-testid={`whats-new-open-${it.type}-${it.lesson_id || it.path_id}`}>

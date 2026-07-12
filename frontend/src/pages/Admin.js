@@ -143,7 +143,7 @@ export default function Admin() {
                     <td className="p-3 text-xs text-[var(--asc-text-dim)]">{formatDate(u.created_at)}</td>
                     <td className="p-3">
                       <select defaultValue={u.tier} onChange={(e) => patchUser(u.id, { tier: e.target.value })} className="px-2 py-1 rounded-lg text-xs" style={{ background: "#15102B", border: "1px solid rgba(191,180,255,0.15)" }} data-testid={`admin-tier-select-${u.id}`}>
-                        {["free", "ascender", "pathfinder", "sage"].map((t) => <option key={t} value={t}>{t}</option>)}
+                        {["free", "ascender", "pathfinder", "sage", "business"].map((t) => <option key={t} value={t}>{t}</option>)}
                       </select>
                     </td>
                   </tr>

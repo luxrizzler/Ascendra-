@@ -20,6 +20,14 @@
                 "monthly": "price_1TmCfjDwDiYDfGuPaZWsO14M",
                 "annual": "price_1TmCfjDwDiYDfGuP5xe0NVQC"
             }
+        },
+        "business": {
+            "product_id": "",
+            "prices": {
+                "monthly": "",
+                "annual": ""
+            },
+            "_note": "Operator must create a Business product + monthly/annual prices in Stripe Dashboard (Live mode), then paste the price IDs above. While these are empty, /billing/checkout returns HTTP 503 with a clear 'not configured' message. Set monthly price to $99 during the founding period (first 25 subscribers) and rotate to $149 after seats fill."
         }
     },
     "portal_configuration_id": "bpc_1TmCfjDwDiYDfGuP6NvFAUoO"
