@@ -2841,6 +2841,12 @@ async def admin_x_status(_admin=Depends(require_admin)):
             "configured": x_publisher.is_configured()}
 
 
+@api.get("/admin/social/x/budget")
+async def admin_x_budget(_admin=Depends(require_admin)):
+    """Return current Free-tier budget usage (monthly + daily post counters)."""
+    return await x_publisher.get_budget(db)
+
+
 class XTestPostIn(BaseModel):
     text: str = Field(..., min_length=1, max_length=270)
     dry_run: bool = False
@@ -2859,10 +2865,19 @@ async def admin_x_test_post(body: XTestPostIn, _admin=Depends(require_admin)):
             raise HTTPException(502, f"Credentials invalid: {v.get('error')}")
         return {"ok": True, "dry_run": True, "would_post": body.text,
                 "as": v.get("screen_name"), "verified": True}
+    # Real post → check free-tier budget first
+    reason = await x_publisher.check_budget_or_reason(db, needed=1)
+    if reason:
+        raise HTTPException(429, reason)
     result = x_publisher.post_thread(tweets=[body.text], image_bytes_list=None, hashtags=None)
     if not result.get("ok"):
-        raise HTTPException(502, result.get("error", "X posting failed"))
-    return result
+        # If X itself rejected us for quota, mark with 429
+        code = 429 if result.get("quota_error") else 502
+        raise HTTPException(code, result.get("error", "X posting failed"))
+    await x_publisher.log_tweets_posted(db, result.get("count", 1),
+                                          result.get("tweet_ids", []),
+                                          source="test")
+    return {**result, "budget_after": await x_publisher.get_budget(db)}
 
 
 @api.post("/admin/social/post/{post_id}/post-to-x")
@@ -2876,6 +2891,10 @@ async def admin_post_to_x(post_id: str, _admin=Depends(require_admin)):
         raise HTTPException(400, "No tweets in this post")
     if post.get("platforms", {}).get("twitter") == "posted":
         raise HTTPException(400, "Already posted to X. Delete the post first to re-post.")
+    # Free-tier budget check: we need `len(tweets)` slots (each tweet counts as 1)
+    reason = await x_publisher.check_budget_or_reason(db, needed=len(tweets))
+    if reason:
+        raise HTTPException(429, reason)
     # Pull image bytes (first 4 slides — X limit)
     image_bytes = []
     for i in range(min(4, post.get("slide_count") or 0)):
@@ -2887,8 +2906,15 @@ async def admin_post_to_x(post_id: str, _admin=Depends(require_admin)):
         image_bytes_list=image_bytes,
         hashtags=post.get("hashtags") or [],
     )
+    # Log any tweets that DID make it out before an error, so budget stays accurate
+    if result.get("tweet_ids"):
+        await x_publisher.log_tweets_posted(
+            db, len(result["tweet_ids"]), result["tweet_ids"],
+            source="social_post", post_id=post_id,
+        )
     if not result.get("ok"):
-        raise HTTPException(502, result.get("error", "X posting failed"))
+        code = 429 if result.get("quota_error") else 502
+        raise HTTPException(code, result.get("error", "X posting failed"))
     # Mark posted
     col = await social_studio._col(db)
     await col.update_one({"id": post_id}, {"$set": {
@@ -2897,7 +2923,7 @@ async def admin_post_to_x(post_id: str, _admin=Depends(require_admin)):
         "x_first_url": result["first_url"],
         "x_posted_at": datetime.now(timezone.utc),
     }})
-    return result
+    return {**result, "budget_after": await x_publisher.get_budget(db)}
 
 
 # ─── Meta (Facebook Page + Instagram Business) auto-posting (Phase B) ────

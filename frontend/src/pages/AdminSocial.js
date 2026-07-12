@@ -23,23 +23,26 @@ export default function AdminSocial() {
   const [settings, setSettings] = useState(null);
   const [metaStatus, setMetaStatus] = useState(null);
   const [tiktokStatus, setTiktokStatus] = useState(null);
+  const [xBudget, setXBudget] = useState(null);
   const [posting, setPosting] = useState(null); // "x" | "facebook" | "instagram" | "tiktok" | null
 
   const load = async () => {
     setLoading(true);
     try {
-      const [r, p, s, m, t] = await Promise.all([
+      const [r, p, s, m, t, b] = await Promise.all([
         api.get("/admin/social/posts"),
         api.get("/admin/curriculum/paths"),
         api.get("/admin/social/settings").catch(() => null),
         api.get("/admin/social/meta/status").catch(() => null),
         api.get("/admin/social/tiktok/status").catch(() => null),
+        api.get("/admin/social/x/budget").catch(() => null),
       ]);
       setPosts(r.posts || []);
       setPaths(p.paths || []);
       if (s) setSettings(s);
       setMetaStatus(m);
       setTiktokStatus(t);
+      setXBudget(b);
     } catch (e) {
       toast.error(e.message || "Could not load");
     } finally {
@@ -81,11 +84,14 @@ export default function AdminSocial() {
 
   const postToX = async () => {
     if (!selected) return;
-    if (!confirm(`Post this thread live to X as @${settings?.x?.handle || "your brand"}? This cannot be undone.`)) return;
+    if (xBudget?.month?.blocked) { toast.error("Monthly X budget exhausted. Resets on the 1st."); return; }
+    if (xBudget?.day?.blocked) { toast.error("Daily X posting cap hit. Try again tomorrow."); return; }
+    if (!confirm(`Post this thread live to X as @${settings?.x?.handle || "your brand"}? This cannot be undone.\n\nThis will use ${selected.tweets?.length || 5} of your ${xBudget?.month?.remaining ?? "?"} remaining X posts this month.`)) return;
     setPosting("x");
     try {
       const r = await api.post(`/admin/social/post/${selected.id}/post-to-x`, {});
-      toast.success(`Posted ${r.count} tweets to X!`);
+      toast.success(`Posted ${r.count} tweets to X! ${r.budget_after ? `${r.budget_after.month.remaining} posts left this month.` : ""}`);
+      if (r.budget_after) setXBudget(r.budget_after);
       if (r.first_url) {
         window.open(r.first_url, "_blank", "noopener,noreferrer");
       }
@@ -312,12 +318,18 @@ export default function AdminSocial() {
                     alreadyPosted={selected.platforms?.twitter === "posted"}
                     postedUrl={selected.x_first_url}
                     primary={settings?.x?.auto_post ? {
-                      label: posting === "x" ? "Posting…" : (selected.platforms?.twitter === "posted" ? "Posted ✓" : "Post Thread Live"),
+                      label: posting === "x" ? "Posting…"
+                        : selected.platforms?.twitter === "posted" ? "Posted ✓"
+                        : xBudget?.month?.blocked ? "Budget exhausted"
+                        : xBudget?.day?.blocked ? "Daily cap hit"
+                        : `Post Thread Live${xBudget?.month?.remaining != null ? ` (${xBudget.month.remaining} left)` : ""}`,
                       onClick: postToX,
-                      disabled: !!posting || selected.platforms?.twitter === "posted",
+                      disabled: !!posting || selected.platforms?.twitter === "posted"
+                                || !!xBudget?.month?.blocked || !!xBudget?.day?.blocked,
                       testId: "platform-x-post-btn",
                       icon: Send,
                     } : null}
+                    hint={xBudget?.month?.warn && !xBudget.month.blocked ? `⚠️ Only ${xBudget.month.remaining} X posts left this month (free tier). Consider spacing them out.` : undefined}
                     actions={[
                       { label: "Copy Thread", onClick: () => copyText(composeThreadText(), "Thread copied"), icon: Copy, testId: "platform-x-copy-thread" },
                       { label: "Compose in X", onClick: () => window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent((selected.tweets?.[0] || "") + "\n\n" + (selected.hashtags || []).join(" "))}`, "_blank", "noopener,noreferrer"), icon: ExternalLink, testId: "platform-x-compose" },

@@ -14,20 +14,23 @@ export default function AdminSocialSettings() {
   const [settings, setSettings] = useState(null);
   const [metaStatus, setMetaStatus] = useState(null);
   const [tiktokStatus, setTiktokStatus] = useState(null);
+  const [xBudget, setXBudget] = useState(null);
   const [xTesting, setXTesting] = useState(false);
   const [connecting, setConnecting] = useState(null); // "meta" | "tiktok" | null
 
   const load = async () => {
     setLoading(true);
     try {
-      const [s, m, t] = await Promise.all([
+      const [s, m, t, b] = await Promise.all([
         api.get("/admin/social/settings"),
         api.get("/admin/social/meta/status").catch(() => null),
         api.get("/admin/social/tiktok/status").catch(() => null),
+        api.get("/admin/social/x/budget").catch(() => null),
       ]);
       setSettings(s);
       setMetaStatus(m);
       setTiktokStatus(t);
+      setXBudget(b);
     } catch (e) {
       toast.error(e.message || "Could not load settings");
     } finally {
@@ -174,14 +177,17 @@ export default function AdminSocialSettings() {
             <>Restart backend: <code className="asc-mono text-[var(--asc-brand)]">supervisorctl restart backend</code>. Then click <strong>Test connection</strong> below.</>,
           ]}
           extra={
-            <div className="flex flex-wrap gap-2 mt-3">
-              <button onClick={testX} disabled={xTesting || !settings?.x?.configured} className="asc-btn-secondary text-xs" data-testid="settings-x-test"><RefreshCcw size={12} /> {xTesting ? "Testing…" : "Test connection"}</button>
-              <button onClick={testXDryPost} disabled={xTesting || !settings?.x?.configured} className="asc-btn-secondary text-xs" data-testid="settings-x-dryrun">Dry-run test post</button>
-              {settings?.x?.screen_name && (
-                <a href={`https://x.com/${settings.x.screen_name}`} target="_blank" rel="noreferrer" className="asc-btn-secondary text-xs">
-                  <ExternalLink size={12} /> @{settings.x.screen_name}
-                </a>
-              )}
+            <div className="mt-3 space-y-3">
+              <div className="flex flex-wrap gap-2">
+                <button onClick={testX} disabled={xTesting || !settings?.x?.configured} className="asc-btn-secondary text-xs" data-testid="settings-x-test"><RefreshCcw size={12} /> {xTesting ? "Testing…" : "Test connection"}</button>
+                <button onClick={testXDryPost} disabled={xTesting || !settings?.x?.configured} className="asc-btn-secondary text-xs" data-testid="settings-x-dryrun">Dry-run test post</button>
+                {settings?.x?.screen_name && (
+                  <a href={`https://x.com/${settings.x.screen_name}`} target="_blank" rel="noreferrer" className="asc-btn-secondary text-xs">
+                    <ExternalLink size={12} /> @{settings.x.screen_name}
+                  </a>
+                )}
+              </div>
+              {xBudget && <XBudgetBar budget={xBudget} />}
             </div>
           }
         />
@@ -300,5 +306,49 @@ function CopyRow({ value, onCopy, testId }) {
       <span className="text-[var(--asc-brand)]">{value}</span>
       <button onClick={() => onCopy(value)} className="text-[var(--asc-text-muted)] hover:text-white" data-testid={testId}><Copy size={11} /></button>
     </span>
+  );
+}
+
+function XBudgetBar({ budget }) {
+  const m = budget?.month || {};
+  const d = budget?.day || {};
+  const monthColor = m.blocked ? "#FB7185" : m.warn ? "#FFB000" : "#4ADE80";
+  const dayColor = d.blocked ? "#FB7185" : d.warn ? "#FFB000" : "#4ADE80";
+  const monthPct = Math.min(100, m.percent || 0);
+  const dayPct = Math.min(100, d.percent || 0);
+  return (
+    <div className="rounded-xl p-3 space-y-3" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)" }} data-testid="x-budget-bar">
+      <div className="flex items-center gap-2">
+        <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--asc-text-muted)]">X Free-Tier Budget</span>
+        {m.blocked || d.blocked ? (
+          <span className="text-[9px] px-1.5 py-0.5 rounded font-bold" style={{ background: "rgba(251,113,133,0.2)", color: "#FB7185" }}>BLOCKED</span>
+        ) : (m.warn || d.warn) ? (
+          <span className="text-[9px] px-1.5 py-0.5 rounded font-bold" style={{ background: "rgba(255,176,0,0.2)", color: "#FFB000" }}>NEAR LIMIT</span>
+        ) : (
+          <span className="text-[9px] px-1.5 py-0.5 rounded font-bold" style={{ background: "rgba(74,222,128,0.15)", color: "#4ADE80" }}>HEALTHY</span>
+        )}
+      </div>
+      <div>
+        <div className="flex justify-between text-[10px] mb-1">
+          <span className="text-[var(--asc-text-dim)]">This month</span>
+          <span className="asc-mono" style={{ color: monthColor }}>{m.used}/{m.limit} tweets ({m.remaining} left)</span>
+        </div>
+        <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.08)" }}>
+          <div className="h-full transition-all" style={{ width: `${monthPct}%`, background: monthColor }} />
+        </div>
+      </div>
+      <div>
+        <div className="flex justify-between text-[10px] mb-1">
+          <span className="text-[var(--asc-text-dim)]">Today</span>
+          <span className="asc-mono" style={{ color: dayColor }}>{d.used}/{d.limit} tweets ({d.remaining} left)</span>
+        </div>
+        <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.08)" }}>
+          <div className="h-full transition-all" style={{ width: `${dayPct}%`, background: dayColor }} />
+        </div>
+      </div>
+      <div className="text-[10px] text-[var(--asc-text-muted)] leading-relaxed">
+        Ascendra will refuse to post to X once either budget hits zero, so you never accidentally get charged. Adjust with <code className="asc-mono">X_MONTHLY_POST_LIMIT</code> in <code className="asc-mono">.env</code> if X changes their tiers.
+      </div>
+    </div>
   );
 }
