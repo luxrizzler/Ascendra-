@@ -140,10 +140,27 @@ def _norm_email(e: str) -> str:
 
 async def _audit(db, *, actor: str, action: str, target_type: str, target_id: str,
                    reason: str = "", correlation_id: Optional[str] = None,
-                   simulated: bool = True, result: str = "ok",
+                   simulated: bool = False, result: str = "ok",
                    approval_required: bool = False, approval_status: Optional[str] = None,
-                   error: Optional[str] = None, extra: Optional[dict] = None) -> str:
-    """Append an audit entry via the insert-only AuditLogRepository."""
+                   error: Optional[str] = None, extra: Optional[dict] = None,
+                   source: str = "admin_created",
+                   environment: str = "preview") -> str:
+    """Append an audit entry via the insert-only AuditLogRepository.
+
+    SIMULATION SEMANTICS (Phase 2 correction)
+    ─────────────────────────────────────────
+    ``simulated`` means: fabricated test data OR an action that was modeled but
+    NOT actually performed. It does NOT mean "the safety gate is off" — that
+    orthogonal fact is recorded separately in ``live_actions_enabled_at_time``.
+
+    ``source`` classifies the origin of the record:
+       admin_created         — created by an authorized administrator (default)
+       existing_application  — imported from current Ascendra configuration
+       test_fixture          — created by automated tests
+       external_provider     — created from an external provider event
+
+    ``environment`` records where the write happened: ``preview`` in this env.
+    """
     doc = {
         "id": str(uuid.uuid4()),
         "actor": actor,
@@ -157,6 +174,8 @@ async def _audit(db, *, actor: str, action: str, target_type: str, target_id: st
         "approval_required": approval_required,
         "approval_status": approval_status,
         "simulated": simulated,
+        "source": source,
+        "environment": environment,
         "live_actions_enabled_at_time": live_actions_enabled(),
         "created_at": _now(),
         "extra": extra or {},
@@ -246,13 +265,28 @@ def _get_audit_repo(db) -> AuditLogRepository:
 
 
 # ─── System state ──────────────────────────────────────────────────────────
+# Phase completion is updated as each phase is delivered and approved.
+# Add a new entry to COMPLETED_PHASES when a phase is signed off.
+COMPLETED_PHASES = ["phase_1", "phase_2"]
+CURRENT_PHASE = COMPLETED_PHASES[-1]
+
+
 @router.get("/system/state")
 async def system_state(request_state=Depends(lambda: None)):
     return {
         "live_actions_enabled": live_actions_enabled(),
-        "phase": "phase_1",
+        # Legacy key kept for backward compatibility with existing UI:
+        "phase": CURRENT_PHASE,
+        # Structured capability response (Phase 2 correction):
+        "current_phase": CURRENT_PHASE,
+        "completed_phases": list(COMPLETED_PHASES),
         "safety_gate_env": "AUTOMATION_LIVE_ACTIONS_ENABLED",
-        "note": "While live_actions_enabled=false, all integrations remain simulated or routed to approval queue.",
+        "environment": "preview",
+        "note": (
+            "While live_actions_enabled=false, no external side effects "
+            "may execute. Records may still be created; recommendations and "
+            "outbound actions are simulated or queued for approval."
+        ),
         "server_time_utc": _now().isoformat(),
     }
 
@@ -444,7 +478,8 @@ def register_routes(db, require_admin):
         rows = await db["audit_log"].find({}, {"_id": 0}).sort("created_at", -1).limit(limit).to_list(limit)
         await _audit(db, actor=admin["email"], action="audit.exported",
                        target_type="audit_log", target_id="bulk",
-                       reason=f"exported {len(rows)} rows", simulated=True)
+                       reason=f"exported {len(rows)} rows",
+                       simulated=False, source="admin_created")
         return {"entries": rows, "count": len(rows), "exported_at": _now().isoformat()}
 
     # ─── Integration status ───────────────────────────────────────────────
@@ -517,7 +552,7 @@ def register_routes(db, require_admin):
                        target_type="operating_budget", target_id=doc["id"],
                        reason=body.notes or "budget set",
                        extra={"monthly_budget_usd": str(val_decimal)},
-                       simulated=True)
+                       simulated=False, source="admin_created")
         return {"budget": {**doc, "_id": None, "monthly_budget_usd": str(val_decimal)}}
 
     # ─── Dashboard summary (Phase 1 lightweight) ──────────────────────────
@@ -535,8 +570,10 @@ def register_routes(db, require_admin):
         return {
             "counts": counts,
             "live_actions_enabled": live_actions_enabled(),
-            "phase": "phase_1",
-            "data_status": "no live revenue data yet — Phase 3 wires financial ledger",
+            "phase": CURRENT_PHASE,
+            "current_phase": CURRENT_PHASE,
+            "completed_phases": list(COMPLETED_PHASES),
+            "data_status": "no live revenue data yet — Phase 3 wires the financial ledger",
         }
 
     return router

@@ -28,12 +28,21 @@ SAFETY RULES (enforced below)
 
 USAGE
 ─────
+    # Dry-run (default) — inspects and reports, does NOT delete
     python /app/tools/fixture_cleanup_phase1.py
+
+    # Actually delete (requires explicit confirmation flag)
+    python /app/tools/fixture_cleanup_phase1.py --confirm
+
+    # Force a repeat even after a successful cleanup audit already exists
+    # (guarded — normally the tool refuses to repeat itself)
+    python /app/tools/fixture_cleanup_phase1.py --confirm --force
 
 The script prints a full report of what it inspected and what it removed.
 """
 from __future__ import annotations
 
+import argparse
 import asyncio
 import os
 import sys
@@ -113,6 +122,15 @@ async def _post_audit(db, correlation_id: str, removed: dict, skipped: list) -> 
 
 
 async def main() -> int:
+    parser = argparse.ArgumentParser(description="Phase-1 test-fixture cleanup (safe)")
+    parser.add_argument("--confirm", action="store_true",
+                          help="Actually delete matched fixtures. Without this "
+                               "flag the script runs in DRY-RUN mode.")
+    parser.add_argument("--force", action="store_true",
+                          help="Allow re-run even if a successful fixture_cleanup.completed "
+                               "audit entry already exists.")
+    args = parser.parse_args()
+
     mongo_url = os.environ["MONGO_URL"]
     db_name = os.environ.get("DB_NAME", "ascendra_db")
 
@@ -125,10 +143,23 @@ async def main() -> int:
     client = AsyncIOMotorClient(mongo_url)
     db = client[db_name]
     correlation_id = str(uuid.uuid4())
-    print(f"\n=== Phase-1 test-fixture cleanup ===")
+
+    mode = "LIVE (--confirm)" if args.confirm else "DRY-RUN"
+    print(f"\n=== Phase-1 test-fixture cleanup ({mode}) ===")
     print(f"Target DB: {db_name}")
     print(f"Correlation ID: {correlation_id}")
     print()
+
+    # ── Repeat guard: refuse to run if a prior successful cleanup exists ────
+    prior = await db["audit_log"].find_one({"action": "fixture_cleanup.completed"})
+    if prior and not args.force:
+        print("REFUSING: a fixture_cleanup.completed audit entry already exists")
+        print(f"  prior correlation_id: {prior.get('correlation_id')}")
+        print(f"  prior timestamp:      {prior.get('created_at')}")
+        print("  Re-run with --force ONLY if newly identified test fixtures are "
+              "proven to exist and require deletion.")
+        client.close()
+        return 3
 
     # ── Pre-inspection: fetch each target and print details ─────────────────
     inspected: dict = {}
@@ -261,39 +292,61 @@ async def main() -> int:
                             "reason": "audit is not marked simulated=True"})
             print(f"  ✗ audit {a['id']} — SKIPPED (not simulated)")
 
-    # ── Insert PRE audit entry ─────────────────────────────────────────────
-    print("\n── INSERTING PRE-CLEANUP AUDIT ──")
-    await _pre_audit(db, correlation_id)
-    print("  ✓ audit entry action='fixture_cleanup.started' inserted")
+    # ── Insert PRE audit entry (only in LIVE mode) ─────────────────────────
+    if args.confirm:
+        print("\n── INSERTING PRE-CLEANUP AUDIT ──")
+        await _pre_audit(db, correlation_id)
+        print("  ✓ audit entry action='fixture_cleanup.started' inserted")
+    else:
+        print("\n── DRY-RUN: skipping pre-cleanup audit insert ──")
 
     # ── Perform deletions (by-id, one at a time, no bulk collection wipes) ─
-    print("\n── EXECUTING DELETIONS ──")
+    if args.confirm:
+        print("\n── EXECUTING DELETIONS ──")
+    else:
+        print("\n── DRY-RUN: no deletions will be performed ──")
     removed: dict = {}
     for cid in to_delete["contact"]:
-        r = await db["contacts"].delete_one({"id": cid})
-        removed["contacts"] = removed.get("contacts", 0) + r.deleted_count
-        print(f"  contacts.delete_one(id={cid}) → deleted={r.deleted_count}")
+        if args.confirm:
+            r = await db["contacts"].delete_one({"id": cid})
+            removed["contacts"] = removed.get("contacts", 0) + r.deleted_count
+            print(f"  contacts.delete_one(id={cid}) → deleted={r.deleted_count}")
+        else:
+            print(f"  [DRY-RUN] would delete contacts id={cid}")
     for eid in to_delete["event"]:
-        r = await db["internal_events"].delete_one({"id": eid})
-        removed["internal_events"] = removed.get("internal_events", 0) + r.deleted_count
-        print(f"  internal_events.delete_one(id={eid}) → deleted={r.deleted_count}")
+        if args.confirm:
+            r = await db["internal_events"].delete_one({"id": eid})
+            removed["internal_events"] = removed.get("internal_events", 0) + r.deleted_count
+            print(f"  internal_events.delete_one(id={eid}) → deleted={r.deleted_count}")
+        else:
+            print(f"  [DRY-RUN] would delete internal_events id={eid}")
     for bid in to_delete["budget"]:
-        r = await db["operating_budget_history"].delete_one({"id": bid})
-        removed["operating_budget_history"] = removed.get("operating_budget_history", 0) + r.deleted_count
-        print(f"  operating_budget_history.delete_one(id={bid}) → deleted={r.deleted_count}")
+        if args.confirm:
+            r = await db["operating_budget_history"].delete_one({"id": bid})
+            removed["operating_budget_history"] = removed.get("operating_budget_history", 0) + r.deleted_count
+            print(f"  operating_budget_history.delete_one(id={bid}) → deleted={r.deleted_count}")
+        else:
+            print(f"  [DRY-RUN] would delete operating_budget_history id={bid}")
     for aid in to_delete["approval"]:
-        r = await db["approval_queue"].delete_one({"id": aid})
-        removed["approval_queue"] = removed.get("approval_queue", 0) + r.deleted_count
-        print(f"  approval_queue.delete_one(id={aid}) → deleted={r.deleted_count}")
+        if args.confirm:
+            r = await db["approval_queue"].delete_one({"id": aid})
+            removed["approval_queue"] = removed.get("approval_queue", 0) + r.deleted_count
+            print(f"  approval_queue.delete_one(id={aid}) → deleted={r.deleted_count}")
+        else:
+            print(f"  [DRY-RUN] would delete approval_queue id={aid}")
     for auid in to_delete["audit"]:
-        r = await db["audit_log"].delete_one({"id": auid})
-        removed["audit_log"] = removed.get("audit_log", 0) + r.deleted_count
-        print(f"  audit_log.delete_one(id={auid}) → deleted={r.deleted_count}")
+        if args.confirm:
+            r = await db["audit_log"].delete_one({"id": auid})
+            removed["audit_log"] = removed.get("audit_log", 0) + r.deleted_count
+            print(f"  audit_log.delete_one(id={auid}) → deleted={r.deleted_count}")
+        else:
+            print(f"  [DRY-RUN] would delete audit_log id={auid}")
 
-    # ── Insert POST audit entry (this one is preserved forever) ────────────
-    print("\n── INSERTING POST-CLEANUP AUDIT ──")
-    await _post_audit(db, correlation_id, removed, skipped)
-    print("  ✓ audit entry action='fixture_cleanup.completed' inserted")
+    # ── Insert POST audit entry (only in LIVE mode) ────────────────────────
+    if args.confirm:
+        print("\n── INSERTING POST-CLEANUP AUDIT ──")
+        await _post_audit(db, correlation_id, removed, skipped)
+        print("  ✓ audit entry action='fixture_cleanup.completed' inserted")
 
     # ── Final report ───────────────────────────────────────────────────────
     print("\n── CLEANUP SUMMARY ──")

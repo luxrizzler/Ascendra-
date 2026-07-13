@@ -581,20 +581,108 @@ def test_merge_refuses_conflicting_external_ids(h):
 # ═══════════════════════════════════════════════════════════════════════════
 #  SAFETY GATE / NO LIVE CALLS
 # ═══════════════════════════════════════════════════════════════════════════
-def test_phase2_records_are_simulated_while_gate_disabled(h, a_contact):
-    """New Phase 2 records must be tagged simulated=True while the gate is off."""
-    j = requests.get(f"{API}/admin/revenue/audit?limit=10", headers=h, timeout=10).json()
-    # Recent Phase 2 audit entries should all be simulated=True
-    phase2_actions = {
-        "offer.created", "offer.updated", "offer.imported", "offer.activated",
+def test_phase2_records_reflect_corrected_simulation_semantics(h, a_contact):
+    """Corrected semantics (Phase 2 preliminary fix):
+
+    ``simulated`` no longer means "the safety gate is off". It means the record
+    is fabricated test data OR a modeled-but-not-performed action.
+
+    Real admin-initiated audits from Phase 2 must therefore be:
+      • simulated == False
+      • source == 'admin_created' or 'existing_application'
+      • environment == 'preview'
+      • live_actions_enabled_at_time == False (recorded separately)
+    """
+    j = requests.get(f"{API}/admin/revenue/audit?limit=50", headers=h, timeout=10).json()
+    admin_actions = {
+        "offer.created", "offer.updated", "offer.activated",
         "offer.deactivated", "lead.scored", "attribution.touch_recorded",
         "attribution.corrected", "contact.updated", "contact.lifecycle_changed",
         "contact.note_added", "contact.merged", "scoring_rules.created",
         "scoring_rules.activated",
     }
-    p2 = [e for e in j["entries"] if e.get("action") in phase2_actions]
-    for e in p2:
-        assert e.get("simulated") is True, f"Phase 2 audit '{e['action']}' must be simulated"
+    admin_audits = [e for e in j["entries"] if e.get("action") in admin_actions]
+    assert admin_audits, "expected at least one admin-triggered Phase 2 audit"
+    for e in admin_audits:
+        assert e.get("simulated") is False, (
+            f"admin action '{e['action']}' must not be labeled simulated"
+        )
+        assert e.get("source") in ("admin_created", "existing_application"), (
+            f"admin action '{e['action']}' source={e.get('source')}"
+        )
+        assert e.get("environment") == "preview"
+        assert e.get("live_actions_enabled_at_time") is False, (
+            f"admin action '{e['action']}' recorded live_actions_enabled_at_time=True"
+        )
+
+
+def test_imported_existing_offers_not_simulated(h):
+    """Existing Ascender/Pathfinder/Sage/Business offers imported from the
+    current Ascendra configuration must be classified as legitimate preview
+    configuration, NOT as simulated test data."""
+    j = requests.get(f"{API}/admin/revenue/offers", headers=h, timeout=10).json()
+    imported = [o for o in j["offers"] if o.get("imported") is True]
+    assert imported, "expected imported existing offers (run import-existing first)"
+    for o in imported:
+        assert o.get("simulated") is False, (
+            f"existing offer '{o['offer_code']}' must not be labeled simulated"
+        )
+        assert o.get("source") == "existing_application"
+        assert o.get("environment") == "preview"
+    # Business specifically may be draft/inactive but never simulated
+    biz = next((o for o in imported if o["offer_code"] == "business_monthly"), None)
+    if biz:
+        assert biz["simulated"] is False
+
+
+def test_test_created_offer_may_be_labeled_test_fixture_via_source_marker(h):
+    """A test-created offer defaults to source=admin_created, but the
+    application layer supports the ``source`` classification. Verify by
+    creating an offer and confirming the field exists on the persisted doc."""
+    code = f"srctest_{uuid.uuid4().hex[:8]}"
+    r = requests.post(f"{API}/admin/revenue/offers", headers=h, json={
+        "offer_code": code, "name": "Source Test", "category": "digital_product",
+        "price": "1.00", "billing_frequency": "one_time",
+    }, timeout=10)
+    assert r.status_code == 200
+    mongo_url, test_db = get_test_mongo_config()
+
+    async def _check():
+        c = AsyncIOMotorClient(mongo_url)
+        try:
+            doc = await c[test_db]["offers"].find_one({"offer_code": code})
+            assert doc["source"] == "admin_created"
+            assert doc["environment"] == "preview"
+            assert doc["simulated"] is False
+        finally:
+            c.close()
+    asyncio.run(_check())
+
+
+def test_material_change_approval_remains_simulated(h):
+    """The queued approval-queue entry for a material offer change is a
+    MODELED action (it will not actually execute while the safety gate is
+    off), so its `simulated` flag must remain True — but the request audit
+    entry itself is real (simulated=False)."""
+    code = f"matsim_{uuid.uuid4().hex[:8]}"
+    r = requests.post(f"{API}/admin/revenue/offers", headers=h, json={
+        "offer_code": code, "name": "Mat Sim", "category": "digital_product",
+        "price": "5.00", "billing_frequency": "one_time",
+    }, timeout=10).json()
+    oid = r["offer"]["id"]
+    requests.post(f"{API}/admin/revenue/offers/{oid}/activate", headers=h, timeout=10)
+    r2 = requests.patch(f"{API}/admin/revenue/offers/{oid}", headers=h, json={
+        "price": "6.00", "change_reason": "market repricing",
+    }, timeout=10).json()
+    ap = r2.get("approval") or {}
+    assert ap.get("simulated") is True, "queued approval must remain simulated (modeled)"
+    # The audit entry itself must be real
+    au = requests.get(f"{API}/admin/revenue/audit?limit=5",
+                        headers=h, timeout=10).json()
+    req_audits = [e for e in au["entries"]
+                    if e.get("action") == "offer.change_material.requested"]
+    assert req_audits, "expected offer.change_material.requested audit"
+    assert req_audits[0]["simulated"] is False
 
 
 def test_phase2_no_live_integration_calls(h):

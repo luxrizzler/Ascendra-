@@ -1,42 +1,26 @@
 [
   {
-    "content": "Step 1: Cleanup — 12 records removed, 2 cleanup audit entries preserved",
+    "content": "Preliminary corrections — system_phase, simulation semantics, hardened cleanup utility",
     "status": "completed"
   },
   {
-    "content": "Phase 2 planning — discover existing Ascendra offers (stripe_config.json, Pricing.js, tier data) to import without duplication",
+    "content": "Phase 3 backend module (financial_ledger, tax_reserve_policies, allocation_policies, monthly_reconciliations, owner_draws, expenses) — 900+ lines",
     "status": "completed"
   },
   {
-    "content": "Phase 2 backend: Offer Catalog module (models, endpoints, Decimal128, versioning, approval gating)",
+    "content": "Phase 3 tests (39 tests): ledger + settlement + idempotency + allocation + reconciliation + owner-draws + safety",
     "status": "completed"
   },
   {
-    "content": "Phase 2 backend: Deterministic Lead Scoring engine (rules, weights, score history, rule version history)",
+    "content": "Phase 3 frontend: 6 new tabs (Ledger, Expenses, Reserve, Allocation, Recon, Draws)",
     "status": "completed"
   },
   {
-    "content": "Phase 2 backend: Source & Campaign Attribution (append-only touches, first/last preservation, UTM/URL sanitization, correction audit)",
+    "content": "Full regression 93/93 pass; frontend production build succeeds; UI spot-check clean",
     "status": "completed"
   },
   {
-    "content": "Phase 2 backend: Contact Lifecycle + Detail endpoints + duplicate-merge safeguards + new internal events",
-    "status": "completed"
-  },
-  {
-    "content": "Phase 2 frontend: Extend AdminRevenue tabs (Contacts, Contact Detail, Offers, Scoring Rules, Attribution)",
-    "status": "completed"
-  },
-  {
-    "content": "Phase 2 tests: 36 new tests covering all Phase 2 requirements + 14 Phase 1 tests still pass",
-    "status": "completed"
-  },
-  {
-    "content": "Full regression: 50/50 pytest, backend import, backend startup, yarn build, 9-tab UI spot-check, 0 console errors",
-    "status": "completed"
-  },
-  {
-    "content": "Deliver Phase 2 completion report; stop and wait for Phase 3 approval",
+    "content": "Deliver Phase 3 completion report; STOP; wait for user approval before Phase 4",
     "status": "in_progress"
   }
 ]

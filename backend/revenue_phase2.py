@@ -475,12 +475,16 @@ def register_routes(db, require_admin):
             "policy_version": 1,
             "created_at": _now(), "updated_at": _now(),
             "created_by": admin["email"], "updated_by": admin["email"],
+            "source": "admin_created",
+            "environment": "preview",
+            "simulated": False,
         }
         await db["offers"].insert_one(doc)
         await _audit(db, actor=admin["email"], action="offer.created",
                      target_type="offer", target_id=doc["id"],
                      reason=f"draft offer {body.offer_code} created",
-                     simulated=True, extra={"offer_code": body.offer_code})
+                     simulated=False, source="admin_created",
+                     extra={"offer_code": body.offer_code})
         return {"offer": _offer_public(doc)}
 
     @router.get("/offers")
@@ -562,7 +566,13 @@ def register_routes(db, require_admin):
                 "status": "pending",
                 "decided_by": None, "decided_at": None, "notes": None,
                 "expires_at": None,
-                "simulated": True,          # gated & simulated
+                # simulated=False, source="admin_created": this represents a MODELED action; the queued
+                # change would only trigger an external effect if the safety
+                # gate were on. The audit entry below is simulated=False
+                # because the *request* itself was really made by an admin.
+                "simulated": True,
+                "source": "admin_created",
+                "environment": "preview",
                 "created_at": _now(),
             }
             await db["approval_queue"].insert_one(approval_doc)
@@ -571,7 +581,8 @@ def register_routes(db, require_admin):
                          target_type="offer", target_id=offer_id,
                          correlation_id=approval_doc["correlation_id"],
                          approval_required=True, approval_status="pending",
-                         reason=change_reason, simulated=True,
+                         reason=change_reason, simulated=False,
+                         source="admin_created",
                          extra={"fields": sorted(list(set(patch.keys()) & MATERIAL_FIELDS))})
             return {"queued": True, "approval": {**approval_doc, "_id": None},
                     "note": ("Material change to active offer queued for approval; "
@@ -595,7 +606,7 @@ def register_routes(db, require_admin):
         updated = await db["offers"].find_one({"id": offer_id}, {"_id": 0})
         await _audit(db, actor=admin["email"], action="offer.updated",
                      target_type="offer", target_id=offer_id,
-                     reason=change_reason, simulated=True,
+                     reason=change_reason, simulated=False, source="admin_created",
                      extra={"fields": sorted(list(patch.keys()))})
         return {"offer": _offer_public(updated), "version_id": version_doc["id"]}
 
@@ -615,7 +626,7 @@ def register_routes(db, require_admin):
         await _audit(db, actor=admin["email"], action="offer.activated",
                      target_type="offer", target_id=offer_id,
                      reason=f"activated offer {doc.get('offer_code')}",
-                     simulated=True)
+                     simulated=False, source="admin_created")
         return {"offer": _offer_public(updated)}
 
     @router.post("/offers/{offer_id}/deactivate")
@@ -632,7 +643,7 @@ def register_routes(db, require_admin):
         await _audit(db, actor=admin["email"], action="offer.deactivated",
                      target_type="offer", target_id=offer_id,
                      reason=f"deactivated offer {doc.get('offer_code')}",
-                     simulated=True)
+                     simulated=False, source="admin_created")
         return {"offer": _offer_public(updated)}
 
     @router.post("/offers/import-existing")
@@ -713,13 +724,16 @@ def register_routes(db, require_admin):
                 "created_at": _now(), "updated_at": _now(),
                 "created_by": admin["email"], "updated_by": admin["email"],
                 "imported": True,
+                "source": "existing_application",
+                "environment": "preview",
+                "simulated": False,
                 "source_tier": tier_id,
             }
             await db["offers"].insert_one(doc)
             await _audit(db, actor=admin["email"], action="offer.imported",
                          target_type="offer", target_id=doc["id"],
                          reason=f"imported existing tier {tier_id}",
-                         simulated=True,
+                         simulated=False, source="existing_application",
                          extra={"offer_code": code,
                                 "active": bool(has_stripe),
                                 "has_stripe_ids": bool(has_stripe)})
@@ -750,7 +764,7 @@ def register_routes(db, require_admin):
         await db["scoring_rules"].insert_one(doc)
         await _audit(db, actor=admin["email"], action="scoring_rules.created",
                      target_type="scoring_rules", target_id=doc["id"],
-                     reason=f"rule set v{doc['version']}", simulated=True)
+                     reason=f"rule set v{doc['version']}", simulated=False, source="admin_created")
         return {"rule_set": {**doc, "_id": None}}
 
     @router.get("/scoring/rules")
@@ -781,7 +795,7 @@ def register_routes(db, require_admin):
         await db["scoring_rules"].update_one({"id": rule_id}, {"$set": {"active": True}})
         await _audit(db, actor=admin["email"], action="scoring_rules.activated",
                      target_type="scoring_rules", target_id=rule_id,
-                     reason=f"activated v{doc.get('version')}", simulated=True)
+                     reason=f"activated v{doc.get('version')}", simulated=False, source="admin_created")
         return {"rule_set": {**doc, "active": True}}
 
     # ═══════════════════════════════════════════════════════════════════════
@@ -859,7 +873,7 @@ def register_routes(db, require_admin):
             "correlation_id": correlation_id,
             "processing_status": "processed",
             "retry_count": 0, "error": None,
-            "simulated": True,
+            "simulated": False, "source": "admin_created", "environment": "preview",
             "created_at": _now(), "processed_at": _now(),
         })
         return history_doc
@@ -882,7 +896,7 @@ def register_routes(db, require_admin):
                      target_type="contact", target_id=contact["id"],
                      correlation_id=correlation_id,
                      reason=(body.notes or "manual score"),
-                     simulated=True,
+                     simulated=False, source="admin_created",
                      extra={"score": result["score"], "band": result["band"],
                              "rule_set_version": rule_set.get("version", 0)})
         return {
@@ -974,14 +988,14 @@ def register_routes(db, require_admin):
             "idempotency_key": f"touch-{touch['id']}",
             "correlation_id": correlation_id,
             "processing_status": "processed", "retry_count": 0, "error": None,
-            "simulated": True,
+            "simulated": False, "source": "admin_created", "environment": "preview",
             "created_at": _now(), "processed_at": _now(),
         })
         await _audit(db, actor=admin["email"], action="attribution.touch_recorded",
                      target_type="contact", target_id=contact_id,
                      correlation_id=correlation_id,
                      reason="manual attribution touch appended",
-                     simulated=True, extra={"touch_id": touch["id"]})
+                     simulated=False, source="admin_created", extra={"touch_id": touch["id"]})
         return {"touch": {**touch, "_id": None}}
 
     @router.get("/contacts/{contact_id}/attribution/touches")
@@ -1026,7 +1040,7 @@ def register_routes(db, require_admin):
         await _audit(db, actor=admin["email"], action="attribution.corrected",
                      target_type="contact", target_id=contact_id,
                      correlation_id=correlation_id,
-                     reason=body.reason, simulated=True,
+                     reason=body.reason, simulated=False, source="admin_created",
                      extra={"which": which, "new_source": sanitized_source,
                              "touch_id": touch["id"]})
         return {"correction": {"which": which, "new_source": sanitized_source},
@@ -1090,13 +1104,13 @@ def register_routes(db, require_admin):
             "idempotency_key": f"upd-{contact_id}-{_now().isoformat()}",
             "correlation_id": correlation_id,
             "processing_status": "processed", "retry_count": 0, "error": None,
-            "simulated": True,
+            "simulated": False, "source": "admin_created", "environment": "preview",
             "created_at": _now(), "processed_at": _now(),
         })
         await _audit(db, actor=admin["email"], action="contact.updated",
                      target_type="contact", target_id=contact_id,
                      correlation_id=correlation_id, reason=change_reason,
-                     simulated=True, extra={"fields": sorted(list(patch.keys()))})
+                     simulated=False, source="admin_created", extra={"fields": sorted(list(patch.keys()))})
         updated = await db["contacts"].find_one({"id": contact_id}, {"_id": 0})
         return {"contact": updated}
 
@@ -1121,13 +1135,13 @@ def register_routes(db, require_admin):
             "idempotency_key": f"lc-{contact_id}-{_now().timestamp()}",
             "correlation_id": correlation_id,
             "processing_status": "processed", "retry_count": 0, "error": None,
-            "simulated": True,
+            "simulated": False, "source": "admin_created", "environment": "preview",
             "created_at": _now(), "processed_at": _now(),
         })
         await _audit(db, actor=admin["email"], action="contact.lifecycle_changed",
                      target_type="contact", target_id=contact_id,
                      correlation_id=correlation_id, reason=body.reason,
-                     simulated=True, extra={"from": prev, "to": body.new_stage})
+                     simulated=False, source="admin_created", extra={"from": prev, "to": body.new_stage})
         return {"contact_id": contact_id, "from": prev, "to": body.new_stage}
 
     @router.post("/contacts/{contact_id}/notes")
@@ -1145,7 +1159,7 @@ def register_routes(db, require_admin):
         await db["contact_notes"].insert_one(doc)
         await _audit(db, actor=admin["email"], action="contact.note_added",
                      target_type="contact", target_id=contact_id,
-                     reason="note added", simulated=True)
+                     reason="note added", simulated=False, source="admin_created")
         return {"note": {**doc, "_id": None}}
 
     @router.post("/contacts/merge")
@@ -1231,13 +1245,13 @@ def register_routes(db, require_admin):
             "idempotency_key": f"merge-{body.merged_id}-{body.surviving_id}",
             "correlation_id": correlation_id,
             "processing_status": "processed", "retry_count": 0, "error": None,
-            "simulated": True,
+            "simulated": False, "source": "admin_created", "environment": "preview",
             "created_at": _now(), "processed_at": _now(),
         })
         await _audit(db, actor=admin["email"], action="contact.merged",
                      target_type="contact", target_id=body.surviving_id,
                      correlation_id=correlation_id, reason=body.reason,
-                     simulated=True,
+                     simulated=False, source="admin_created",
                      extra={"merged_from": body.merged_id, **preview})
         return {"preview": preview, "merged": True,
                 "correlation_id": correlation_id}
