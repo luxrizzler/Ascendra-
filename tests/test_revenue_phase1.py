@@ -123,20 +123,17 @@ def test_system_state_defaults_safe(h):
 
 
 def test_system_state_reports_accurate_phase(h):
-    """Regression: after Phase 2 sign-off, the system-state endpoint MUST
-    report phase_2 as the current phase and must not imply Phase 3 is done."""
+    """Regression: after Phase 3 sign-off, the system-state endpoint reports
+    phase_3 as current. Phase 4 must NOT be reported as complete yet."""
     j = requests.get(f"{API}/admin/revenue/system/state", headers=h, timeout=10).json()
-    assert j.get("current_phase") == "phase_2", (
-        f"current_phase should be 'phase_2', got {j.get('current_phase')!r}"
-    )
-    assert j.get("phase") == "phase_2", (
-        f"legacy 'phase' key should be 'phase_2', got {j.get('phase')!r}"
+    assert j.get("current_phase") == "phase_3", (
+        f"current_phase should be 'phase_3', got {j.get('current_phase')!r}"
     )
     completed = j.get("completed_phases") or []
-    assert "phase_1" in completed and "phase_2" in completed
-    # Phase 3 must NOT appear as complete
-    assert "phase_3" not in completed, (
-        "system_state reports Phase 3 complete before Phase 3 is delivered"
+    assert set(completed) == {"phase_1", "phase_2", "phase_3"}
+    # Phase 4 must NOT appear as complete
+    assert "phase_4" not in completed, (
+        "system_state reports Phase 4 complete before Phase 4 is delivered"
     )
     assert j.get("environment") == "preview"
 

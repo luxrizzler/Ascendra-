@@ -68,6 +68,7 @@ import content_scanner
 import revenue as revenue_mod
 import revenue_phase2 as revenue_phase2_mod
 import revenue_phase3 as revenue_phase3_mod
+import revenue_phase4 as revenue_phase4_mod
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
@@ -3316,6 +3317,10 @@ api.include_router(revenue_phase2_mod.router)
 revenue_phase3_mod.register_routes(db, require_admin)
 api.include_router(revenue_phase3_mod.router)
 
+# ─── Revenue Control Center (Phase 4) ─────────────────────────────────────
+revenue_phase4_mod.register_routes(db, require_admin)
+api.include_router(revenue_phase4_mod.router)
+
 @app.on_event("startup")
 async def _revenue_indexes():
     try:
@@ -3334,6 +3339,13 @@ async def _revenue_indexes():
         log.info("[revenue-phase3] indexes + default allocation policies ensured")
     except Exception as e:
         log.warning(f"[revenue-phase3] index setup skipped: {e}")
+    try:
+        await revenue_phase4_mod.ensure_indexes_phase4(db)
+        await revenue_phase4_mod.seed_default_workflows(db)
+        await revenue_phase4_mod.seed_default_templates(db)
+        log.info("[revenue-phase4] indexes + workflow/template seeds ensured")
+    except Exception as e:
+        log.warning(f"[revenue-phase4] index setup skipped: {e}")
 
 
 # ─── Change password (self-service & forced-on-first-login flow) ────────────

@@ -1117,20 +1117,63 @@ def register_routes(db, require_admin):
             raise HTTPException(404, "owner draw not found")
         if doc["approval_status"] != "approved":
             raise HTTPException(400, "manual payment requires an approved recommendation")
+        if doc["status"] in ("blocked", "rejected"):
+            raise HTTPException(400, f"cannot record payment against a {doc['status']} draw")
         try:
             paid = _validate_money(_D(body.manually_paid_amount), field="manually_paid_amount")
         except ValueError as e:
             raise HTTPException(422, str(e))
         recommended = _D(doc["recommended_amount"])
-        if paid > recommended:
+
+        # ── Append-only payment record with idempotency + partial-payment support ──
+        # Duplicate reference check
+        existing_ref = await db["owner_draw_payments"].find_one(
+            {"draw_id": body.draw_id, "payment_reference": body.manual_payment_reference})
+        if existing_ref:
+            raise HTTPException(409, "duplicate payment_reference for this draw")
+        # Idempotency key check
+        idem_key = f"pay-{body.draw_id}-{body.manual_payment_reference}"
+        existing_idem = await db["owner_draw_payments"].find_one({"idempotency_key": idem_key})
+        if existing_idem:
+            return {"payment": {**existing_idem, "_id": None}, "duplicate": True}
+
+        # Cumulative overpayment check
+        prev = await db["owner_draw_payments"].find(
+            {"draw_id": body.draw_id}, {"_id": 0, "amount": 1}).to_list(200)
+        prev_total = sum((_D(p["amount"]) for p in prev), Decimal("0"))
+        new_total = _quantize(prev_total + paid)
+        if new_total > recommended:
             raise HTTPException(400, (
-                f"manual payment ${paid} exceeds approved recommendation ${recommended}; "
-                "a separate approval is required for the excess amount"))
+                f"cumulative payments ${new_total} exceed approved recommendation "
+                f"${recommended} for this draw"))
+
+        payment_doc = {
+            "id": str(uuid.uuid4()),
+            "draw_id": body.draw_id,
+            "amount": _to_128(paid),
+            "payment_date": body.manual_payment_date,
+            "payment_reference": body.manual_payment_reference,
+            "idempotency_key": idem_key,
+            "cumulative_total_at_time": _to_128(new_total),
+            "created_by": admin["email"],
+            "created_at": _now(),
+            "environment": "preview", "simulated": False,
+            "source": "admin_created",
+            "reversed_by_payment_id": None,
+            "reverses_payment_id": None,
+        }
+        await db["owner_draw_payments"].insert_one(payment_doc)
+
+        # Update the aggregate on the draw record (does NOT overwrite prior payments;
+        # the append-only payments collection is the source of truth).
         update = {
-            "manually_paid_amount": _to_128(paid),
-            "manual_payment_date": body.manual_payment_date,
-            "manual_payment_reference": body.manual_payment_reference,
-            "status": "recorded_as_manually_paid",
+            "manually_paid_amount": _to_128(new_total),
+            "last_manual_payment_date": body.manual_payment_date,
+            "last_manual_payment_reference": body.manual_payment_reference,
+            "manual_payments_count": len(prev) + 1,
+            "status": ("recorded_as_manually_paid"
+                        if new_total >= recommended
+                        else "approved"),   # remain approved if partially paid
             "updated_at": _now(),
         }
         await db["owner_draws"].update_one({"id": body.draw_id}, {"$set": update})
@@ -1138,8 +1181,15 @@ def register_routes(db, require_admin):
                      target_type="owner_draw", target_id=body.draw_id,
                      reason=f"manual pay ref {body.manual_payment_reference}",
                      simulated=False, source="admin_created",
-                     extra={"amount": str(paid)})
-        return {"owner_draw": _public_draw({**doc, **update})}
+                     extra={"amount": str(paid), "cumulative": str(new_total),
+                             "payment_id": payment_doc["id"]})
+        # Serialize Decimal128 for JSON response
+        pub_payment = {**payment_doc, "_id": None}
+        pub_payment["amount"] = str(paid)
+        pub_payment["cumulative_total_at_time"] = str(new_total)
+        return {"payment": pub_payment,
+                "cumulative_paid": str(new_total),
+                "draw_status": update["status"]}
 
     # ═══════════════════════════════════════════════════════════════════════
     #  DASHBOARD SUMMARY

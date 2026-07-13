@@ -7,6 +7,7 @@ import {
   AlertTriangle, CheckCircle2, Download, RefreshCcw, DollarSign,
   Package, Target, GitBranch, Plus, ChevronRight,
   Receipt, Wallet, TrendingUp, Calendar, PiggyBank,
+  Workflow, ListTree, FileText, BookOpen, Scale, Webhook,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -28,6 +29,13 @@ const TABS = [
   { id: "allocation", label: "Allocation Policy", icon: TrendingUp },
   { id: "recon", label: "Monthly Reconciliation", icon: Calendar },
   { id: "draws", label: "Owner Draws", icon: DollarSign },
+  // ── Phase 4 tabs ──
+  { id: "workflows", label: "Workflows", icon: Workflow },
+  { id: "actions", label: "Action Queue", icon: ListTree },
+  { id: "templates", label: "Templates", icon: FileText },
+  { id: "knowledge", label: "Knowledge Base", icon: BookOpen },
+  { id: "authority", label: "Authority Matrix", icon: Scale },
+  { id: "webhooks", label: "Webhook Events", icon: Webhook },
 ];
 
 export default function AdminRevenue() {
@@ -55,12 +63,20 @@ export default function AdminRevenue() {
   const [recons, setRecons] = useState([]);
   const [draws, setDraws] = useState([]);
   const [p3summary, setP3summary] = useState(null);
+  // Phase 4 state
+  const [workflows, setWorkflows] = useState([]);
+  const [actions, setActions] = useState([]);
+  const [templates, setTemplates] = useState([]);
+  const [knowledge, setKnowledge] = useState([]);
+  const [authority, setAuthority] = useState(null);
+  const [webhooks, setWebhooks] = useState([]);
 
   const load = async () => {
     setLoading(true);
     try {
       const [s, sm, ap, au, itg, bg, cts, ofs, srs, scur,
-              lg, ex, rs, alp, txp, rc, dr, p3s] = await Promise.all([
+              lg, ex, rs, alp, txp, rc, dr, p3s,
+              wf, ac, tp, kb, am, wh] = await Promise.all([
         api.get("/admin/revenue/system/state"),
         api.get("/admin/revenue/summary"),
         api.get("/admin/revenue/approvals?limit=100").catch(() => ({ approvals: [] })),
@@ -80,6 +96,13 @@ export default function AdminRevenue() {
         api.get("/admin/revenue/reconciliations").catch(() => ({ reconciliations: [] })),
         api.get("/admin/revenue/owner-draws").catch(() => ({ owner_draws: [] })),
         api.get("/admin/revenue/phase3/summary").catch(() => null),
+        // Phase 4
+        api.get("/admin/revenue/workflows").catch(() => ({ workflows: [] })),
+        api.get("/admin/revenue/actions").catch(() => ({ actions: [] })),
+        api.get("/admin/revenue/templates").catch(() => ({ templates: [] })),
+        api.get("/admin/revenue/knowledge").catch(() => ({ knowledge: [] })),
+        api.get("/admin/revenue/authority/matrix").catch(() => null),
+        api.get("/admin/revenue/webhooks").catch(() => ({ events: [] })),
       ]);
       setState(s); setSummary(sm);
       setApprovals(ap.approvals || []);
@@ -97,6 +120,12 @@ export default function AdminRevenue() {
       setRecons(rc.reconciliations || []);
       setDraws(dr.owner_draws || []);
       setP3summary(p3s);
+      setWorkflows(wf.workflows || []);
+      setActions(ac.actions || []);
+      setTemplates(tp.templates || []);
+      setKnowledge(kb.knowledge || []);
+      setAuthority(am);
+      setWebhooks(wh.events || []);
     } catch (e) { toast.error(e.message || "Load failed"); }
     finally { setLoading(false); }
   };
@@ -233,7 +262,7 @@ export default function AdminRevenue() {
       <button onClick={() => nav("/admin")} className="flex items-center gap-1 text-sm text-[var(--asc-text-dim)] hover:text-white mb-3"><ArrowLeft size={14} /> Admin</button>
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <div className="asc-kicker">Phase 1 + 2 · Revenue Control Center</div>
+          <div className="asc-kicker">Phase 1 + 2 + 3 complete · Phase 4 pending approval</div>
           <h1 className="asc-h2 text-4xl mt-1 flex items-center gap-3"><Shield size={28} className="text-[var(--asc-brand)]" /> Revenue Control Center</h1>
           <p className="text-[var(--asc-text-dim)] text-sm mt-2 max-w-3xl">Contacts, offers, deterministic scoring, attribution, approvals, and audit log. All external actions remain <strong>simulated or gated</strong> while <code className="asc-mono text-[var(--asc-brand)]">AUTOMATION_LIVE_ACTIONS_ENABLED=false</code>. Phase 3 will wire the financial ledger.</p>
         </div>
@@ -756,6 +785,135 @@ export default function AdminRevenue() {
                     {d.manually_paid_amount != null && <div className="text-[10px] text-[#4ADE80]">manual paid ${d.manually_paid_amount} · ref {d.manual_payment_reference}</div>}
                   </div>
                   <StatusPill status={d.status} />
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ─── PHASE 4 TABS ─── */}
+
+      {tab === "workflows" && (
+        <div className="asc-card p-4 mt-5" data-testid="revenue-workflows">
+          <div className="asc-kicker mb-3">Workflow Definitions · {workflows.length}</div>
+          <p className="text-xs text-[var(--asc-text-dim)] mb-3">All workflows start as <strong>draft/disabled</strong>. Activation requires an approval-queue authorization matched by request_type, target_id, version, and correlation_id. No workflow may send live communications while the safety gate is off.</p>
+          {workflows.length === 0 ? <div className="text-sm text-[var(--asc-text-muted)] py-6 text-center">No workflows defined yet.</div> : (
+            <div className="space-y-1 max-h-[600px] overflow-y-auto">
+              {workflows.map(w => (
+                <div key={w.id} className="p-3 rounded-lg border border-[var(--asc-border)] flex flex-wrap items-center gap-3" data-testid={`workflow-${w.workflow_code}`}>
+                  <div className="flex-1 min-w-[220px]">
+                    <div className="text-sm font-bold">{w.name}</div>
+                    <div className="text-[10px] text-[var(--asc-text-muted)] asc-mono">{w.workflow_code} · trigger: {w.trigger_event} · v{w.version}</div>
+                  </div>
+                  <StatusPill status={w.active ? "active" : (w.draft ? "draft" : "inactive")} />
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {tab === "actions" && (
+        <div className="asc-card p-4 mt-5" data-testid="revenue-actions">
+          <div className="asc-kicker mb-3">Action Queue · {actions.length}</div>
+          <p className="text-xs text-[var(--asc-text-dim)] mb-3">Every intended action is evaluated by the deterministic authority matrix. While live actions are disabled, actions that would touch a provider resolve to <strong>simulated</strong>, <strong>awaiting_approval</strong>, or <strong>blocked</strong> — never to live executing.</p>
+          {actions.length === 0 ? <div className="text-sm text-[var(--asc-text-muted)] py-6 text-center">No actions queued.</div> : (
+            <div className="space-y-1 max-h-[600px] overflow-y-auto">
+              {actions.map(a => (
+                <div key={a.id} className="text-xs p-2 rounded border border-[var(--asc-border)] flex flex-wrap gap-2 items-center" data-testid={`action-${a.id}`}>
+                  <span className="asc-mono text-[var(--asc-text-muted)]">{new Date(a.created_at).toLocaleString()}</span>
+                  <span className="text-[var(--asc-brand)] font-bold">{a.action_type}</span>
+                  <StatusPill status={a.status} />
+                  {a.authority_decision && <span className="text-[9px] px-1 rounded" style={{ background: "rgba(138,131,184,0.15)", color: "#8A83B8" }}>{a.authority_decision.decision}</span>}
+                  {a.approval_required && <span className="text-[9px] px-1 rounded" style={{ background: "rgba(124,58,237,0.18)", color: "#BFB4FF" }}>APPROVAL</span>}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {tab === "templates" && (
+        <div className="asc-card p-4 mt-5" data-testid="revenue-templates">
+          <div className="asc-kicker mb-3">Approved Templates · {templates.length}</div>
+          <p className="text-xs text-[var(--asc-text-dim)] mb-3">Templates use an <strong>allowlisted variable</strong> mechanism. Bodies with unapproved variables or prohibited claims (e.g. &ldquo;guaranteed income&rdquo;) are rejected at creation time. Contact-provided values are HTML-escaped before rendering.</p>
+          {templates.length === 0 ? <div className="text-sm text-[var(--asc-text-muted)] py-6 text-center">No templates yet.</div> : (
+            <div className="space-y-1">
+              {templates.map(t => (
+                <div key={t.id} className="p-3 rounded-lg border border-[var(--asc-border)] flex flex-wrap items-center gap-3" data-testid={`template-${t.template_code}`}>
+                  <div className="flex-1 min-w-[220px]">
+                    <div className="text-sm font-bold">{t.subject || t.template_code}</div>
+                    <div className="text-[10px] text-[var(--asc-text-muted)] asc-mono">{t.template_code} · {t.channel} · v{t.version} · vars: {(t.approved_variables||[]).join(", ") || "none"}</div>
+                  </div>
+                  <StatusPill status={t.active ? "active" : (t.draft ? "draft" : "inactive")} />
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {tab === "knowledge" && (
+        <div className="asc-card p-4 mt-5" data-testid="revenue-knowledge">
+          <div className="asc-kicker mb-3">Approved Knowledge Base · {knowledge.length}</div>
+          <p className="text-xs text-[var(--asc-text-dim)] mb-3">Automation may only answer using facts in this approved knowledge base. Unknown questions about <strong>pricing, refunds, contracts, legal, tax, security, privacy, guarantees, or product capabilities</strong> escalate to an internal support task — no invented response is ever generated.</p>
+          {knowledge.length === 0 ? <div className="text-sm text-[var(--asc-text-muted)] py-6 text-center">Knowledge base is empty. Admins may add approved facts via the API.</div> : (
+            <div className="space-y-1">
+              {knowledge.map(k => (
+                <div key={k.id} className="p-3 rounded-lg border border-[var(--asc-border)]" data-testid={`kb-${k.id}`}>
+                  <div className="text-sm font-bold">{k.topic}</div>
+                  <div className="text-xs text-[var(--asc-text-dim)] mt-1">{k.approved_answer}</div>
+                  <div className="text-[10px] text-[var(--asc-text-muted)] asc-mono mt-1">v{k.version} · {k.source_reference || "no source ref"}</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {tab === "authority" && (
+        <div className="asc-card p-4 mt-5" data-testid="revenue-authority">
+          <div className="asc-kicker mb-3">AI Authority + Risk Matrix · policy v{authority?.policy_version ?? "—"}</div>
+          <p className="text-xs text-[var(--asc-text-dim)] mb-3">Deterministic action classification. <strong>Language models cannot override this matrix</strong>. Unknown action types receive the safe default: contain, pause, preserve records, respond neutrally.</p>
+          {authority?.entries && (
+            <div className="grid md:grid-cols-2 gap-2 max-h-[600px] overflow-y-auto">
+              {authority.entries.map(e => (
+                <div key={e.action_type} className="p-2 rounded border border-[var(--asc-border)] text-xs" data-testid={`auth-${e.action_type}`}>
+                  <div className="asc-mono text-white font-bold">{e.action_type}</div>
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    <span className="text-[9px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider" style={{
+                      background: e.decision === "prohibited" ? "rgba(251,113,133,0.18)"
+                               : e.decision === "requires_approval" ? "rgba(124,58,237,0.18)"
+                               : e.decision === "permitted_if_live" ? "rgba(255,176,0,0.18)"
+                               : "rgba(74,222,128,0.18)",
+                      color: e.decision === "prohibited" ? "#FB7185"
+                           : e.decision === "requires_approval" ? "#BFB4FF"
+                           : e.decision === "permitted_if_live" ? "#FFB000"
+                           : "#4ADE80",
+                    }}>{e.decision}</span>
+                    <span className="text-[9px] px-1 rounded" style={{ background: "rgba(138,131,184,0.15)", color: "#8A83B8" }}>risk: {e.risk_category}</span>
+                  </div>
+                  {e.explanation && <div className="text-[10px] text-[var(--asc-text-dim)] mt-1">{e.explanation}</div>}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {tab === "webhooks" && (
+        <div className="asc-card p-4 mt-5" data-testid="revenue-webhooks">
+          <div className="asc-kicker mb-3">Normalized Webhook Events · {webhooks.length}</div>
+          <p className="text-xs text-[var(--asc-text-dim)] mb-3">Phase 4 shadow processor coexists with the existing <code className="asc-mono">/api/billing/webhook</code>. Signature verification uses <code className="asc-mono">STRIPE_WEBHOOK_SECRET_TEST</code> so live secrets are never referenced. Duplicate provider events are rejected via a unique index on <code className="asc-mono">provider_event_id</code>.</p>
+          {webhooks.length === 0 ? <div className="text-sm text-[var(--asc-text-muted)] py-6 text-center">No webhook events yet.</div> : (
+            <div className="space-y-1 max-h-[600px] overflow-y-auto">
+              {webhooks.map(w => (
+                <div key={w.id} className="text-xs asc-mono p-2 rounded border border-[var(--asc-border)] flex flex-wrap gap-2" data-testid={`webhook-${w.provider_event_id}`}>
+                  <span className="text-[var(--asc-text-muted)]">{new Date(w.created_at).toLocaleString()}</span>
+                  <span className="text-[var(--asc-brand)] font-bold">{w.event_type}</span>
+                  <span className="text-[var(--asc-text-dim)]">{w.provider_event_id}</span>
+                  {w.simulated && <span className="text-[9px] px-1 rounded" style={{ background: "rgba(255,176,0,0.15)", color: "#FFB000" }}>TEST</span>}
                 </div>
               ))}
             </div>
