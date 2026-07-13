@@ -1,46 +1,42 @@
 [
   {
-    "content": "Inspect conftest.py, test_revenue_phase1.py, revenue.py to diagnose InvalidURI root cause",
+    "content": "Step 1: Cleanup — 12 records removed, 2 cleanup audit entries preserved",
     "status": "completed"
   },
   {
-    "content": "Build isolated test infrastructure: dotenv-safe parser, ascendra_revenue_test DB, TESTING=true guard, destructive-cleanup checks, env restoration",
+    "content": "Phase 2 planning — discover existing Ascendra offers (stripe_config.json, Pricing.js, tier data) to import without duplication",
     "status": "completed"
   },
   {
-    "content": "Rewrite conftest.py with session-scoped backend swap + guarded teardown",
+    "content": "Phase 2 backend: Offer Catalog module (models, endpoints, Decimal128, versioning, approval gating)",
     "status": "completed"
   },
   {
-    "content": "Rewrite test_revenue_phase1.py to use safe .env parsing",
+    "content": "Phase 2 backend: Deterministic Lead Scoring engine (rules, weights, score history, rule version history)",
     "status": "completed"
   },
   {
-    "content": "Run full pytest regression (RCC Phase 1 + verify no leaks into ascendra_db)",
+    "content": "Phase 2 backend: Source & Campaign Attribution (append-only touches, first/last preservation, UTM/URL sanitization, correction audit)",
     "status": "completed"
   },
   {
-    "content": "Verify audit immutability, org index non-unique, Decimal128 semantics, safety gate",
+    "content": "Phase 2 backend: Contact Lifecycle + Detail endpoints + duplicate-merge safeguards + new internal events",
     "status": "completed"
   },
   {
-    "content": "Verify backend startup + application import validation",
+    "content": "Phase 2 frontend: Extend AdminRevenue tabs (Contacts, Contact Detail, Offers, Scoring Rules, Attribution)",
     "status": "completed"
   },
   {
-    "content": "Production-style frontend build (yarn build)",
+    "content": "Phase 2 tests: 36 new tests covering all Phase 2 requirements + 14 Phase 1 tests still pass",
     "status": "completed"
   },
   {
-    "content": "Spot-check /admin/revenue: all 5 tabs, anonymous rejection, console errors, safety banner",
+    "content": "Full regression: 50/50 pytest, backend import, backend startup, yarn build, 9-tab UI spot-check, 0 console errors",
     "status": "completed"
   },
   {
-    "content": "Migrate stale unique name_normalized index on preview DB + regression test",
-    "status": "completed"
-  },
-  {
-    "content": "Deliver Phase 1 Hardening Completion Report to user; stop and wait for approval",
+    "content": "Deliver Phase 2 completion report; stop and wait for Phase 3 approval",
     "status": "in_progress"
   }
 ]
