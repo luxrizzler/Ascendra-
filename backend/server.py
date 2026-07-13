@@ -65,6 +65,7 @@ import tiktok_publisher
 import social_media_signer
 import practice_lab
 import content_scanner
+import revenue as revenue_mod
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
@@ -3299,6 +3300,19 @@ def _oauth_redirect_html(provider: str, ok: bool, msg: str) -> Response:
 @api.get("/")
 async def root():
     return {"status": "ok", "service": "ascendra-api"}
+
+
+# ─── Revenue Control Center (Phase 1) ─────────────────────────────────────
+revenue_mod.register_routes(db, require_admin)
+api.include_router(revenue_mod.router)
+
+@app.on_event("startup")
+async def _revenue_indexes():
+    try:
+        await revenue_mod.ensure_indexes(db)
+        log.info("[revenue] indexes ensured")
+    except Exception as e:
+        log.warning(f"[revenue] index setup skipped: {e}")
 
 
 # ─── Change password (self-service & forced-on-first-login flow) ────────────
