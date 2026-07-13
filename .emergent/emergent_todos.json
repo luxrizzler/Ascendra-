@@ -1,70 +1,46 @@
 [
   {
-    "content": "Fix bug: Wire the missing 'Post to X' button in AdminSocial.js UI (backend already exists)",
+    "content": "Inspect conftest.py, test_revenue_phase1.py, revenue.py to diagnose InvalidURI root cause",
     "status": "completed"
   },
   {
-    "content": "Fix bug: Add Facebook to the Posting Status section (currently missing)",
+    "content": "Build isolated test infrastructure: dotenv-safe parser, ascendra_revenue_test DB, TESTING=true guard, destructive-cleanup checks, env restoration",
     "status": "completed"
   },
   {
-    "content": "Phase A: Build Manual Post Helper distribution panel (X, FB, IG, TikTok) with copy-caption, download-asset, and deep-link buttons per platform",
+    "content": "Rewrite conftest.py with session-scoped backend swap + guarded teardown",
     "status": "completed"
   },
   {
-    "content": "Phase A: Create /admin/social/settings page showing which platform credentials are configured + how-to-get-tokens checklist",
+    "content": "Rewrite test_revenue_phase1.py to use safe .env parsing",
     "status": "completed"
   },
   {
-    "content": "Phase A: Add backend endpoint /api/admin/social/settings returning per-platform config status",
+    "content": "Run full pytest regression (RCC Phase 1 + verify no leaks into ascendra_db)",
     "status": "completed"
   },
   {
-    "content": "Phase A: Test visual rendering (Unicode chars, layout, buttons)",
+    "content": "Verify audit immutability, org index non-unique, Decimal128 semantics, safety gate",
     "status": "completed"
   },
   {
-    "content": "Phase B: Get integration playbook for Meta Graph API",
+    "content": "Verify backend startup + application import validation",
     "status": "completed"
   },
   {
-    "content": "Phase B: Get integration playbook for TikTok Content Posting API",
+    "content": "Production-style frontend build (yarn build)",
     "status": "completed"
   },
   {
-    "content": "Phase B: Implement meta_publisher.py (OAuth flow + post text/image/carousel to FB Page + IG Business)",
+    "content": "Spot-check /admin/revenue: all 5 tabs, anonymous rejection, console errors, safety banner",
     "status": "completed"
   },
   {
-    "content": "Phase B: Implement tiktok_publisher.py (OAuth flow + PKCE + video upload/publish + token refresh)",
+    "content": "Migrate stale unique name_normalized index on preview DB + regression test",
     "status": "completed"
   },
   {
-    "content": "Phase B: Implement social_media_signer.py (HMAC-signed public URLs for Meta/TikTok PULL_FROM_URL)",
-    "status": "completed"
-  },
-  {
-    "content": "Phase B: Wire OAuth callback routes + storage of long-lived tokens in server.py",
-    "status": "completed"
-  },
-  {
-    "content": "Phase B: Add Meta/TikTok Connect/Disconnect buttons in Settings page",
-    "status": "completed"
-  },
-  {
-    "content": "Phase B: Wire Post-to-FB, Post-to-IG, Post-to-TikTok buttons in Social Studio (gated on connection status)",
-    "status": "completed"
-  },
-  {
-    "content": "Phase B: Backend smoke test (endpoints respond, signed URL crypto works)",
-    "status": "completed"
-  },
-  {
-    "content": "Phase B: User to create Meta App + TikTok App + provide API keys (BLOCKED on user)",
-    "status": "pending"
-  },
-  {
-    "content": "Phase B: End-to-end live testing once credentials are in .env (BLOCKED on user credentials)",
-    "status": "pending"
+    "content": "Deliver Phase 1 Hardening Completion Report to user; stop and wait for approval",
+    "status": "in_progress"
   }
 ]

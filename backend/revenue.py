@@ -20,6 +20,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any, Literal, Optional
 
+from bson.decimal128 import Decimal128
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
@@ -116,7 +117,13 @@ class BudgetIn(BaseModel):
             raise ValueError("monthly_budget_usd must be a decimal string like '12345.67'")
         if d < 0:
             raise ValueError("monthly_budget_usd cannot be negative")
-        return str(d)
+        # Enforce max two decimal places (currency precision)
+        if d.as_tuple().exponent < -2:
+            raise ValueError("monthly_budget_usd cannot have more than 2 decimal places")
+        # Cap at $10,000,000/mo (sanity upper bound)
+        if d > Decimal("10000000"):
+            raise ValueError("monthly_budget_usd exceeds approved bound ($10,000,000)")
+        return str(d.quantize(Decimal("0.01")))
 
 
 # ─── Router ────────────────────────────────────────────────────────────────
@@ -136,7 +143,7 @@ async def _audit(db, *, actor: str, action: str, target_type: str, target_id: st
                    simulated: bool = True, result: str = "ok",
                    approval_required: bool = False, approval_status: Optional[str] = None,
                    error: Optional[str] = None, extra: Optional[dict] = None) -> str:
-    """Append an audit entry. Immutable by convention (no update/delete endpoints)."""
+    """Append an audit entry via the insert-only AuditLogRepository."""
     doc = {
         "id": str(uuid.uuid4()),
         "actor": actor,
@@ -154,16 +161,37 @@ async def _audit(db, *, actor: str, action: str, target_type: str, target_id: st
         "created_at": _now(),
         "extra": extra or {},
     }
-    await db["audit_log"].insert_one(doc)
-    return doc["id"]
+    return await _get_audit_repo(db).insert(doc)
 
 
 async def ensure_indexes(db) -> None:
-    """Idempotent index creation. Call from server startup."""
+    """Idempotent index creation. Call from server startup.
+
+    NOTE: MongoDB's ``create_index`` is a no-op when an existing index has the
+    same name. That means uniqueness cannot be changed in place. If an older
+    build of Ascendra created ``name_normalized_1`` as unique on the
+    ``organizations`` collection, this function will detect the stale spec and
+    migrate it to a non-unique index (Phase 1 hardening requirement: multiple
+    orgs may legitimately share the same normalized name).
+    """
     await db["contacts"].create_index("email_normalized", unique=True)
     await db["contacts"].create_index("lifecycle_stage")
     await db["contacts"].create_index("created_at")
-    await db["organizations"].create_index("name_normalized", unique=True)
+    # Organizations: name is NOT globally unique. Legitimate organizations may
+    # share names. Internal UUID `id` is the identity. Duplicate detection
+    # (Phase 2+) will combine name + domain + owner_email + external_id.
+    try:
+        org_idx = await db["organizations"].index_information()
+        stale = org_idx.get("name_normalized_1")
+        if stale and stale.get("unique", False):
+            # Migrate: drop the stale unique index, then recreate as non-unique.
+            await db["organizations"].drop_index("name_normalized_1")
+    except Exception:
+        # If index_information itself fails, fall through to create_index which
+        # will surface any real problem.
+        pass
+    await db["organizations"].create_index("name_normalized")
+    await db["organizations"].create_index("id", unique=True)
     await db["internal_events"].create_index("id", unique=True)
     await db["internal_events"].create_index("idempotency_key", unique=True, sparse=True)
     await db["internal_events"].create_index("event_type")
@@ -179,6 +207,42 @@ async def ensure_indexes(db) -> None:
     await db["integration_status"].create_index("provider", unique=True)
     await db["operating_budget_history"].create_index("effective_date")
     await db["operating_budget_history"].create_index("created_at")
+
+
+# ─── Immutable audit-log repository ────────────────────────────────────────
+class AuditLogRepository:
+    """Insert + read only. Deliberately provides NO update, replace, or delete
+    methods. Application-layer immutability enforcement per hardening pass.
+
+    Note: a MongoDB administrator with direct database access can still modify
+    documents outside the application. This repository ensures the Ascendra
+    application itself provides no such capability.
+    """
+    COLLECTION = "audit_log"
+
+    def __init__(self, db):
+        self._db = db
+
+    async def insert(self, doc: dict) -> str:
+        await self._db[self.COLLECTION].insert_one(doc)
+        return doc["id"]
+
+    async def find(self, query: dict, *, limit: int = 100, sort_desc: bool = True) -> list:
+        cursor = self._db[self.COLLECTION].find(query, {"_id": 0})
+        if sort_desc:
+            cursor = cursor.sort("created_at", -1)
+        return await cursor.limit(limit).to_list(limit)
+
+    async def count(self, query: dict) -> int:
+        return await self._db[self.COLLECTION].count_documents(query)
+
+
+_audit_repos: dict = {}
+def _get_audit_repo(db) -> AuditLogRepository:
+    key = id(db)
+    if key not in _audit_repos:
+        _audit_repos[key] = AuditLogRepository(db)
+    return _audit_repos[key]
 
 
 # ─── System state ──────────────────────────────────────────────────────────
@@ -423,17 +487,26 @@ def register_routes(db, require_admin):
             {}, {"_id": 0}, sort=[("effective_date", -1)])
         history = await db["operating_budget_history"].find({}, {"_id": 0}) \
             .sort("effective_date", -1).limit(50).to_list(50)
+        # Convert Decimal128 → string for JSON consumers (Decimal128 not JSON serializable).
+        def _norm(doc):
+            if doc is None:
+                return None
+            if isinstance(doc.get("monthly_budget_usd"), Decimal128):
+                doc = {**doc, "monthly_budget_usd": str(doc["monthly_budget_usd"].to_decimal())}
+            return doc
         return {
-            "current": current,
-            "history": history,
-            "note": "Approved monthly operating budget. Phase 3 will use this + actual expenses (when 3+ months of history exist) for reserve target calculation.",
+            "current": _norm(current),
+            "history": [_norm(h) for h in history],
+            "note": "Approved monthly operating budget. Phase 3 will use this + actual expenses (when 3+ months of history exist) for reserve target calculation. Values stored as BSON Decimal128 (exact).",
         }
 
     @router.post("/budget")
     async def set_budget(body: BudgetIn, admin=Depends(require_admin)):
+        # Store as Decimal128 for exact BSON representation (never float).
+        val_decimal = Decimal(body.monthly_budget_usd)
         doc = {
             "id": str(uuid.uuid4()),
-            "monthly_budget_usd": body.monthly_budget_usd,  # Decimal-safe string
+            "monthly_budget_usd": Decimal128(val_decimal),
             "effective_date": body.effective_date,
             "notes": body.notes,
             "updated_by": admin["email"],
@@ -443,9 +516,9 @@ def register_routes(db, require_admin):
         await _audit(db, actor=admin["email"], action="budget.updated",
                        target_type="operating_budget", target_id=doc["id"],
                        reason=body.notes or "budget set",
-                       extra={"monthly_budget_usd": body.monthly_budget_usd},
+                       extra={"monthly_budget_usd": str(val_decimal)},
                        simulated=True)
-        return {"budget": {**doc, "_id": None}}
+        return {"budget": {**doc, "_id": None, "monthly_budget_usd": str(val_decimal)}}
 
     # ─── Dashboard summary (Phase 1 lightweight) ──────────────────────────
     @router.get("/summary")
