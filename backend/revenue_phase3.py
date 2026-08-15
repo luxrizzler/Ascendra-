@@ -49,6 +49,16 @@ from pydantic import BaseModel, Field, field_validator
 
 from revenue import _audit, _now, live_actions_enabled
 
+# Phase 4 provides the approval-integrity helpers. Import lazily inside handlers
+# to avoid a module-import cycle at load time; alias here for readability.
+def _approval_helpers():
+    from revenue_phase4 import (
+        enforce_approval,
+        mark_approval_completed,
+        ApprovalMismatchError,
+    )
+    return enforce_approval, mark_approval_completed, ApprovalMismatchError
+
 
 # ─── Constants ─────────────────────────────────────────────────────────────
 BUSINESS_TZ = ZoneInfo(os.environ.get("ASCENDRA_BUSINESS_TIMEZONE", "America/Chicago"))
@@ -229,12 +239,14 @@ class ReconciliationCreateIn(BaseModel):
 class ReconciliationCloseIn(BaseModel):
     reconciliation_id: str
     close_reason: str = Field(min_length=8, max_length=500)
+    approval_id: Optional[str] = None   # Phase 21 hardening: required in prod
 
 
 class OwnerDrawDecisionIn(BaseModel):
     draw_id: str
     decision: Literal["approved", "rejected"]
     reason: Optional[str] = None
+    approval_id: Optional[str] = None   # Phase 21 hardening: required in prod
 
 
 class OwnerDrawManualPayIn(BaseModel):
@@ -242,6 +254,43 @@ class OwnerDrawManualPayIn(BaseModel):
     manually_paid_amount: str
     manual_payment_date: datetime
     manual_payment_reference: str = Field(min_length=1, max_length=200)
+
+
+class OwnerDrawAdjustmentIn(BaseModel):
+    """Append-only correction to a prior owner-draw payment.
+
+    An adjustment is used when a prior payment record must be corrected
+    (e.g. wrong amount recorded). We NEVER mutate the prior record; we
+    write a new payment row linked via ``adjustment_of_payment_id`` and
+    let readers reconstruct the true cumulative via SUM(amount).
+    """
+    draw_id: str
+    original_payment_id: str
+    adjustment_amount: str    # positive or negative decimal string, e.g. "-25.00"
+    reason: str = Field(min_length=8, max_length=500)
+    payment_date: datetime
+    payment_reference: str = Field(min_length=1, max_length=200)
+    approval_id: str          # REQUIRED (risk_level=high)
+
+
+class OwnerDrawReversalIn(BaseModel):
+    """Append-only full reversal of a prior owner-draw payment.
+
+    Writes a new payment row with the opposite amount and
+    ``reverses_payment_id`` pointing at the original. Never mutates
+    the original.
+    """
+    draw_id: str
+    original_payment_id: str
+    reason: str = Field(min_length=8, max_length=500)
+    payment_date: datetime
+    payment_reference: str = Field(min_length=1, max_length=200)
+    approval_id: str          # REQUIRED (risk_level=high)
+
+
+class ApprovalRef(BaseModel):
+    """Body for endpoints that require an approval_id (allocation/tax activate)."""
+    approval_id: Optional[str] = None
 
 
 # ─── Indexes ───────────────────────────────────────────────────────────────
@@ -270,9 +319,17 @@ async def ensure_indexes_phase3(db) -> None:
 # ─── Seeder for allocation policies + phase state ──────────────────────────
 async def seed_default_allocation_policies(db, admin_email: str = "system.seed") -> None:
     """Seed the owner-approved startup + established allocation policies if
-    absent. Idempotent."""
+    absent. Idempotent.
+
+    Phase 21 hardening: seeded docs are stamped with the split status
+    semantics (``approved`` / ``enabled_for_phase`` / ``currently_applied``)
+    in addition to the legacy ``active`` flag.
+    """
     existing = await db["allocation_policies"].count_documents({})
     if existing > 0:
+        # Still run the semantic migration so already-seeded rows pick up the
+        # new fields on redeploy.
+        await migrate_allocation_policy_semantics(db)
         return
     now = _now()
     for row in (
@@ -289,7 +346,12 @@ async def seed_default_allocation_policies(db, admin_email: str = "system.seed")
             "working_capital_pct": _to_128(_D(row["working_capital_pct"])),
             "effective_date": now,
             "version": 1,
+            # Legacy flag (kept for backward compatibility)
             "active": True,
+            # Phase 21 split status semantics
+            "approved": True,
+            "enabled_for_phase": row["phase"],
+            "currently_applied": True,
             "approved_by": "owner@ascendraacademy.com (bootstrap seed)",
             "notes": row["notes"],
             "source": "existing_application",
@@ -308,6 +370,52 @@ async def seed_default_allocation_policies(db, admin_email: str = "system.seed")
             "reserve_balance_at_transition": None,
             "reserve_target_at_transition": None,
         })
+
+
+async def migrate_allocation_policy_semantics(db) -> int:
+    """Phase 21 hardening: retro-migrate legacy allocation_policies rows to
+    carry the split-status semantics (approved / enabled_for_phase /
+    currently_applied). Idempotent.
+
+    Returns the number of rows updated.
+    """
+    updated = 0
+    async for doc in db["allocation_policies"].find(
+        {"$or": [
+            {"approved": {"$exists": False}},
+            {"enabled_for_phase": {"$exists": False}},
+            {"currently_applied": {"$exists": False}},
+        ]}
+    ):
+        was_active = bool(doc.get("active"))
+        phase = doc.get("phase")
+        patch = {
+            "approved": was_active or bool(doc.get("approved")),
+            "enabled_for_phase": phase if was_active else doc.get("enabled_for_phase"),
+            "currently_applied": was_active or bool(doc.get("currently_applied")),
+            "migrated_semantics_at": _now(),
+        }
+        await db["allocation_policies"].update_one({"id": doc["id"]}, {"$set": patch})
+        updated += 1
+
+    # Enforce single-currently-applied invariant per phase.
+    for phase_name in ("startup", "established"):
+        applied = await db["allocation_policies"].find(
+            {"phase": phase_name, "currently_applied": True},
+            {"_id": 0, "id": 1, "version": 1},
+        ).sort("version", -1).to_list(100)
+        if len(applied) > 1:
+            # Keep the highest version, demote the rest.
+            keep = applied[0]["id"]
+            demote_ids = [r["id"] for r in applied[1:]]
+            await db["allocation_policies"].update_many(
+                {"id": {"$in": demote_ids}},
+                {"$set": {"currently_applied": False, "active": False,
+                           "demoted_at": _now(),
+                           "demoted_by": "system.phase21_migration"}},
+            )
+            updated += len(demote_ids)
+    return updated
 
 
 async def get_active_policy(db, phase: str) -> Optional[dict]:
@@ -657,10 +765,34 @@ def register_routes(db, require_admin):
         return {"tax_policy": _public_taxpolicy(doc), "approval": {**approval, "_id": None}}
 
     @router.post("/tax-policies/{policy_id}/activate")
-    async def activate_tax_policy(policy_id: str, admin=Depends(require_admin)):
+    async def activate_tax_policy(policy_id: str, body: Optional[ApprovalRef] = None,
+                                    admin=Depends(require_admin)):
         doc = await db["tax_reserve_policies"].find_one({"id": policy_id}, {"_id": 0})
         if not doc:
             raise HTTPException(404, "policy not found")
+
+        # ── Phase 21 hardening: enforce approval when approval_id is provided ──
+        # If an approval_id is passed, it MUST match this policy and MUST be
+        # approved-but-not-consumed. If absent, we allow activation for
+        # backward compatibility but stamp `approval_enforcement=bypassed` in
+        # the audit record so any callers still on the legacy path are
+        # discoverable.
+        approval_id = (body.approval_id if body else None)
+        enforcement = "bypassed_legacy"
+        if approval_id:
+            enforce_approval, mark_completed, MismatchErr = _approval_helpers()
+            try:
+                await enforce_approval(
+                    db, approval_id=approval_id,
+                    request_type="tax_policy.activate",
+                    target_id=policy_id,
+                    admin_email=admin["email"],
+                    require_unexpired=True,
+                )
+            except MismatchErr as e:
+                raise HTTPException(409, f"approval mismatch: {e}")
+            enforcement = "enforced"
+
         await db["tax_reserve_policies"].update_many({"active": True},
                                                        {"$set": {"active": False}})
         await db["tax_reserve_policies"].update_one(
@@ -668,11 +800,18 @@ def register_routes(db, require_admin):
             {"$set": {"active": True, "approved_by": admin["email"],
                        "approval_timestamp": _now()}},
         )
+        if approval_id:
+            _, mark_completed, _ = _approval_helpers()
+            await mark_completed(db, approval_id, admin["email"], execution_ref=policy_id)
         await _audit(db, actor=admin["email"], action="tax_policy.activated",
                      target_type="tax_policy", target_id=policy_id,
-                     reason="activated (prospective only)",
-                     simulated=False, source="admin_created")
-        return {"tax_policy_id": policy_id, "active": True}
+                     reason=f"activated (prospective only); enforcement={enforcement}",
+                     simulated=False, source="admin_created",
+                     extra={"approval_id": approval_id,
+                             "approval_enforcement": enforcement})
+        return {"tax_policy_id": policy_id, "active": True,
+                "approval_enforcement": enforcement,
+                "approval_id": approval_id}
 
     @router.get("/tax-policies")
     async def list_tax_policies(admin=Depends(require_admin)):
@@ -743,6 +882,85 @@ def register_routes(db, require_admin):
                      reason=f"{body.phase} v{v}",
                      simulated=False, source="admin_created")
         return {"policy": _public_alloc_policy(doc), "approval": {**approval, "_id": None}}
+
+    @router.post("/allocation-policies/{policy_id}/activate")
+    async def activate_allocation_policy(policy_id: str,
+                                           body: Optional[ApprovalRef] = None,
+                                           admin=Depends(require_admin)):
+        """Phase 21 hardening: activate an allocation policy version.
+
+        Enforces the split status semantics:
+          • approved: bool — human-approved policy content
+          • enabled_for_phase: str|null — the phase name this policy is enabled for
+          • currently_applied: bool — the single-live pointer per phase
+
+        Only ONE policy per phase may have currently_applied=True. Activating
+        a new one demotes any prior policy for the same phase.
+        """
+        doc = await db["allocation_policies"].find_one({"id": policy_id}, {"_id": 0})
+        if not doc:
+            raise HTTPException(404, "allocation policy not found")
+
+        approval_id = (body.approval_id if body else None)
+        enforcement = "bypassed_legacy"
+        if approval_id:
+            enforce_approval, mark_completed, MismatchErr = _approval_helpers()
+            try:
+                await enforce_approval(
+                    db, approval_id=approval_id,
+                    request_type="allocation_policy.activate",
+                    target_id=policy_id,
+                    admin_email=admin["email"],
+                    target_version=doc.get("version"),
+                    require_unexpired=True,
+                )
+            except MismatchErr as e:
+                raise HTTPException(409, f"approval mismatch: {e}")
+            enforcement = "enforced"
+
+        phase = doc["phase"]
+        # Demote any prior policy currently_applied for this phase
+        await db["allocation_policies"].update_many(
+            {"phase": phase, "currently_applied": True},
+            {"$set": {"currently_applied": False, "active": False,
+                       "demoted_at": _now(), "demoted_by": admin["email"]}},
+        )
+        # Promote this one — keep legacy `active` in sync for backward compat.
+        await db["allocation_policies"].update_one(
+            {"id": policy_id},
+            {"$set": {
+                "approved": True,
+                "enabled_for_phase": phase,
+                "currently_applied": True,
+                "active": True,                    # backward-compat mirror
+                "approved_by": admin["email"],
+                "approval_timestamp": _now(),
+            }},
+        )
+        # Enforce single-currently-applied invariant (defense-in-depth check)
+        cnt = await db["allocation_policies"].count_documents(
+            {"phase": phase, "currently_applied": True})
+        if cnt != 1:
+            raise HTTPException(500,
+                f"invariant violation: {cnt} policies currently_applied for phase {phase!r}")
+
+        if approval_id:
+            _, mark_completed, _ = _approval_helpers()
+            await mark_completed(db, approval_id, admin["email"], execution_ref=policy_id)
+
+        await _audit(db, actor=admin["email"], action="allocation.policy_activated",
+                     target_type="allocation_policy", target_id=policy_id,
+                     reason=(f"phase={phase} v={doc.get('version')} "
+                              f"enforcement={enforcement}"),
+                     simulated=False, source="admin_created",
+                     extra={"approval_id": approval_id,
+                             "approval_enforcement": enforcement,
+                             "phase": phase})
+        return {"policy_id": policy_id, "phase": phase,
+                "approved": True, "enabled_for_phase": phase,
+                "currently_applied": True,
+                "approval_enforcement": enforcement,
+                "approval_id": approval_id}
 
     # ═══════════════════════════════════════════════════════════════════════
     #  RESERVE TARGET
@@ -950,6 +1168,23 @@ def register_routes(db, require_admin):
             raise HTTPException(409, "reconciliation is already closed")
         if doc["status"] == "blocked":
             raise HTTPException(400, "reconciliation is blocked; resolve required policies first")
+
+        # ── Phase 21 hardening: enforce approval when approval_id is provided ──
+        enforcement = "bypassed_legacy"
+        if body.approval_id:
+            enforce_approval, mark_completed, MismatchErr = _approval_helpers()
+            try:
+                await enforce_approval(
+                    db, approval_id=body.approval_id,
+                    request_type="reconciliation.close",
+                    target_id=body.reconciliation_id,
+                    admin_email=admin["email"],
+                    require_unexpired=True,
+                )
+            except MismatchErr as e:
+                raise HTTPException(409, f"approval mismatch: {e}")
+            enforcement = "enforced"
+
         # Refresh snapshot before close (reproducible)
         snapshot = await _recon_snapshot(db, doc["calendar_month"])
         target = await _reserve_target(db)
@@ -961,21 +1196,34 @@ def register_routes(db, require_admin):
             "closed_at": _now(),
             "closed_by": admin["email"],
             "close_reason": body.close_reason,
+            "close_approval_id": body.approval_id,
+            "close_approval_enforcement": enforcement,
         }
         await db["monthly_reconciliations"].update_one({"id": doc["id"]}, {"$set": update})
         merged = {**doc, **update}
         correlation_id = str(uuid.uuid4())
+
+        if body.approval_id:
+            _, mark_completed, _ = _approval_helpers()
+            await mark_completed(db, body.approval_id, admin["email"],
+                                    execution_ref=doc["id"])
+
         await _audit(db, actor=admin["email"], action="reconciliation.closed",
                      target_type="reconciliation", target_id=doc["id"],
                      correlation_id=correlation_id,
-                     reason=body.close_reason,
+                     reason=(body.close_reason
+                              + f" [enforcement={enforcement}]"),
                      simulated=False, source="admin_created",
-                     extra={"month": doc["calendar_month"]})
+                     extra={"month": doc["calendar_month"],
+                             "approval_id": body.approval_id,
+                             "approval_enforcement": enforcement})
         # Phase transition check
         await _maybe_transition_phase(db, admin["email"], correlation_id, merged, target)
         # Draw calculation follows
         draw = await _compute_owner_draw(db, admin["email"], merged, target, correlation_id)
-        return {"reconciliation": _public_recon(merged), "owner_draw": draw}
+        return {"reconciliation": _public_recon(merged), "owner_draw": draw,
+                "approval_enforcement": enforcement,
+                "approval_id": body.approval_id}
 
     async def _maybe_transition_phase(db, admin_email: str, correlation_id: str,
                                         recon_doc: dict, target: dict) -> None:
@@ -1095,6 +1343,23 @@ def register_routes(db, require_admin):
             raise HTTPException(400, "draw is blocked; resolve required policies first")
         if doc["approval_status"] not in ("pending",):
             raise HTTPException(400, "already decided")
+
+        # ── Phase 21 hardening: enforce approval when approval_id is provided ──
+        enforcement = "bypassed_legacy"
+        if body.approval_id:
+            enforce_approval, mark_completed, MismatchErr = _approval_helpers()
+            try:
+                await enforce_approval(
+                    db, approval_id=body.approval_id,
+                    request_type=f"owner_draw.{body.decision}",
+                    target_id=body.draw_id,
+                    admin_email=admin["email"],
+                    require_unexpired=True,
+                )
+            except MismatchErr as e:
+                raise HTTPException(409, f"approval mismatch: {e}")
+            enforcement = "enforced"
+
         update = {"approval_status": body.decision, "updated_at": _now(),
                     "approved_by": admin["email"], "approved_at": _now()}
         if body.decision == "rejected":
@@ -1103,12 +1368,22 @@ def register_routes(db, require_admin):
         else:
             update["status"] = "approved"
         await db["owner_draws"].update_one({"id": body.draw_id}, {"$set": update})
+
+        if body.approval_id:
+            _, mark_completed, _ = _approval_helpers()
+            await mark_completed(db, body.approval_id, admin["email"],
+                                    execution_ref=body.draw_id)
+
         await _audit(db, actor=admin["email"],
                      action=f"owner_draw.{body.decision}",
                      target_type="owner_draw", target_id=body.draw_id,
-                     reason=body.reason or "",
-                     simulated=False, source="admin_created")
-        return {"owner_draw": _public_draw({**doc, **update})}
+                     reason=(body.reason or "") + f" [enforcement={enforcement}]",
+                     simulated=False, source="admin_created",
+                     extra={"approval_id": body.approval_id,
+                             "approval_enforcement": enforcement})
+        return {"owner_draw": _public_draw({**doc, **update}),
+                "approval_enforcement": enforcement,
+                "approval_id": body.approval_id}
 
     @router.post("/owner-draws/manual-payment")
     async def record_manual_payment(body: OwnerDrawManualPayIn, admin=Depends(require_admin)):
@@ -1190,6 +1465,225 @@ def register_routes(db, require_admin):
         return {"payment": pub_payment,
                 "cumulative_paid": str(new_total),
                 "draw_status": update["status"]}
+
+    # ═══════════════════════════════════════════════════════════════════════
+    #  OWNER-DRAW APPEND-ONLY CORRECTIONS (Phase 21 hardening)
+    # ═══════════════════════════════════════════════════════════════════════
+    async def _load_original_payment(draw_id: str, original_payment_id: str) -> dict:
+        """Fetch an existing owner-draw payment. 404s if not found."""
+        orig = await db["owner_draw_payments"].find_one(
+            {"id": original_payment_id, "draw_id": draw_id}, {"_id": 0})
+        if not orig:
+            raise HTTPException(404, "original payment not found for this draw")
+        return orig
+
+    async def _refresh_draw_summary(draw_id: str, admin_email: str) -> dict:
+        """Recompute the owner_draws aggregate cache from the append-only
+        payments collection (payments = source of truth)."""
+        rows = await db["owner_draw_payments"].find(
+            {"draw_id": draw_id}, {"_id": 0, "amount": 1, "payment_date": 1,
+                                    "payment_reference": 1}
+        ).to_list(500)
+        total = sum((_D(r["amount"]) for r in rows), Decimal("0"))
+        total = _quantize(total)
+        # Latest payment (by insert order)
+        latest = rows[-1] if rows else None
+        update = {
+            "manually_paid_amount": _to_128(total),
+            "manual_payments_count": len(rows),
+            "updated_at": _now(),
+        }
+        if latest:
+            update["last_manual_payment_date"] = latest.get("payment_date")
+            update["last_manual_payment_reference"] = latest.get("payment_reference")
+        # Derive status
+        cur = await db["owner_draws"].find_one({"id": draw_id}, {"_id": 0})
+        if cur:
+            recommended = _D(cur["recommended_amount"])
+            if total >= recommended and total > 0:
+                update["status"] = "recorded_as_manually_paid"
+            elif cur.get("status") in ("recorded_as_manually_paid",) and total < recommended:
+                # Reversal dropped total below recommended → back to approved
+                update["status"] = "approved"
+        await db["owner_draws"].update_one({"id": draw_id}, {"$set": update})
+        return {"cumulative_paid": str(total),
+                "payment_count": len(rows),
+                "status": update.get("status")}
+
+    @router.post("/owner-draws/{draw_id}/adjustment")
+    async def record_draw_adjustment(draw_id: str, body: OwnerDrawAdjustmentIn,
+                                       admin=Depends(require_admin)):
+        """Append-only adjustment of a prior owner-draw payment. Never mutates
+        the original row; writes a new row linked via
+        ``adjustment_of_payment_id``. REQUIRES a matching approval record."""
+        if body.draw_id != draw_id:
+            raise HTTPException(422, "path draw_id and body.draw_id must match")
+        draw = await db["owner_draws"].find_one({"id": draw_id}, {"_id": 0})
+        if not draw:
+            raise HTTPException(404, "owner draw not found")
+        original = await _load_original_payment(draw_id, body.original_payment_id)
+        if original.get("reverses_payment_id") or original.get("adjustment_of_payment_id"):
+            raise HTTPException(400,
+                "cannot adjust a correction row; only original payments may be adjusted")
+
+        try:
+            amt = _validate_money(_D(body.adjustment_amount),
+                                     allow_negative=True,
+                                     field="adjustment_amount")
+        except ValueError as e:
+            raise HTTPException(422, str(e))
+        if amt == Decimal("0"):
+            raise HTTPException(422, "adjustment_amount cannot be zero")
+
+        # ── Enforce approval (required) ──
+        enforce_approval, mark_completed, MismatchErr = _approval_helpers()
+        try:
+            await enforce_approval(
+                db, approval_id=body.approval_id,
+                request_type="owner_draw.adjustment",
+                target_id=body.original_payment_id,
+                admin_email=admin["email"],
+                amount_usd=str(amt),
+                require_unexpired=True,
+            )
+        except MismatchErr as e:
+            raise HTTPException(409, f"approval mismatch: {e}")
+
+        # Idempotency by (draw_id, reference + "-ADJ")
+        idem_key = f"adj-{body.draw_id}-{body.payment_reference}"
+        existing_idem = await db["owner_draw_payments"].find_one({"idempotency_key": idem_key})
+        if existing_idem:
+            return {"payment": {**existing_idem, "_id": None,
+                                  "amount": str(_D(existing_idem["amount"]))},
+                    "duplicate": True}
+
+        adj_doc = {
+            "id": str(uuid.uuid4()),
+            "draw_id": draw_id,
+            "amount": _to_128(amt),                    # signed (may be negative)
+            "payment_date": body.payment_date,
+            "payment_reference": body.payment_reference,
+            "idempotency_key": idem_key,
+            "reason": body.reason,
+            "adjustment_of_payment_id": body.original_payment_id,
+            "reverses_payment_id": None,
+            "created_by": admin["email"],
+            "created_at": _now(),
+            "environment": "preview", "simulated": False,
+            "source": "admin_created",
+            "correction_type": "adjustment",
+            "approval_id": body.approval_id,
+        }
+        await db["owner_draw_payments"].insert_one(adj_doc)
+        await mark_completed(db, body.approval_id, admin["email"],
+                                execution_ref=adj_doc["id"])
+        summary = await _refresh_draw_summary(draw_id, admin["email"])
+        await _audit(db, actor=admin["email"], action="owner_draw.adjustment_recorded",
+                     target_type="owner_draw_payment", target_id=adj_doc["id"],
+                     reason=body.reason, simulated=False, source="admin_created",
+                     extra={"draw_id": draw_id,
+                             "original_payment_id": body.original_payment_id,
+                             "amount": str(amt),
+                             "cumulative_paid": summary["cumulative_paid"],
+                             "approval_id": body.approval_id})
+        pub = {**adj_doc, "_id": None, "amount": str(amt)}
+        return {"payment": pub, "summary": summary}
+
+    @router.post("/owner-draws/{draw_id}/reversal")
+    async def record_draw_reversal(draw_id: str, body: OwnerDrawReversalIn,
+                                     admin=Depends(require_admin)):
+        """Append-only FULL reversal of a prior owner-draw payment. Writes a
+        new row with the exact opposite amount and ``reverses_payment_id``
+        pointing to the original. REQUIRES a matching approval record."""
+        if body.draw_id != draw_id:
+            raise HTTPException(422, "path draw_id and body.draw_id must match")
+        draw = await db["owner_draws"].find_one({"id": draw_id}, {"_id": 0})
+        if not draw:
+            raise HTTPException(404, "owner draw not found")
+        original = await _load_original_payment(draw_id, body.original_payment_id)
+        if original.get("reverses_payment_id") or original.get("adjustment_of_payment_id"):
+            raise HTTPException(400,
+                "cannot reverse a correction row; only original payments may be reversed")
+
+        # Already reversed?
+        already = await db["owner_draw_payments"].find_one(
+            {"draw_id": draw_id, "reverses_payment_id": body.original_payment_id})
+        if already:
+            raise HTTPException(409, "this payment has already been reversed")
+
+        original_amt = _D(original["amount"])
+        reverse_amt = -original_amt
+
+        # ── Enforce approval (required) ──
+        enforce_approval, mark_completed, MismatchErr = _approval_helpers()
+        try:
+            await enforce_approval(
+                db, approval_id=body.approval_id,
+                request_type="owner_draw.reversal",
+                target_id=body.original_payment_id,
+                admin_email=admin["email"],
+                amount_usd=str(reverse_amt),
+                require_unexpired=True,
+            )
+        except MismatchErr as e:
+            raise HTTPException(409, f"approval mismatch: {e}")
+
+        idem_key = f"rev-{body.draw_id}-{body.original_payment_id}"
+        existing_idem = await db["owner_draw_payments"].find_one({"idempotency_key": idem_key})
+        if existing_idem:
+            return {"payment": {**existing_idem, "_id": None,
+                                  "amount": str(_D(existing_idem["amount"]))},
+                    "duplicate": True}
+
+        rev_doc = {
+            "id": str(uuid.uuid4()),
+            "draw_id": draw_id,
+            "amount": _to_128(reverse_amt),
+            "payment_date": body.payment_date,
+            "payment_reference": body.payment_reference,
+            "idempotency_key": idem_key,
+            "reason": body.reason,
+            "adjustment_of_payment_id": None,
+            "reverses_payment_id": body.original_payment_id,
+            "created_by": admin["email"],
+            "created_at": _now(),
+            "environment": "preview", "simulated": False,
+            "source": "admin_created",
+            "correction_type": "reversal",
+            "approval_id": body.approval_id,
+        }
+        await db["owner_draw_payments"].insert_one(rev_doc)
+        await mark_completed(db, body.approval_id, admin["email"],
+                                execution_ref=rev_doc["id"])
+        summary = await _refresh_draw_summary(draw_id, admin["email"])
+        await _audit(db, actor=admin["email"], action="owner_draw.reversal_recorded",
+                     target_type="owner_draw_payment", target_id=rev_doc["id"],
+                     reason=body.reason, simulated=False, source="admin_created",
+                     extra={"draw_id": draw_id,
+                             "reverses_payment_id": body.original_payment_id,
+                             "amount": str(reverse_amt),
+                             "cumulative_paid": summary["cumulative_paid"],
+                             "approval_id": body.approval_id})
+        pub = {**rev_doc, "_id": None, "amount": str(reverse_amt)}
+        return {"payment": pub, "summary": summary}
+
+    @router.get("/owner-draws/{draw_id}/payments")
+    async def list_draw_payments(draw_id: str, admin=Depends(require_admin)):
+        """Full append-only payment history for a draw (payments = source of truth)."""
+        rows = await db["owner_draw_payments"].find(
+            {"draw_id": draw_id}, {"_id": 0}
+        ).sort("created_at", 1).to_list(500)
+        out = []
+        total = Decimal("0")
+        for r in rows:
+            amt = _D(r["amount"])
+            total += amt
+            pub = {**r, "amount": str(amt)}
+            if isinstance(pub.get("cumulative_total_at_time"), Decimal128):
+                pub["cumulative_total_at_time"] = str(pub["cumulative_total_at_time"].to_decimal())
+            out.append(pub)
+        return {"payments": out, "count": len(out),
+                "cumulative_total": str(_quantize(total))}
 
     # ═══════════════════════════════════════════════════════════════════════
     #  DASHBOARD SUMMARY

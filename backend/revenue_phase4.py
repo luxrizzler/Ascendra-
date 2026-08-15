@@ -22,9 +22,11 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import json as _stdlib_json
 import os
 import re
 import string
+import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Literal, Optional
@@ -32,7 +34,62 @@ from typing import Any, Literal, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field, field_validator
 
+# Stripe SDK — Phase 21 hardening uses official signature verification.
+import stripe as stripe_sdk
+
 from revenue import _audit, _now, live_actions_enabled
+
+
+# ─── Stripe signature helpers (Phase 21 hardening) ─────────────────────────
+def _stripe_shadow_secret() -> str:
+    """Return the shadow-mode Stripe webhook signing secret.
+
+    Preference order (Phase 21 hardening + user directive):
+      1. STRIPE_WEBHOOK_SECRET_TEST — used by tests for full isolation
+      2. STRIPE_WEBHOOK_SECRET      — production secret (never mutates real state)
+      3. "test-shadow-secret"       — last-resort fallback (dev only)
+
+    The shadow endpoint NEVER performs live Stripe API calls; it only verifies
+    inbound signatures via ``stripe.Webhook.construct_event`` to prove the
+    verification code path itself is correct.
+    """
+    return (
+        os.environ.get("STRIPE_WEBHOOK_SECRET_TEST")
+        or os.environ.get("STRIPE_WEBHOOK_SECRET")
+        or "test-shadow-secret"
+    )
+
+
+def build_stripe_signature_header(raw_body: str,
+                                    secret: Optional[str] = None,
+                                    timestamp: Optional[int] = None) -> str:
+    """Emit a Stripe-format ``Stripe-Signature`` header value: ``t=<ts>,v1=<sig>``.
+
+    Exposed at module scope so the test suite can reuse the exact same
+    algorithm the production SDK verifies.
+    """
+    secret = secret or _stripe_shadow_secret()
+    ts = timestamp if timestamp is not None else int(time.time())
+    payload = f"{ts}.{raw_body}"
+    v1 = hmac.new(secret.encode("utf-8"),
+                    payload.encode("utf-8"),
+                    hashlib.sha256).hexdigest()
+    return f"t={ts},v1={v1}"
+
+
+def stripe_construct_event(raw_body: str, sig_header: str,
+                             secret: Optional[str] = None,
+                             tolerance: int = 300):
+    """Wrap ``stripe.Webhook.construct_event`` for shadow-mode use.
+
+    Raises ``stripe.error.SignatureVerificationError`` on any signature or
+    timestamp-tolerance failure; the caller must translate that to a
+    400/401 for the HTTP layer.
+    """
+    secret = secret or _stripe_shadow_secret()
+    return stripe_sdk.Webhook.construct_event(
+        raw_body, sig_header, secret, tolerance=tolerance,
+    )
 
 
 # ─── Enums ─────────────────────────────────────────────────────────────────
@@ -855,12 +912,21 @@ def register_routes(db, require_admin):
 
         NOT wired to any real webhook endpoint. The existing
         ``/api/billing/webhook`` route continues to handle production events;
-        this endpoint accepts a JSON body containing ``{"raw_body":"...","signature":"..."}``
-        and processes normalized events without ever calling out to Stripe.
+        this endpoint accepts a JSON body containing
+        ``{"raw_body":"...","signature":"..."}`` and processes normalized events
+        without ever calling out to Stripe.
 
-        Signature verification uses HMAC-SHA256 against
-        ``STRIPE_WEBHOOK_SECRET_TEST`` if present (defaults to the shared
-        preview test secret). Live secrets are never referenced.
+        Phase 21 hardening — signature verification now uses the official
+        Stripe SDK (``stripe.Webhook.construct_event``) against the shadow
+        signing secret returned by ``_stripe_shadow_secret()``. Live secrets
+        are NEVER used to make outbound Stripe calls; the shadow endpoint is
+        strictly verification-only.
+
+        Backward compatibility: for legacy callers, if the ``signature`` field
+        is a raw HMAC-SHA256 hex string (no ``t=`` prefix), we fall back to
+        the pre-hardening HMAC path and mark the record with
+        ``verification_mode=legacy_hmac``. All new callers should send a
+        proper Stripe-format ``t=<ts>,v1=<sig>`` header.
         """
         try:
             payload = await request.json()
@@ -871,16 +937,35 @@ def register_routes(db, require_admin):
         if not raw_body:
             raise HTTPException(400, "raw_body is required")
 
-        secret = os.environ.get("STRIPE_WEBHOOK_SECRET_TEST", "test-shadow-secret")
-        expected = hmac.new(secret.encode(), raw_body.encode(), hashlib.sha256).hexdigest()
-        if not hmac.compare_digest(expected, signature):
-            raise HTTPException(400, "invalid signature")
-
-        try:
-            import json as _json
-            event = _json.loads(raw_body)
-        except Exception:
-            raise HTTPException(400, "raw_body must be valid JSON after signature check")
+        # ── Signature verification: prefer official Stripe SDK path ──
+        verification_mode: str
+        secret = _stripe_shadow_secret()
+        if signature.startswith("t=") and ",v1=" in signature:
+            # Official Stripe format — use construct_event with tolerance.
+            try:
+                event_obj = stripe_construct_event(raw_body, signature, secret,
+                                                       tolerance=300)
+                # construct_event returns a stripe.Event; extract the raw dict
+                event = event_obj.to_dict() if hasattr(event_obj, "to_dict") \
+                    else _stdlib_json.loads(raw_body)
+                verification_mode = "stripe_sdk"
+            except stripe_sdk.error.SignatureVerificationError as e:
+                raise HTTPException(400, f"invalid signature: {e}")
+            except Exception as e:
+                raise HTTPException(400, f"signature verification failed: "
+                                          f"{type(e).__name__}")
+        else:
+            # ── Legacy HMAC-SHA256 fallback ──
+            expected = hmac.new(secret.encode(), raw_body.encode(),
+                                  hashlib.sha256).hexdigest()
+            if not hmac.compare_digest(expected, signature):
+                raise HTTPException(400, "invalid signature")
+            try:
+                event = _stdlib_json.loads(raw_body)
+            except Exception:
+                raise HTTPException(400,
+                    "raw_body must be valid JSON after signature check")
+            verification_mode = "legacy_hmac"
 
         event_id = event.get("id")
         event_type = event.get("type")
@@ -892,7 +977,8 @@ def register_routes(db, require_admin):
         # Idempotency: reject duplicate provider event
         dup = await db["webhook_events"].find_one({"provider_event_id": event_id})
         if dup:
-            return {"received": True, "duplicate": True}
+            return {"received": True, "duplicate": True,
+                    "verification_mode": verification_mode}
 
         # Store normalized event
         rec = {
@@ -901,6 +987,7 @@ def register_routes(db, require_admin):
             "provider_event_id": event_id,
             "event_type": event_type,
             "raw_signature_valid": True,
+            "verification_mode": verification_mode,
             "payload": _redact_secrets(event),
             "processed": True,
             "processed_at": _now(),
@@ -912,11 +999,13 @@ def register_routes(db, require_admin):
         await db["webhook_events"].insert_one(rec)
         await _audit(db, actor=admin["email"], action="webhook.processed",
                      target_type="webhook_event", target_id=rec["id"],
-                     reason=f"stripe {event_type}",
+                     reason=f"stripe {event_type} [verify={verification_mode}]",
                      simulated=True, source="external_provider",
-                     extra={"provider_event_id": event_id})
+                     extra={"provider_event_id": event_id,
+                             "verification_mode": verification_mode})
         return {"received": True, "duplicate": False,
-                "event_type": event_type, "event_id": rec["id"]}
+                "event_type": event_type, "event_id": rec["id"],
+                "verification_mode": verification_mode}
 
     @router.get("/webhooks")
     async def list_webhook_events(admin=Depends(require_admin)):

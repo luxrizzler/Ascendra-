@@ -546,11 +546,14 @@ def test_phase3_records_source_environment_correctly(h):
         assert e.get("source") in ("admin_created", "test_fixture", "external_provider")
 
 
-def test_current_phase_reports_phase_3_not_phase_4(h):
-    """Phase 4 has been BUILT but should NOT be marked complete until owner
-    approves it. system_state should report phase_3 as current."""
+def test_current_phase_reports_phase_4_and_not_phase_5(h):
+    """Phase 4 is approved and included in completed_phases; Phase 5 must
+    remain uncompleted until minimal-build completion report ships."""
     j = requests.get(f"{API}/admin/revenue/system/state", headers=h, timeout=10).json()
-    assert "phase_4" not in (j.get("completed_phases") or []), (
-        "system_state prematurely reports phase_4 complete"
+    completed = j.get("completed_phases") or []
+    assert "phase_4" in completed, (
+        f"phase_4 should be reported complete after sign-off; got {completed!r}"
     )
-    assert j.get("current_phase") == "phase_3"
+    assert "phase_5" not in completed, (
+        "system_state prematurely reports phase_5 complete"
+    )

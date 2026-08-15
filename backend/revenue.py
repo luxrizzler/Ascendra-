@@ -267,7 +267,7 @@ def _get_audit_repo(db) -> AuditLogRepository:
 # ─── System state ──────────────────────────────────────────────────────────
 # Phase completion is updated as each phase is delivered and approved.
 # Add a new entry to COMPLETED_PHASES when a phase is signed off.
-COMPLETED_PHASES = ["phase_1", "phase_2", "phase_3"]
+COMPLETED_PHASES = ["phase_1", "phase_2", "phase_3", "phase_4"]
 CURRENT_PHASE = COMPLETED_PHASES[-1]
 
 

@@ -69,6 +69,7 @@ import revenue as revenue_mod
 import revenue_phase2 as revenue_phase2_mod
 import revenue_phase3 as revenue_phase3_mod
 import revenue_phase4 as revenue_phase4_mod
+import revenue_phase5 as revenue_phase5_mod
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
@@ -3321,6 +3322,10 @@ api.include_router(revenue_phase3_mod.router)
 revenue_phase4_mod.register_routes(db, require_admin)
 api.include_router(revenue_phase4_mod.router)
 
+# ─── Revenue Control Center (Phase 5 — minimal executive layer) ───────────
+revenue_phase5_mod.register_routes(db, require_admin)
+api.include_router(revenue_phase5_mod.router)
+
 @app.on_event("startup")
 async def _revenue_indexes():
     try:
@@ -3346,6 +3351,12 @@ async def _revenue_indexes():
         log.info("[revenue-phase4] indexes + workflow/template seeds ensured")
     except Exception as e:
         log.warning(f"[revenue-phase4] index setup skipped: {e}")
+    try:
+        await revenue_phase5_mod.ensure_indexes_phase5(db)
+        await revenue_phase5_mod.seed_constitution(db)
+        log.info("[revenue-phase5] indexes + financial-constitution seed ensured")
+    except Exception as e:
+        log.warning(f"[revenue-phase5] index setup skipped: {e}")
 
 
 # ─── Change password (self-service & forced-on-first-login flow) ────────────

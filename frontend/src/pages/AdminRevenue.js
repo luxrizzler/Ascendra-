@@ -8,11 +8,13 @@ import {
   Package, Target, GitBranch, Plus, ChevronRight,
   Receipt, Wallet, TrendingUp, Calendar, PiggyBank,
   Workflow, ListTree, FileText, BookOpen, Scale, Webhook,
+  Sparkles, Activity, Filter, PlayCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 
 const TABS = [
   { id: "overview", label: "Overview", icon: Shield },
+  { id: "executive", label: "Executive", icon: Sparkles },
   { id: "approvals", label: "Approval Queue", icon: ClipboardList },
   { id: "audit", label: "Audit Log", icon: ScrollText },
   { id: "budget", label: "Operating Budget", icon: DollarSign },
@@ -70,13 +72,23 @@ export default function AdminRevenue() {
   const [knowledge, setKnowledge] = useState([]);
   const [authority, setAuthority] = useState(null);
   const [webhooks, setWebhooks] = useState([]);
+  // ── Phase 5 (executive) state ──
+  const [execSummary, setExecSummary] = useState(null);
+  const [execFunnel, setExecFunnel] = useState(null);
+  const [execHealth, setExecHealth] = useState(null);
+  const [execReadiness, setExecReadiness] = useState(null);
+  const [constitution, setConstitution] = useState(null);
+  const [simScenario, setSimScenario] = useState("successful_subscription");
+  const [simResult, setSimResult] = useState(null);
 
   const load = async () => {
     setLoading(true);
     try {
       const [s, sm, ap, au, itg, bg, cts, ofs, srs, scur,
               lg, ex, rs, alp, txp, rc, dr, p3s,
-              wf, ac, tp, kb, am, wh] = await Promise.all([
+              wf, ac, tp, kb, am, wh,
+              // Phase 5
+              exSum, exFun, exHlt, exRdy, exCon] = await Promise.all([
         api.get("/admin/revenue/system/state"),
         api.get("/admin/revenue/summary"),
         api.get("/admin/revenue/approvals?limit=100").catch(() => ({ approvals: [] })),
@@ -103,6 +115,12 @@ export default function AdminRevenue() {
         api.get("/admin/revenue/knowledge").catch(() => ({ knowledge: [] })),
         api.get("/admin/revenue/authority/matrix").catch(() => null),
         api.get("/admin/revenue/webhooks").catch(() => ({ events: [] })),
+        // Phase 5 — executive layer
+        api.get("/admin/revenue/executive/summary").catch(() => null),
+        api.get("/admin/revenue/executive/funnel").catch(() => null),
+        api.get("/admin/revenue/executive/health").catch(() => null),
+        api.get("/admin/revenue/executive/integration-readiness").catch(() => null),
+        api.get("/admin/revenue/constitution").catch(() => null),
       ]);
       setState(s); setSummary(sm);
       setApprovals(ap.approvals || []);
@@ -126,6 +144,12 @@ export default function AdminRevenue() {
       setKnowledge(kb.knowledge || []);
       setAuthority(am);
       setWebhooks(wh.events || []);
+      // Phase 5
+      setExecSummary(exSum);
+      setExecFunnel(exFun);
+      setExecHealth(exHlt);
+      setExecReadiness(exRdy);
+      setConstitution(exCon);
     } catch (e) { toast.error(e.message || "Load failed"); }
     finally { setLoading(false); }
   };
@@ -253,6 +277,25 @@ export default function AdminRevenue() {
     finally { setBusy(false); }
   };
 
+  // ── Phase 5 — simulation harness ──
+  const runSimulation = async () => {
+    setBusy(true);
+    setSimResult(null);
+    try {
+      const r = await api.post(`/admin/revenue/executive/simulate?scenario=${encodeURIComponent(simScenario)}`, {});
+      setSimResult(r);
+      if (r?.status === "simulated") {
+        toast.success(`Scenario '${simScenario}' simulated · audit-only`);
+      } else {
+        toast.info("Simulation returned an unexpected shape");
+      }
+    } catch (e) {
+      const detail = e?.response?.data?.detail || e.message || "Simulation failed";
+      toast.error(String(detail));
+      setSimResult({ error: String(detail) });
+    } finally { setBusy(false); }
+  };
+
   if (loading) return <div className="max-w-7xl mx-auto px-5 py-10"><Loader /></div>;
 
   const live = state?.live_actions_enabled;
@@ -262,9 +305,9 @@ export default function AdminRevenue() {
       <button onClick={() => nav("/admin")} className="flex items-center gap-1 text-sm text-[var(--asc-text-dim)] hover:text-white mb-3"><ArrowLeft size={14} /> Admin</button>
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <div className="asc-kicker">Phase 1 + 2 + 3 complete · Phase 4 pending approval</div>
+          <div className="asc-kicker">Phase 1 + 2 + 3 + 4 approved · Phase 5 minimal (executive layer) live</div>
           <h1 className="asc-h2 text-4xl mt-1 flex items-center gap-3"><Shield size={28} className="text-[var(--asc-brand)]" /> Revenue Control Center</h1>
-          <p className="text-[var(--asc-text-dim)] text-sm mt-2 max-w-3xl">Contacts, offers, deterministic scoring, attribution, approvals, and audit log. All external actions remain <strong>simulated or gated</strong> while <code className="asc-mono text-[var(--asc-brand)]">AUTOMATION_LIVE_ACTIONS_ENABLED=false</code>. Phase 3 will wire the financial ledger.</p>
+          <p className="text-[var(--asc-text-dim)] text-sm mt-2 max-w-3xl">Contacts, offers, deterministic scoring, attribution, approvals, audit log, financial ledger, workflows, and an executive overview. All external actions remain <strong>simulated or gated</strong> while <code className="asc-mono text-[var(--asc-brand)]">AUTOMATION_LIVE_ACTIONS_ENABLED=false</code>. Phase 5 stubs are labeled with <code className="asc-mono">is_stub</code> in the payload.</p>
         </div>
         <button onClick={load} className="asc-btn-secondary text-sm" data-testid="revenue-refresh"><RefreshCcw size={13} /> Refresh</button>
       </div>
@@ -296,6 +339,231 @@ export default function AdminRevenue() {
           <div className="asc-card p-5 md:col-span-2 lg:col-span-4">
             <div className="asc-kicker mb-2">Phase 1 + 2 scope</div>
             <p className="text-sm text-[var(--asc-text-dim)] leading-relaxed">Foundation + CRM layer. Phase 1: contacts, events, approvals, audit log, integration status, operating-budget history. Phase 2: approved offer catalog, deterministic lead scoring (versioned rules + score history), append-only attribution touches (first/last preservation, sanitized), and administrative contact-detail management including a safeguarded merge flow. <strong className="text-white">No revenue data is shown yet</strong> — Phase 3 builds the financial ledger. Records tagged <code className="asc-mono text-[var(--asc-brand)]">simulated=true</code> are for testing only.</p>
+          </div>
+        </div>
+      )}
+
+      {/* ─── PHASE 5 EXECUTIVE ─── */}
+      {tab === "executive" && (
+        <div className="mt-5 space-y-5" data-testid="revenue-executive">
+          {/* Honesty banner */}
+          <div className="asc-card p-4 flex items-start gap-3" style={{ background: "rgba(124,58,237,0.06)", borderColor: "rgba(124,58,237,0.30)" }} data-testid="exec-honesty-banner">
+            <Sparkles size={18} className="mt-0.5 shrink-0" style={{ color: "#BFB4FF" }} />
+            <div className="text-sm text-[var(--asc-text-dim)]">
+              <strong className="text-white">Phase 5 — Executive Revenue Control Center (minimal build).</strong> Metrics below aggregate <em>actual</em> Phase 1-4 data. Simulated rows are excluded from every revenue total. Widgets that ship as stubs are labeled <code className="asc-mono">STUB</code>. The simulation harness runs only against test databases and never touches real ledgers.
+            </div>
+          </div>
+
+          {/* Executive Summary */}
+          {execSummary ? (
+            <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-3" data-testid="exec-summary-grid">
+              <ExecStat
+                label="Actual cash collected"
+                value={`$${Number(execSummary.revenue?.actual_gross_cash_collected?.value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                sub={`toward $${Number(execSummary.revenue?.cumulative_toward_100k?.target || 100000).toLocaleString()}`}
+                sourceState={execSummary.revenue?.actual_gross_cash_collected?.source_state}
+                isStub={execSummary.revenue?.actual_gross_cash_collected?.is_stub}
+                testid="exec-actual-cash"
+              />
+              <ExecStat
+                label="Pending cash"
+                value={`$${Number(execSummary.revenue?.pending_cash?.value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                sub="settlement in flight"
+                sourceState={execSummary.revenue?.pending_cash?.source_state}
+                testid="exec-pending-cash"
+              />
+              <ExecStat
+                label="Owner distribution payable"
+                value={`$${Number(execSummary.allocations?.owner_distribution_payable || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                sub="from Phase 3 allocation"
+                sourceState={execSummary.allocations?.source_state}
+                testid="exec-owner-payable"
+              />
+              <ExecStat
+                label="Working-capital reserve"
+                value={`$${Number(execSummary.allocations?.working_capital_reserve || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                sub="derived from ledger"
+                sourceState={execSummary.allocations?.source_state}
+                testid="exec-wc-reserve"
+              />
+
+              {/* Exceptions summary card spans full width */}
+              <div className="asc-card p-5 md:col-span-2 lg:col-span-4" data-testid="exec-exceptions-card">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="asc-kicker">Operational Exceptions</div>
+                  <SourceStatePill state={execSummary.exceptions?.source_state} isStub={execSummary.exceptions?.is_stub} />
+                </div>
+                <div className="grid sm:grid-cols-2 md:grid-cols-4 gap-3">
+                  <MiniMetric label="Pending approvals" value={execSummary.exceptions?.pending_approvals} tone={execSummary.exceptions?.pending_approvals > 0 ? "warn" : "ok"} />
+                  <MiniMetric label="Blocked actions" value={execSummary.exceptions?.blocked_actions} tone={execSummary.exceptions?.blocked_actions > 0 ? "warn" : "ok"} />
+                  <MiniMetric label="Dead-letter actions" value={execSummary.exceptions?.dead_letter_actions} tone={execSummary.exceptions?.dead_letter_actions > 0 ? "danger" : "ok"} />
+                  <MiniMetric label="Active workflows" value={execSummary.exceptions?.active_workflows} tone="ok" />
+                </div>
+                <div className="text-[10px] text-[var(--asc-text-muted)] mt-3">{execSummary.disclaimer}</div>
+              </div>
+            </div>
+          ) : <EmptyExec label="Executive summary unavailable" />}
+
+          {/* Revenue Funnel */}
+          <div className="asc-card p-5" data-testid="exec-funnel-card">
+            <div className="flex items-center justify-between mb-3">
+              <div className="asc-kicker flex items-center gap-2"><Filter size={13} /> Revenue Funnel · actual lifecycle transitions</div>
+              <SourceStatePill state={execFunnel?.source_state} isStub={execFunnel?.is_stub} />
+            </div>
+            {execFunnel?.transitions?.length ? (
+              <div className="space-y-2">
+                <div className="text-[11px] text-[var(--asc-text-muted)]">Top transitions (simulated rows excluded)</div>
+                <div className="space-y-1">
+                  {execFunnel.transitions.slice(0, 10).map((t, i) => (
+                    <div key={i} className="flex items-center gap-2 text-xs asc-mono p-2 rounded border border-[var(--asc-border)]" data-testid={`exec-funnel-row-${i}`}>
+                      <span className="text-[var(--asc-text-dim)] flex-1 truncate">{t.stage_from || "—"} → {t.stage_to || "—"}</span>
+                      <span className="font-bold text-[var(--asc-brand)]">{t.count}</span>
+                      <span className="text-[var(--asc-text-muted)] text-[10px]">{t.latest_at ? new Date(t.latest_at).toLocaleDateString() : ""}</span>
+                    </div>
+                  ))}
+                </div>
+                {execFunnel.stage_totals?.length ? (
+                  <>
+                    <div className="text-[11px] text-[var(--asc-text-muted)] mt-3">Contacts by current stage</div>
+                    <div className="flex flex-wrap gap-2">
+                      {execFunnel.stage_totals.map((s, i) => (
+                        <div key={i} className="px-3 py-1.5 rounded-lg border border-[var(--asc-border)] text-xs asc-mono" data-testid={`exec-stage-${s.stage}`}>
+                          <span className="text-[var(--asc-text-muted)]">{s.stage}</span>
+                          <span className="ml-2 font-bold text-white">{s.count}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                ) : null}
+              </div>
+            ) : <div className="text-sm text-[var(--asc-text-muted)] py-4 text-center">No lifecycle transitions recorded yet.</div>}
+          </div>
+
+          {/* Integration Readiness Matrix */}
+          <div className="asc-card p-5" data-testid="exec-readiness-card">
+            <div className="flex items-center justify-between mb-3">
+              <div className="asc-kicker flex items-center gap-2"><Zap size={13} /> Integration Readiness Matrix</div>
+              <SourceStatePill state={execReadiness?.source_state} isStub={execReadiness?.is_stub} />
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs asc-mono">
+                <thead>
+                  <tr className="text-[var(--asc-text-muted)] text-[10px] uppercase tracking-wider">
+                    <th className="text-left py-2">Provider</th>
+                    <th className="text-center">Configured</th>
+                    <th className="text-center">Adapter</th>
+                    <th className="text-center">Webhook</th>
+                    <th className="text-center">Idempotency</th>
+                    <th className="text-center">Live implemented</th>
+                    <th className="text-center">Live enabled</th>
+                    <th className="text-left">Blocking</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(execReadiness?.integrations || []).map((row) => (
+                    <tr key={row.provider} className="border-t border-[var(--asc-border)]" data-testid={`exec-readiness-${row.provider}`}>
+                      <td className="py-2 font-bold uppercase">{row.provider}</td>
+                      <td className="text-center"><TinyBool v={row.configuration_present} /></td>
+                      <td className="text-center"><TinyBool v={row.adapter_implemented} /></td>
+                      <td className="text-center"><TinyBool v={row.inbound_webhook_support} /></td>
+                      <td className="text-center"><TinyBool v={row.idempotency_support} /></td>
+                      <td className="text-center"><TinyBool v={row.live_execution_implemented} /></td>
+                      <td className="text-center"><TinyBool v={row.live_execution_enabled} /></td>
+                      <td className="text-[var(--asc-text-muted)] text-[10px]">{(row.blocking_issues || []).join(", ") || "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {execReadiness?.note && <div className="text-[10px] text-[var(--asc-text-muted)] mt-3">{execReadiness.note}</div>}
+          </div>
+
+          {/* Health Exceptions */}
+          <div className="asc-card p-5" data-testid="exec-health-card">
+            <div className="flex items-center justify-between mb-3">
+              <div className="asc-kicker flex items-center gap-2"><Activity size={13} /> System Health &amp; Exceptions</div>
+              <SourceStatePill state={execHealth?.source_state} isStub={execHealth?.is_stub} />
+            </div>
+            {(execHealth?.exceptions?.length || 0) > 0 ? (
+              <div className="space-y-2">
+                {execHealth.exceptions.map((ex, i) => (
+                  <div key={i} className="flex items-center gap-3 p-3 rounded-lg border border-[var(--asc-border)]" data-testid={`exec-health-exc-${i}`}>
+                    <AlertTriangle size={16} className={ex.severity === "critical" ? "text-[#FB7185]" : ex.severity === "high" ? "text-[#FFB000]" : "text-[var(--asc-text-dim)]"} />
+                    <div className="flex-1 text-sm">{ex.type.replace(/_/g, " ")}</div>
+                    {ex.count != null && <div className="asc-mono text-xs text-[var(--asc-text-muted)]">{ex.count}</div>}
+                    <span className="text-[9px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider" style={{ background: "rgba(255,176,0,0.15)", color: "#FFB000" }}>{ex.severity}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 text-sm text-[#4ADE80]" data-testid="exec-health-ok">
+                <CheckCircle2 size={16} /> No exceptions detected. Live actions: {execHealth?.banner_live_actions_enabled ? "ENABLED" : "DISABLED"}.
+              </div>
+            )}
+          </div>
+
+          {/* Financial Constitution */}
+          <div className="asc-card p-5" data-testid="exec-constitution-card">
+            <div className="flex items-center justify-between mb-3">
+              <div className="asc-kicker flex items-center gap-2"><ScrollText size={13} /> Financial Constitution · versioned, immutable</div>
+              <SourceStatePill state={constitution?.source_state} isStub={constitution?.is_stub} />
+            </div>
+            {constitution?.current ? (
+              <>
+                <div className="flex flex-wrap gap-3 mb-3 text-xs">
+                  <span className="asc-mono text-[var(--asc-text-muted)]">v{constitution.current.version}</span>
+                  <span className="asc-mono text-[var(--asc-text-muted)]">effective {new Date(constitution.current.effective_date).toLocaleDateString()}</span>
+                  <span className="text-[var(--asc-text-dim)]">approved by {constitution.current.approved_by}</span>
+                </div>
+                <ol className="list-decimal list-inside space-y-1 text-[13px] text-[var(--asc-text-dim)]">
+                  {(constitution.current.principles || []).map((p, i) => (
+                    <li key={i} className="leading-relaxed" data-testid={`exec-constitution-principle-${i}`}>{p}</li>
+                  ))}
+                </ol>
+                <div className="text-[10px] text-[var(--asc-text-muted)] mt-3 italic">{constitution.immutability_note}</div>
+              </>
+            ) : <EmptyExec label="No constitution version seeded yet" />}
+          </div>
+
+          {/* Simulation Harness (STUB) */}
+          <div className="asc-card p-5" data-testid="exec-sim-card">
+            <div className="flex items-center justify-between mb-3">
+              <div className="asc-kicker flex items-center gap-2"><PlayCircle size={13} /> Simulation Harness</div>
+              <span className="text-[9px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider" style={{ background: "rgba(255,176,0,0.15)", color: "#FFB000" }} data-testid="exec-sim-stub-badge">STUB · Phase 5b</span>
+            </div>
+            <p className="text-xs text-[var(--asc-text-dim)] mb-3 max-w-3xl">
+              Runs deterministic scenario stubs against the isolated <code className="asc-mono">ascendra_revenue_test</code> database. Writes an audit entry only — <strong>never touches the real ledger, real customers, or real integrations</strong>. End-to-end scripted state transitions are deferred to Phase 5b.
+            </p>
+            <div className="flex flex-wrap gap-2 items-center">
+              <select value={simScenario} onChange={(e) => setSimScenario(e.target.value)} className="asc-input text-xs" data-testid="exec-sim-scenario-select">
+                <option value="successful_subscription">successful_subscription</option>
+                <option value="failed_payment_recovery">failed_payment_recovery</option>
+                <option value="abandoned_checkout">abandoned_checkout</option>
+                <option value="qualified_business_lead">qualified_business_lead</option>
+                <option value="refund_adjustment">refund_adjustment</option>
+                <option value="chargeback_adjustment">chargeback_adjustment</option>
+                <option value="reserve_transition">reserve_transition</option>
+                <option value="reserve_reversion">reserve_reversion</option>
+                <option value="unsupported_question_escalation">unsupported_question_escalation</option>
+                <option value="prohibited_action_blocked">prohibited_action_blocked</option>
+              </select>
+              <button onClick={runSimulation} disabled={busy} className="asc-btn-primary text-xs" data-testid="exec-sim-run"><PlayCircle size={13} /> Run scenario</button>
+            </div>
+            {simResult && (
+              <div className="mt-3 text-xs asc-mono p-3 rounded-lg border border-[var(--asc-border)]" style={{ background: simResult.error ? "rgba(251,113,133,0.08)" : "rgba(124,58,237,0.06)" }} data-testid="exec-sim-result">
+                {simResult.error ? (
+                  <span className="text-[#FB7185]">Error: {simResult.error}</span>
+                ) : (
+                  <>
+                    <div>scenario: <span className="text-[var(--asc-brand)]">{simResult.scenario}</span></div>
+                    <div>status: <span className="text-[var(--asc-brand)]">{simResult.status}</span></div>
+                    <div>db: {simResult.db}</div>
+                    <div>is_stub: <span className={simResult.is_stub ? "text-[#FFB000]" : "text-[#4ADE80]"}>{String(simResult.is_stub)}</span></div>
+                    <div className="text-[10px] text-[var(--asc-text-muted)] mt-2">{simResult.note}</div>
+                  </>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -958,4 +1226,57 @@ function StatusPill({ status }) {
   };
   const c = map[status] || map.cancelled;
   return <span className="text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider" style={{ background: c.bg, color: c.fg }}>{status}</span>;
+}
+
+// ─── Phase 5 (Executive) helper components ──────────────────────────────
+function ExecStat({ label, value, sub, sourceState, isStub, testid }) {
+  return (
+    <div className="asc-card p-4" data-testid={testid || `execstat-${(label || "").toLowerCase().replace(/[^a-z0-9]/g, "-")}`}>
+      <div className="flex items-center justify-between">
+        <div className="text-[10px] uppercase tracking-wider text-[var(--asc-text-muted)]">{label}</div>
+        <SourceStatePill state={sourceState} isStub={isStub} />
+      </div>
+      <div className="text-3xl font-black asc-mono mt-1 text-white">{value}</div>
+      {sub && <div className="text-[10px] text-[var(--asc-text-dim)] mt-1">{sub}</div>}
+    </div>
+  );
+}
+
+function MiniMetric({ label, value, tone = "ok" }) {
+  const color = tone === "danger" ? "#FB7185" : tone === "warn" ? "#FFB000" : "#4ADE80";
+  return (
+    <div className="p-3 rounded-lg border border-[var(--asc-border)]" data-testid={`minimetric-${(label || "").toLowerCase().replace(/[^a-z0-9]/g, "-")}`}>
+      <div className="text-[10px] uppercase tracking-wider text-[var(--asc-text-muted)]">{label}</div>
+      <div className="text-2xl font-black asc-mono mt-1" style={{ color }}>{value ?? 0}</div>
+    </div>
+  );
+}
+
+function SourceStatePill({ state, isStub }) {
+  if (isStub) {
+    return <span className="text-[9px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider" style={{ background: "rgba(255,176,0,0.18)", color: "#FFB000" }} data-testid="source-state-pill-stub">STUB</span>;
+  }
+  if (!state) return null;
+  const map = {
+    actual: { bg: "rgba(74,222,128,0.18)", fg: "#4ADE80" },
+    derived_from_actual_ledger: { bg: "rgba(74,222,128,0.15)", fg: "#4ADE80" },
+    pending: { bg: "rgba(255,176,0,0.15)", fg: "#FFB000" },
+    simulated: { bg: "rgba(124,58,237,0.18)", fg: "#BFB4FF" },
+  };
+  const c = map[state] || { bg: "rgba(138,131,184,0.15)", fg: "#8A83B8" };
+  return <span className="text-[9px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider" style={{ background: c.bg, color: c.fg }} data-testid={`source-state-pill-${state}`}>{state.replace(/_/g, " ")}</span>;
+}
+
+function TinyBool({ v }) {
+  if (v === true) return <span className="text-[#4ADE80] text-lg" data-testid="tinybool-true">●</span>;
+  if (v === false) return <span className="text-[var(--asc-text-muted)] text-lg" data-testid="tinybool-false">○</span>;
+  return <span className="text-[var(--asc-text-muted)]">—</span>;
+}
+
+function EmptyExec({ label }) {
+  return (
+    <div className="asc-card p-6 text-center text-sm text-[var(--asc-text-muted)]" data-testid="empty-exec">
+      {label}
+    </div>
+  );
 }

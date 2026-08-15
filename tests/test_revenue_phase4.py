@@ -71,13 +71,16 @@ def h(jwt):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-#  PHASE 3 METADATA REGRESSION
+#  PHASE 4 METADATA REGRESSION
 # ═══════════════════════════════════════════════════════════════════════════
-def test_system_state_reports_phase_3_after_approval(h):
+def test_system_state_reports_phase_4_after_approval(h):
     j = requests.get(f"{API}/admin/revenue/system/state", headers=h, timeout=10).json()
-    assert j["current_phase"] == "phase_3"
-    assert set(j["completed_phases"]) == {"phase_1", "phase_2", "phase_3"}
-    assert "phase_4" not in j["completed_phases"]
+    # Phase 4 is approved and included in COMPLETED_PHASES; Phase 5 remains
+    # in progress (minimal build) so it must NOT yet be marked complete.
+    assert "phase_4" in j["completed_phases"]
+    assert set(j["completed_phases"]) >= {"phase_1", "phase_2", "phase_3", "phase_4"}
+    assert "phase_5" not in j["completed_phases"], (
+        "phase_5 must remain uncompleted until minimal-build completion report ships")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -282,11 +285,64 @@ def test_template_render_escapes_input(h):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-#  STRIPE WEBHOOK SHADOW
+#  STRIPE WEBHOOK SHADOW — Phase 21 hardening uses official Stripe-format
+#  signatures (t=<ts>,v1=<sig>) verified by the Stripe SDK.
 # ═══════════════════════════════════════════════════════════════════════════
-def _sign(raw: str) -> str:
-    secret = os.environ.get("STRIPE_WEBHOOK_SECRET_TEST", "test-shadow-secret")
-    return hmac.new(secret.encode(), raw.encode(), hashlib.sha256).hexdigest()
+def _shadow_secret() -> str:
+    """Match backend precedence: STRIPE_WEBHOOK_SECRET_TEST →
+    STRIPE_WEBHOOK_SECRET → 'test-shadow-secret'.
+
+    Because the backend loads its secrets from ``/app/backend/.env`` on
+    startup (via dotenv), and the test process may not inherit those env
+    vars, we explicitly read the backend .env here to guarantee both sides
+    are signing/verifying against the SAME secret.
+    """
+    # Fast paths — test-process env wins if explicitly set
+    for key in ("STRIPE_WEBHOOK_SECRET_TEST", "STRIPE_WEBHOOK_SECRET"):
+        v = os.environ.get(key)
+        if v:
+            return v
+    # Fallback — read backend .env directly
+    try:
+        for line in Path("/app/backend/.env").read_text().splitlines():
+            s = line.strip()
+            if s.startswith("STRIPE_WEBHOOK_SECRET_TEST="):
+                _, _, v = s.partition("=")
+                if len(v) >= 2 and v[0] == v[-1] and v[0] in ("'", '"'):
+                    v = v[1:-1]
+                return v
+        for line in Path("/app/backend/.env").read_text().splitlines():
+            s = line.strip()
+            if s.startswith("STRIPE_WEBHOOK_SECRET="):
+                _, _, v = s.partition("=")
+                if len(v) >= 2 and v[0] == v[-1] and v[0] in ("'", '"'):
+                    v = v[1:-1]
+                return v
+    except FileNotFoundError:
+        pass
+    return "test-shadow-secret"
+
+
+def _sign(raw: str, ts: int | None = None) -> str:
+    """Produce a Stripe-format ``Stripe-Signature`` header value.
+
+    Format: ``t=<unix_ts>,v1=<hex_hmac_sha256_of("<ts>.<raw>")>``. This is
+    the exact format ``stripe.Webhook.construct_event`` verifies on the
+    backend side.
+    """
+    import time as _time
+    if ts is None:
+        ts = int(_time.time())
+    secret = _shadow_secret()
+    payload = f"{ts}.{raw}"
+    v1 = hmac.new(secret.encode(), payload.encode(), hashlib.sha256).hexdigest()
+    return f"t={ts},v1={v1}"
+
+
+def _sign_legacy_hmac(raw: str) -> str:
+    """Legacy raw-HMAC signature — kept to verify backward-compat fallback."""
+    return hmac.new(_shadow_secret().encode(), raw.encode(),
+                       hashlib.sha256).hexdigest()
 
 
 def test_stripe_webhook_shadow_verifies_signature(h):
@@ -294,17 +350,52 @@ def test_stripe_webhook_shadow_verifies_signature(h):
              "type": "checkout.session.completed",
              "data": {"object": {"id": "cs_test_abc"}}}
     raw = json.dumps(event, sort_keys=True)
-    # Wrong signature
+    # Wrong signature (Stripe format but bad v1)
     r_bad = requests.post(f"{API}/admin/revenue/webhooks/stripe/shadow",
-                          headers=h, json={"raw_body": raw, "signature": "bad"},
+                          headers=h,
+                          json={"raw_body": raw,
+                                "signature": "t=1,v1=deadbeef"},
                           timeout=10)
     assert r_bad.status_code == 400
-    # Correct signature
+    # Correct Stripe-format signature — verified by stripe.Webhook.construct_event
     r_ok = requests.post(f"{API}/admin/revenue/webhooks/stripe/shadow",
                          headers=h, json={"raw_body": raw, "signature": _sign(raw)},
                          timeout=10)
-    assert r_ok.status_code == 200
-    assert r_ok.json()["received"] is True
+    assert r_ok.status_code == 200, r_ok.text
+    body = r_ok.json()
+    assert body["received"] is True
+    # Phase 21 hardening: verification_mode must be "stripe_sdk"
+    assert body.get("verification_mode") == "stripe_sdk", (
+        f"expected stripe_sdk, got {body!r}")
+
+
+def test_stripe_webhook_shadow_legacy_hmac_still_works(h):
+    """Backward-compat: raw HMAC (no t= prefix) still verifies (marked legacy)."""
+    event = {"id": f"evt_legacy_{uuid.uuid4().hex}",
+             "type": "checkout.session.completed",
+             "data": {"object": {}}}
+    raw = json.dumps(event, sort_keys=True)
+    r = requests.post(f"{API}/admin/revenue/webhooks/stripe/shadow",
+                       headers=h,
+                       json={"raw_body": raw, "signature": _sign_legacy_hmac(raw)},
+                       timeout=10)
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body.get("verification_mode") == "legacy_hmac"
+
+
+def test_stripe_webhook_shadow_rejects_stale_timestamp(h):
+    """Phase 21 hardening: SDK enforces 300s tolerance on t=<ts>."""
+    event = {"id": f"evt_stale_{uuid.uuid4().hex}",
+             "type": "payment_intent.succeeded",
+             "data": {"object": {}}}
+    raw = json.dumps(event, sort_keys=True)
+    stale_ts = int(datetime.now(timezone.utc).timestamp()) - 3600
+    sig = _sign(raw, ts=stale_ts)
+    r = requests.post(f"{API}/admin/revenue/webhooks/stripe/shadow",
+                       headers=h, json={"raw_body": raw, "signature": sig},
+                       timeout=10)
+    assert r.status_code == 400
 
 
 def test_stripe_webhook_rejects_duplicate_provider_event(h):

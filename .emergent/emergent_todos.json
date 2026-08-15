@@ -1,26 +1,18 @@
 [
   {
-    "content": "Preliminary corrections — system_phase, simulation semantics, hardened cleanup utility",
+    "content": "21.1-21.5 Phase 21 hardening (approvals + allocation semantics + owner-draw corrections + Stripe SDK + tests)",
     "status": "completed"
   },
   {
-    "content": "Phase 3 backend module (financial_ledger, tax_reserve_policies, allocation_policies, monthly_reconciliations, owner_draws, expenses) — 900+ lines",
+    "content": "22.1-22.5 Phase 22 minimal Phase 5 executive layer (backend + funnel + tests + UI)",
     "status": "completed"
   },
   {
-    "content": "Phase 3 tests (39 tests): ledger + settlement + idempotency + allocation + reconciliation + owner-draws + safety",
+    "content": "Full pytest suite green (159/159 passing) + frontend build clean",
     "status": "completed"
   },
   {
-    "content": "Phase 3 frontend: 6 new tabs (Ledger, Expenses, Reserve, Allocation, Recon, Draws)",
+    "content": "23 Phase 5 completion report + plan.md updated for operator sign-off decision",
     "status": "completed"
-  },
-  {
-    "content": "Full regression 93/93 pass; frontend production build succeeds; UI spot-check clean",
-    "status": "completed"
-  },
-  {
-    "content": "Deliver Phase 3 completion report; STOP; wait for user approval before Phase 4",
-    "status": "in_progress"
   }
 ]
