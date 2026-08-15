@@ -8,13 +8,14 @@ import {
   Package, Target, GitBranch, Plus, ChevronRight,
   Receipt, Wallet, TrendingUp, Calendar, PiggyBank,
   Workflow, ListTree, FileText, BookOpen, Scale, Webhook,
-  Sparkles, Activity, Filter, PlayCircle,
+  Sparkles, Activity, Filter, PlayCircle, Printer,
 } from "lucide-react";
 import { toast } from "sonner";
 
 const TABS = [
   { id: "overview", label: "Overview", icon: Shield },
   { id: "executive", label: "Executive", icon: Sparkles },
+  { id: "runbook", label: "Governance Runbook", icon: BookOpen },
   { id: "approvals", label: "Approval Queue", icon: ClipboardList },
   { id: "audit", label: "Audit Log", icon: ScrollText },
   { id: "budget", label: "Operating Budget", icon: DollarSign },
@@ -77,7 +78,9 @@ export default function AdminRevenue() {
   const [execFunnel, setExecFunnel] = useState(null);
   const [execHealth, setExecHealth] = useState(null);
   const [execReadiness, setExecReadiness] = useState(null);
+  const [execCohorts, setExecCohorts] = useState(null);
   const [constitution, setConstitution] = useState(null);
+  const [runbook, setRunbook] = useState(null);
   const [simScenario, setSimScenario] = useState("successful_subscription");
   const [simResult, setSimResult] = useState(null);
 
@@ -88,7 +91,7 @@ export default function AdminRevenue() {
               lg, ex, rs, alp, txp, rc, dr, p3s,
               wf, ac, tp, kb, am, wh,
               // Phase 5
-              exSum, exFun, exHlt, exRdy, exCon] = await Promise.all([
+              exSum, exFun, exHlt, exRdy, exCon, exCoh, exRun] = await Promise.all([
         api.get("/admin/revenue/system/state"),
         api.get("/admin/revenue/summary"),
         api.get("/admin/revenue/approvals?limit=100").catch(() => ({ approvals: [] })),
@@ -121,6 +124,8 @@ export default function AdminRevenue() {
         api.get("/admin/revenue/executive/health").catch(() => null),
         api.get("/admin/revenue/executive/integration-readiness").catch(() => null),
         api.get("/admin/revenue/constitution").catch(() => null),
+        api.get("/admin/revenue/executive/cohorts").catch(() => null),
+        api.get("/admin/revenue/executive/runbook").catch(() => null),
       ]);
       setState(s); setSummary(sm);
       setApprovals(ap.approvals || []);
@@ -150,6 +155,8 @@ export default function AdminRevenue() {
       setExecHealth(exHlt);
       setExecReadiness(exRdy);
       setConstitution(exCon);
+      setExecCohorts(exCoh);
+      setRunbook(exRun);
     } catch (e) { toast.error(e.message || "Load failed"); }
     finally { setLoading(false); }
   };
@@ -296,6 +303,18 @@ export default function AdminRevenue() {
     } finally { setBusy(false); }
   };
 
+  // ── Phase 5b — governance runbook download + print ──
+  const downloadRunbook = () => {
+    if (!runbook?.markdown) { toast.error("Runbook not loaded"); return; }
+    const blob = new Blob([runbook.markdown], { type: "text/markdown" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `ascendra-governance-runbook-v${runbook.version || "1.0"}.md`;
+    a.click(); URL.revokeObjectURL(url);
+    toast.success("Runbook downloaded");
+  };
+  const printRunbook = () => window.print();
+
   if (loading) return <div className="max-w-7xl mx-auto px-5 py-10"><Loader /></div>;
 
   const live = state?.live_actions_enabled;
@@ -305,7 +324,7 @@ export default function AdminRevenue() {
       <button onClick={() => nav("/admin")} className="flex items-center gap-1 text-sm text-[var(--asc-text-dim)] hover:text-white mb-3"><ArrowLeft size={14} /> Admin</button>
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <div className="asc-kicker">Phase 1 + 2 + 3 + 4 approved · Phase 5 minimal (executive layer) live</div>
+          <div className="asc-kicker">Phase 1 + 2 + 3 + 4 + 5 approved · executive layer signed off</div>
           <h1 className="asc-h2 text-4xl mt-1 flex items-center gap-3"><Shield size={28} className="text-[var(--asc-brand)]" /> Revenue Control Center</h1>
           <p className="text-[var(--asc-text-dim)] text-sm mt-2 max-w-3xl">Contacts, offers, deterministic scoring, attribution, approvals, audit log, financial ledger, workflows, and an executive overview. All external actions remain <strong>simulated or gated</strong> while <code className="asc-mono text-[var(--asc-brand)]">AUTOMATION_LIVE_ACTIONS_ENABLED=false</code>. Phase 5 stubs are labeled with <code className="asc-mono">is_stub</code> in the payload.</p>
         </div>
@@ -502,6 +521,73 @@ export default function AdminRevenue() {
             )}
           </div>
 
+          {/* Cohort Analytics — Phase 5b */}
+          <div className="asc-card p-5" data-testid="exec-cohorts-card">
+            <div className="flex items-center justify-between mb-3">
+              <div className="asc-kicker flex items-center gap-2"><TrendingUp size={13} /> Cohort Analytics · MRR + Retention</div>
+              <SourceStatePill state={execCohorts?.source_state} isStub={execCohorts?.is_stub} />
+            </div>
+            {(execCohorts?.mrr_by_cohort?.length || 0) === 0 && (execCohorts?.retention_by_cohort?.length || 0) === 0 ? (
+              <div className="text-sm text-[var(--asc-text-muted)] py-4 text-center">No real cohort data yet. Cleared payments and non-simulated contacts will populate this view.</div>
+            ) : (
+              <div className="grid md:grid-cols-2 gap-5">
+                {/* MRR by cohort */}
+                <div data-testid="exec-mrr-cohort-block">
+                  <div className="text-[11px] text-[var(--asc-text-muted)] uppercase tracking-wider mb-2">MRR by acquisition-month cohort</div>
+                  {execCohorts?.mrr_by_cohort?.length ? (
+                    <div className="space-y-1">
+                      {execCohorts.mrr_by_cohort.slice(-12).map((c, i) => (
+                        <div key={i} className="flex items-center gap-2 text-xs asc-mono p-2 rounded border border-[var(--asc-border)]" data-testid={`exec-mrr-row-${c.cohort_month}`}>
+                          <span className="text-[var(--asc-text-dim)] w-20">{c.cohort_month}</span>
+                          <span className="flex-1">
+                            <span className="inline-block h-1.5 rounded-full" style={{ background: "var(--asc-brand)", width: `${Math.min(100, Math.max(4, Math.log10(1 + Number(c.mrr)) * 15))}%` }}></span>
+                          </span>
+                          <span className="font-bold text-[var(--asc-brand)]">${Number(c.mrr).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                          <span className="text-[10px] text-[var(--asc-text-muted)] w-8 text-right">×{c.payment_count}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : <div className="text-xs text-[var(--asc-text-muted)]">No cleared payment cohorts yet.</div>}
+                  {execCohorts?.mrr_deltas?.length ? (
+                    <div className="mt-3">
+                      <div className="text-[11px] text-[var(--asc-text-muted)] uppercase tracking-wider mb-1">MoM deltas</div>
+                      <div className="flex flex-wrap gap-1">
+                        {execCohorts.mrr_deltas.slice(-6).map((d, i) => {
+                          const positive = Number(d.delta) >= 0;
+                          return (
+                            <span key={i} className="text-[10px] asc-mono px-1.5 py-0.5 rounded" style={{ background: positive ? "rgba(74,222,128,0.12)" : "rgba(251,113,133,0.12)", color: positive ? "#4ADE80" : "#FB7185" }} data-testid={`exec-mrr-delta-${d.to_month}`}>
+                              {d.to_month} {positive ? "+" : ""}{Number(d.delta).toLocaleString(undefined, { minimumFractionDigits: 2 })}{d.delta_pct != null ? ` (${d.delta_pct}%)` : ""}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+
+                {/* Retention curve */}
+                <div data-testid="exec-retention-block">
+                  <div className="text-[11px] text-[var(--asc-text-muted)] uppercase tracking-wider mb-2">Retention by signup cohort</div>
+                  {execCohorts?.retention_by_cohort?.length ? (
+                    <div className="space-y-1">
+                      {execCohorts.retention_by_cohort.slice(-12).map((c, i) => (
+                        <div key={i} className="flex items-center gap-2 text-xs asc-mono p-2 rounded border border-[var(--asc-border)]" data-testid={`exec-retention-row-${c.cohort_month}`}>
+                          <span className="text-[var(--asc-text-dim)] w-20">{c.cohort_month}</span>
+                          <div className="flex-1 h-2 rounded-full overflow-hidden" style={{ background: "rgba(138,131,184,0.15)" }}>
+                            <div className="h-full" style={{ background: "#4ADE80", width: `${c.retention_pct}%` }}></div>
+                          </div>
+                          <span className="font-bold text-white w-12 text-right">{c.retention_pct}%</span>
+                          <span className="text-[10px] text-[var(--asc-text-muted)] w-14 text-right">{c.still_active_or_customer}/{c.signups}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : <div className="text-xs text-[var(--asc-text-muted)]">No real signup cohorts yet.</div>}
+                </div>
+              </div>
+            )}
+            <div className="text-[10px] text-[var(--asc-text-muted)] mt-4 italic">Simulated rows are excluded from every cohort count. MRR uses cleared payment_recorded entries. Retention counts contacts in trial/customer/past_due stages.</div>
+          </div>
+
           {/* Financial Constitution */}
           <div className="asc-card p-5" data-testid="exec-constitution-card">
             <div className="flex items-center justify-between mb-3">
@@ -525,14 +611,13 @@ export default function AdminRevenue() {
             ) : <EmptyExec label="No constitution version seeded yet" />}
           </div>
 
-          {/* Simulation Harness (STUB) */}
-          <div className="asc-card p-5" data-testid="exec-sim-card">
+          {/* Simulation Harness — Phase 5b scripted */}          <div className="asc-card p-5" data-testid="exec-sim-card">
             <div className="flex items-center justify-between mb-3">
               <div className="asc-kicker flex items-center gap-2"><PlayCircle size={13} /> Simulation Harness</div>
-              <span className="text-[9px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider" style={{ background: "rgba(255,176,0,0.15)", color: "#FFB000" }} data-testid="exec-sim-stub-badge">STUB · Phase 5b</span>
+              <span className="text-[9px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider" style={{ background: "rgba(124,58,237,0.18)", color: "#BFB4FF" }} data-testid="exec-sim-scripted-badge">SCRIPTED · Phase 5b</span>
             </div>
             <p className="text-xs text-[var(--asc-text-dim)] mb-3 max-w-3xl">
-              Runs deterministic scenario stubs against the isolated <code className="asc-mono">ascendra_revenue_test</code> database. Writes an audit entry only — <strong>never touches the real ledger, real customers, or real integrations</strong>. End-to-end scripted state transitions are deferred to Phase 5b.
+              Runs deterministic end-to-end scenario scripts against the isolated <code className="asc-mono">ascendra_revenue_test</code> database. Every emitted record is tagged <code className="asc-mono">simulated=true</code> so it can never contaminate actual revenue totals, cohorts, or funnel counts.
             </p>
             <div className="flex flex-wrap gap-2 items-center">
               <select value={simScenario} onChange={(e) => setSimScenario(e.target.value)} className="asc-input text-xs" data-testid="exec-sim-scenario-select">
@@ -563,6 +648,31 @@ export default function AdminRevenue() {
                   </>
                 )}
               </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ─── PHASE 5b — GOVERNANCE RUNBOOK ─── */}
+      {tab === "runbook" && (
+        <div className="mt-5" data-testid="revenue-runbook">
+          <div className="asc-card p-5 mb-4 print:hidden">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div>
+                <div className="asc-kicker flex items-center gap-2"><BookOpen size={13} /> Governance Runbook · v{runbook?.version || "1.0"}</div>
+                <p className="text-xs text-[var(--asc-text-dim)] mt-2 max-w-2xl">Printable operator reference for approval flow, corrections, constitutional amendments, and rollback. Source of truth: <code className="asc-mono">/app/docs/governance_runbook.md</code>. Amendments are reflected here on every reload.</p>
+              </div>
+              <div className="flex gap-2">
+                <button onClick={printRunbook} className="asc-btn-secondary text-xs" data-testid="runbook-print"><Printer size={13} /> Print</button>
+                <button onClick={downloadRunbook} className="asc-btn-primary text-xs" data-testid="runbook-download"><Download size={13} /> Download .md</button>
+              </div>
+            </div>
+          </div>
+          <div className="asc-card p-6 print:p-0 print:border-0 print:bg-white print:text-black" data-testid="runbook-content">
+            {runbook?.markdown ? (
+              <pre className="asc-mono text-[12px] leading-relaxed whitespace-pre-wrap text-[var(--asc-text)] print:text-black print:text-[11px] print:leading-normal" style={{ fontFamily: "'Source Code Pro', ui-monospace, monospace" }}>{runbook.markdown}</pre>
+            ) : (
+              <div className="text-sm text-[var(--asc-text-muted)] py-10 text-center">Runbook unavailable. Verify <code className="asc-mono">/app/docs/governance_runbook.md</code> exists on disk.</div>
             )}
           </div>
         </div>

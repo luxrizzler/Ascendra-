@@ -66,12 +66,15 @@ Meet minimum legal/compliance expectations for:
 - Remaining: operator must create platform apps + paste credentials in `.env` + complete audits/reviews.
 
 ### NEW objective: Centralized, secure Revenue Control Center (RCC) backend governance
-- Add a centralized, audit-ledger-driven admin backend to manage approvals, financial integrity, workflows, and automation *without permitting live actions*.
+- Build a centralized, audit-ledger-driven admin backend to manage approvals, financial integrity, workflows, and automation *without permitting live actions*.
 - Current status (as of this update):
   - RCC Phases 1–4 are **built + integrated + heavily tested**.
   - ✅ Phase 21 (Phase 3/4 Control-Integrity Hardening) is **complete**.
-  - ✅ Phase 22 (Phase 5 Executive RCC — minimal but honest) is **complete**.
-  - ⛔ Do **NOT** mark `phase_5` complete in `COMPLETED_PHASES` yet; operator sign-off must decide whether to accept the minimal Phase 5 as “complete” or request Phase 5b expansions.
+  - ✅ Phase 22 (Phase 5 Executive RCC — minimal) is **complete**.
+  - ✅ Phase 24 (Phase 5 sign-off) is **complete** — `COMPLETED_PHASES` now includes `phase_5`.
+  - ✅ Phase 25 (Phase 5b scripted simulation harness) is **complete**.
+  - ✅ Phase 26 (Cohort analytics: MRR + retention) is **complete**.
+  - ✅ Phase 27 (Governance runbook + printable UI) is **complete**.
 
 ---
 
@@ -195,7 +198,7 @@ Routes:
 **Goal:** Implement real OAuth-based auto-posting for Facebook Pages, Instagram Business, and TikTok.
 
 **Key technical blocker solved:**
-- Meta/TikTok must fetch media directly by URL (no admin JWT). We added a **signed media URL** system.
+- Meta/TikTok must fetch media directly by URL (no admin JWT). Added **signed media URL** system.
 
 **Status:**
 - ✅ Code shipped and smoke-tested in Preview.
@@ -249,179 +252,148 @@ Routes:
 ---
 
 ### Phase 21 — Revenue Control Center (RCC): Phase 3/4 Control-Integrity Hardening (P0) — COMPLETED ✅
-**Mandatory order (confirmed by user) was followed:** Hardening → Phase 5 minimal → Tests → Report.
+**Mandatory order followed:** Hardening → Phase 5 → Tests → Report.
 
 **Delivered (all shipped + tested):**
 
 #### 21.1 Approval enforcement on sensitive Phase 3 endpoints
-- `enforce_approval()` is now **actually wired** on:
+- `enforce_approval()` wired on:
   - Tax-policy activate
-  - Allocation-policy activate (**new endpoint added**)
+  - Allocation-policy activate (**new endpoint**)
   - Owner-draw decision
   - Reconciliation close
-- Approval verification is strict:
-  - `request_type` match
-  - `target_id` match
-  - `status == approved`
-  - `execution_completed == false`
-- On success: approvals are consumed append-only via `mark_approval_completed()`.
+- Strict verification: request_type + target_id match; approved; not-yet-consumed
+- On success: approval is consumed append-only via `mark_approval_completed()`
 
 #### 21.2 Allocation-policy status semantic split
-- Allocation policies now support:
-  - `approved: bool`
-  - `enabled_for_phase: str | null`
-  - `currently_applied: bool`
-- Startup migration shipped: `migrate_allocation_policy_semantics()`.
-- Write-time invariant enforced: exactly one `currently_applied=true` policy per phase.
-- Legacy `active` field preserved for backward compatibility.
+- Added: `approved`, `enabled_for_phase`, `currently_applied`
+- Startup migration: `migrate_allocation_policy_semantics()`
+- Invariant: exactly one `currently_applied=true` policy per phase
+- Legacy `active` preserved
 
 #### 21.3 Append-only owner-draw corrections
-- New append-only correction endpoints shipped:
+- New endpoints:
   - `POST /api/admin/revenue/owner-draws/{id}/adjustment`
   - `POST /api/admin/revenue/owner-draws/{id}/reversal`
-  - `GET  /api/admin/revenue/owner-draws/{id}/payments` (immutable audit trail)
-- Both correction endpoints:
-  - require `approval_id` (risk_level=high)
-  - never mutate prior rows
-  - link corrections via `adjustment_of_payment_id` and `reverses_payment_id`
+  - `GET  /api/admin/revenue/owner-draws/{id}/payments`
+- Requires approvals; never mutates prior rows; link fields enforce traceability
 
 #### 21.4 Stripe shadow webhook verification hardened
-- Shadow webhook now uses official Stripe SDK verification:
+- Official Stripe SDK verification:
   - `stripe.Webhook.construct_event(payload, sig_header, secret, tolerance=300)`
-  - signature header format: `t=<ts>,v1=<sig>`
-- Secret precedence implemented:
+  - signature header: `t=<ts>,v1=<sig>`
+- Secret precedence:
   - `STRIPE_WEBHOOK_SECRET_TEST` → `STRIPE_WEBHOOK_SECRET` → `test-shadow-secret`
-- Legacy HMAC fallback preserved for backwards compatibility and labeled:
-  - `verification_mode=legacy_hmac`
+- Legacy HMAC fallback preserved and labeled `verification_mode=legacy_hmac`
 
 #### 21.5 Hardening test coverage
-- Added `/app/tests/test_revenue_phase_hardening.py` (8 tests).
-- Updated existing Phase tests as required.
-- Test suite status: **159/159 passing**.
+- Added `/app/tests/test_revenue_phase_hardening.py` (8 tests)
 
 ---
 
-### Phase 22 — Revenue Control Center (RCC): Phase 5 Executive RCC (minimal but honest) (P1) — COMPLETED ✅
-**Scope delivered:** minimal executive layer aggregating Phase 1–4 real data + governance artifacts + safe simulation harness.
-
-#### 22.1 Backend wiring
-- `revenue_phase5.py` wired into `server.py`:
-  - `register_routes()` + router inclusion
-  - `ensure_indexes_phase5()` on startup
-  - `seed_constitution()` on startup
-
-#### 22.2 Honest labeling
-- Executive endpoints consistently emit:
-  - `source_state` and
-  - `is_stub`
-- Stubbed area is explicitly labeled:
-  - simulation harness returns `is_stub=true` and is additionally badged in UI.
-
-#### 22.3 Funnel reporting endpoint
-- Shipped: `GET /api/admin/revenue/executive/funnel`
-  - Aggregates Phase 2 lifecycle transitions
-  - Provides stage totals
-  - Excludes all simulated rows
-
-#### 22.4 Frontend Executive tab
-- Shipped a new **Executive** tab in `/app/frontend/src/pages/AdminRevenue.js`:
-  - Executive Summary cards
-  - Revenue Funnel panel
-  - Integration Readiness Matrix
-  - System Health & Exceptions
-  - Financial Constitution viewer
-  - Simulation Harness runner
-- UI includes source-state pills and a `STUB · Phase 5b` badge for the simulation harness.
-- Simulation harness refusal against non-test DB is surfaced in UI (toast + inline error), proving the safety gate.
-
-#### 22.5 Phase 5 test suite
-- Added `/app/tests/test_revenue_phase5.py` (17 tests) covering:
-  - simulated ledger never enters actual totals
-  - simulation harness refuses non-test DB
-  - constitution seed idempotency
-  - readiness matrix never reports live execution enabled
-  - funnel excludes simulated rows
-  - safety gate remains disabled
-  - is_stub/source_state present on widgets
-
-**Test status (post Phase 21 + 22):** **159/159 passing**.
+### Phase 22 — RCC: Phase 5 Executive RCC (minimal) (P1) — COMPLETED ✅
+- `revenue_phase5.py` wired into `server.py` + startup seed of Financial Constitution
+- Executive endpoints label `source_state` and `is_stub`
+- Funnel reporting endpoint:
+  - `GET /api/admin/revenue/executive/funnel` (simulated rows excluded)
+- Frontend Executive tab shipped
 
 ---
 
-### Phase 23 — RCC Phase 5 Completion Report (P2) — READY FOR OPERATOR SIGN-OFF 🟡
-**Purpose:** produce the final sign-off artifact and let the operator decide whether to:
-- mark `phase_5` as complete (accept minimal build), OR
-- request Phase 5b expansions before sign-off.
+### Phase 23 — RCC Phase 5 Completion Report (P2) — COMPLETED ✅
+- Hardening-first requirement satisfied
+- Phase 5 shipped, tested, and signed off
+- Plan updated to reflect completed work and safety invariants
 
-**Completion report should include:**
-- What shipped in Phase 21 + 22
-- What is stubbed/deferred (explicit):
-  - End-to-end scripted simulation scenario execution (currently audit-only)
-  - Cohort analytics / retention curves
-  - Extensive documentation pack (beyond docstrings + UI notes)
-- Test results:
-  - `pytest` summary (159/159)
-  - `yarn build` verification
-- Safety invariants verified:
-  - `AUTOMATION_LIVE_ACTIONS_ENABLED=false`
-  - no live external calls
-  - append-only integrity across ledgers/constitution/payments
+---
+
+### Phase 24 — RCC Phase 5 Sign-Off (Operator acceptance) — COMPLETED ✅
+- Updated `/app/backend/revenue.py`:
+  - `COMPLETED_PHASES` now includes `phase_5`
+- Updated stale tests that asserted `phase_5` was not complete
+- Updated `AdminRevenue.js` header kicker:
+  - “Phase 1 + 2 + 3 + 4 + 5 approved · executive layer signed off”
+
+---
+
+### Phase 25 — RCC Phase 5b Scripted Simulation Harness — COMPLETED ✅
+- Replaced audit-only simulation stub with **10 scripted scenarios** that create real Phase 2/3/4 records in the **test DB only**, each tagged `simulated=True`:
+  - `successful_subscription`
+  - `failed_payment_recovery`
+  - `abandoned_checkout`
+  - `qualified_business_lead`
+  - `refund_adjustment`
+  - `chargeback_adjustment`
+  - `reserve_transition`
+  - `reserve_reversion`
+  - `unsupported_question_escalation`
+  - `prohibited_action_blocked`
+- Simulation harness invariants:
+  - Refuses non-test DB
+  - Emits real records with `simulated=True`
+  - Actual executive totals remain unchanged
+- Frontend simulation badge updated:
+  - “SCRIPTED · Phase 5b”
+
+---
+
+### Phase 26 — RCC Cohort Analytics (MRR + Retention) — COMPLETED ✅
+- New endpoint:
+  - `GET /api/admin/revenue/executive/cohorts`
+- Outputs:
+  - `mrr_by_cohort` (real cleared ledger payments only)
+  - `mrr_deltas` (MoM deltas)
+  - `retention_by_cohort` (real contacts only; simulated excluded)
+- Frontend Executive tab:
+  - Cohort Analytics panel with mini visualizations and empty state
+- Tests added:
+  - Shape/labels
+  - Simulated ledger excluded from MRR
+  - Simulated contacts excluded from retention
+
+---
+
+### Phase 27 — RCC Governance Runbook (Printable Operator Reference) — COMPLETED ✅
+- Created:
+  - `/app/docs/governance_runbook.md`
+- New endpoint:
+  - `GET /api/admin/revenue/executive/runbook` (reads markdown from disk)
+- Frontend:
+  - New “Governance Runbook” tab
+  - Print button (browser print) + Download `.md` button
+  - Print-friendly rendering
 
 ---
 
 ## 3. Next Actions
 
-### Immediate (P2): Phase 23 sign-off decision + completion report
-1) Produce Phase 23 completion report (markdown)
-2) Operator sign-off decision:
-   - Option A: Accept minimal Phase 5 and update `COMPLETED_PHASES` → include `phase_5`
-   - Option B: Keep Phase 5 as “minimal delivered, not fully signed off” and plan Phase 5b
-
-### Optional (P2/P3): Phase 5b expansions (deferred, clearly labeled)
-- Build scripted end-to-end simulation scenarios (not just audit-only)
-- Add cohort analytics / retention curves
-- Expand documentation pack (operator runbooks + governance docs)
+### Immediate (P0): Operator deployment + smoke test
+1) Deploy preview → production (if desired)
+2) Smoke test RCC tabs:
+   - Executive summary renders
+   - Simulation harness refuses non-test DB in production
+   - Runbook tab loads and downloads
 
 ### Immediate (P0): Turn on Phase 13B in production (operator steps) — PENDING 🟡
 1) **Meta setup**
-- Create Meta App (Business type) in Meta Developer Portal
-- Add Facebook Login for Business + Instagram Graph API
-- Set redirect URI to:
-  - `https://ascendraacademy.com/api/social/meta/callback` (production)
-- Add `.env`:
-  - `META_APP_ID`, `META_APP_SECRET`, `META_REDIRECT_URI` (must match above)
-- Restart backend, then go to `/admin/social/settings` → **Connect Facebook + Instagram**
+- Create Meta App (Business type)
+- Configure redirect:
+  - `https://ascendraacademy.com/api/social/meta/callback`
+- Add `.env`: `META_APP_ID`, `META_APP_SECRET`, `META_REDIRECT_URI`
+- Restart backend → `/admin/social/settings` → Connect
 
 2) **TikTok setup**
-- Create TikTok app in TikTok Developer Portal
-- Add Login Kit + Content Posting API
-- Set redirect URI to:
-  - `https://ascendraacademy.com/api/social/tiktok/callback` (production)
-- Add `.env`:
-  - `TIKTOK_CLIENT_KEY`, `TIKTOK_CLIENT_SECRET`, `TIKTOK_REDIRECT_URI`
-- Restart backend, then `/admin/social/settings` → **Connect TikTok**
-- Submit TikTok App Audit for public posting (expect 1–4 weeks)
+- Configure redirect:
+  - `https://ascendraacademy.com/api/social/tiktok/callback`
+- Add `.env`: `TIKTOK_CLIENT_KEY`, `TIKTOK_CLIENT_SECRET`, `TIKTOK_REDIRECT_URI`
+- Restart backend → Connect → Submit audit
 
-3) **Optional: set stable base URLs**
-- Configure these env vars (recommended):
-  - `PUBLIC_BASE_URL=https://ascendraacademy.com`
-  - `PUBLIC_FRONTEND_URL=https://ascendraacademy.com`
-  (Used for signed media URLs + OAuth callback redirects)
-
-4) **Live smoke test**
-- Generate a post in `/admin/social`
-- Post to Facebook Page
-- Post carousel to Instagram
-- Post MP4 to TikTok (SELF_ONLY)
-
-### X (Twitter) posting — BUSINESS DECISION 🟡
-- X credentials may be invalid/expired (401 observed).
-- Decide whether to pay for X API usage or keep X manual-only.
-- If using X auto-posting, add/rotate `.env` keys:
-  - `X_API_KEY`, `X_API_SECRET`, `X_ACCESS_TOKEN`, `X_ACCESS_TOKEN_SECRET`, `X_HANDLE`
+3) Optional: stable base URLs
+- `PUBLIC_BASE_URL=https://ascendraacademy.com`
+- `PUBLIC_FRONTEND_URL=https://ascendraacademy.com`
 
 ### Code health (P2)
-- Refactor `server.py` (~5,000 lines) into FastAPI `APIRouter` modules.
+- Refactor `server.py` into routers/modules (quality-of-life)
 
 ---
 
@@ -431,65 +403,43 @@ Routes:
 - ✅ Backend integrations proven: Claude tutor, Stripe LIVE checkout + subscriptions + Customer Portal, certificates.
 - ✅ Website supports full learning loop end-to-end.
 - ✅ Resend emails live on verified custom domain.
-- ✅ Renewal reminders shipped (monthly + annual) + admin tools.
-- ✅ “What’s New” shipped + AI content tagging.
 
 ### Growth Flywheel — ACHIEVED ✅
-- ✅ Programmatic SEO pages + sitemap.
-- ✅ Content auto-pilot: daily lessons + Monday flagship paths + quality gate.
-- ✅ Lead magnet capture + AI Roadmap resource + welcome drip.
-- ✅ Lifecycle automation: trial-ending, winback, streak-saver, annual upsell.
-- ✅ Social Studio generates multi-format assets (thread + carousel + MP4).
+- ✅ Programmatic SEO + sitemap.
+- ✅ Content auto-pilot + quality gate.
+- ✅ Lifecycle automation.
+- ✅ Social studio generation + distribution helpers.
 
-### Social distribution + auto-posting — STATUS
-- ✅ Phase A manual distribution workflow (copy/export) for X/FB/IG/TikTok.
-- ✅ Phase B auto-posting code shipped for Meta + TikTok (OAuth, token storage, signed media URLs).
-- 🟡 Awaiting operator setup: create apps + set env vars + connect accounts.
-- 🟡 Awaiting platform approvals:
-  - Meta App Review for advanced permissions
-  - TikTok App Audit for public posting
-
-### Practice-first learning — ACHIEVED ✅ / ONGOING 🟡
-- ✅ Try-It-Live + Portfolio
-- ✅ Capstones
-- ✅ Spaced Drills
-- ✅ Trophy Case
-
-### Business metrics quality bar — ACHIEVED ✅
-- ✅ Admin analytics endpoints exclude internal accounts while keeping real free-tier leads.
-
-### RCC governance and integrity — ACHIEVED ✅ (Phases 21 + 22)
-- ✅ Sensitive Phase 3 financial actions are approval-gated, match-verified, and approval-consumed
-- ✅ Allocation policy semantics are unambiguous (`approved/enabled_for_phase/currently_applied`) with invariants enforced
-- ✅ Owner-draw payment corrections are append-only and auditable
-- ✅ Stripe shadow webhook uses official Stripe SDK signature verification (legacy fallback labeled)
-- ✅ Executive endpoints aggregate real data, label all stubs, and keep simulated isolated
-- ✅ Simulation harness refuses non-test DB (verified via tests + UI)
+### RCC governance and integrity — ACHIEVED ✅ (Phases 21–27)
+- ✅ Approval enforcement on sensitive Phase 3 actions
+- ✅ Allocation policy semantic split + invariant
+- ✅ Owner-draw corrections append-only
+- ✅ Stripe shadow webhook uses official Stripe SDK signature verification
+- ✅ Executive dashboard ships with honest labeling (`source_state`, `is_stub`)
+- ✅ Simulation harness: scripted scenarios, test-only, quarantined `simulated=True`
+- ✅ Cohort analytics: simulated rows excluded
+- ✅ Printable governance runbook shipped + served via API + UI
 - ✅ Tests pass:
-  - `pytest`: **159/159**
+  - `pytest`: **162/162**
 
 ### Legal + security baseline — ACHIEVED ✅
 - ✅ Terms / Privacy / No Refunds pages exist and are linked in footer.
 - ✅ Signup flow enforces agreement.
-- ✅ security.txt hosted.
-- ✅ TikTok verification file hosted.
 
 ---
 
 ## 5. Operator / Environment Notes
 - Two environments exist (Preview vs Production). Code changes land in preview; **click Deploy** to push to production.
-- **Do not hardcode preview URLs** in code. Use env vars (`PUBLIC_BASE_URL`, `PUBLIC_FRONTEND_URL`, `REACT_APP_BACKEND_URL`).
-- **Stripe keys:** Production should use **Restricted Key (`rk_live_…`)** in deployment secrets; Standard Secret Key (`sk_live_…`) should never be used in deployments.
+- **Do not hardcode preview URLs** in code. Use env vars.
 - Avoid pasting any secrets into chat or screenshots. Rotate immediately if exposed.
-- TikTok verification file must remain byte-for-byte exact (68 bytes, no newline).
 
 ### Non-negotiable safety gates (recurring)
-- `AUTOMATION_LIVE_ACTIONS_ENABLED=false` must remain false throughout.
-- No live external API calls, no live Stripe object creation, no live emails, no social posts.
+- `AUTOMATION_LIVE_ACTIONS_ENABLED=false` must remain false unless explicitly authorized.
+- No live external API calls are permitted while safety gate is off.
 - Financial math stays on `Decimal128` / Python `Decimal`.
 - Tests remain isolated to `ascendra_revenue_test` via existing `conftest.py` patterns.
 
 ### Notes on design/dev workflow
-- Design agent is intentionally not invoked for this work:
+- Design agent not invoked:
   - `AdminRevenue.js` already establishes the visual system.
-  - Phase 22 adds one new “Executive” tab and follows existing Tabs/Card patterns.
+  - Executive + Runbook tabs follow existing Tabs/Card patterns.

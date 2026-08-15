@@ -196,7 +196,10 @@ def test_summary_honestly_labels_allocations_and_exceptions(h):
 # ═══════════════════════════════════════════════════════════════════════════
 #  SIMULATION HARNESS SAFETY
 # ═══════════════════════════════════════════════════════════════════════════
-def test_simulation_harness_accepts_supported_scenario_and_labels_it_stub(h):
+def test_simulation_harness_accepts_supported_scenario_and_writes_end_to_end(h):
+    """Phase 5b — the harness is no longer a stub. It runs an end-to-end
+    scripted scenario that creates real Phase 2/3/4 records, all quarantined
+    with simulated=True."""
     r = requests.post(
         f"{API}/admin/revenue/executive/simulate?scenario=successful_subscription",
         headers=h, timeout=10)
@@ -207,8 +210,13 @@ def test_simulation_harness_accepts_supported_scenario_and_labels_it_stub(h):
     # The DB the harness ran against MUST contain "test" in its name
     assert "test" in j["db"].lower(), (
         f"simulation harness ran against non-test DB {j['db']!r}")
-    assert j["is_stub"] is True
+    # Phase 5b: no longer a stub
+    assert j["is_stub"] is False
     assert j["source_state"] == "simulated"
+    # ── Phase 5b invariant: real emitted records with counts > 0 ──
+    emitted = j.get("emitted", {})
+    assert len(emitted.get("contacts", [])) == 1
+    assert len(emitted.get("ledger_entries", [])) == 1
 
 
 def test_simulation_harness_rejects_unsupported_scenario(h):
@@ -218,33 +226,37 @@ def test_simulation_harness_rejects_unsupported_scenario(h):
     assert r.status_code == 422
 
 
-def test_simulation_harness_writes_only_audit_records(h):
-    """The stub harness must ONLY create an audit_log row — never a ledger or
-    allocation record. This proves it can never contaminate actual totals."""
+def test_simulation_harness_records_are_quarantined_from_actual_totals(h):
+    """Phase 5b — every record created by the harness must have
+    simulated=True so executive summary's actual totals stay untouched."""
     mongo_url, test_db = get_test_mongo_config()
 
     async def _snap():
         c = AsyncIOMotorClient(mongo_url)
         try:
-            ledger = await c[test_db]["financial_ledger"].count_documents({})
+            ledger_all = await c[test_db]["financial_ledger"].count_documents({})
+            ledger_actual = await c[test_db]["financial_ledger"].count_documents(
+                {"simulated": {"$ne": True}})
             audit = await c[test_db]["audit_log"].count_documents(
                 {"action": "simulation.refund_adjustment"})
-            return ledger, audit
-        finally:
-            c.close()
-    ledger_before, audit_before = asyncio.run(_snap())
+            return ledger_all, ledger_actual, audit
+        finally: c.close()
+
+    ledger_all_before, ledger_actual_before, audit_before = asyncio.run(_snap())
 
     r = requests.post(
         f"{API}/admin/revenue/executive/simulate?scenario=refund_adjustment",
         headers=h, timeout=10)
     assert r.status_code == 200
 
-    ledger_after, audit_after = asyncio.run(_snap())
-    # Ledger MUST be untouched
-    assert ledger_after == ledger_before, (
-        f"simulation harness wrote to financial_ledger: "
-        f"{ledger_before} → {ledger_after}")
-    # An audit_log row was appended
+    ledger_all_after, ledger_actual_after, audit_after = asyncio.run(_snap())
+    # The harness DID create a ledger row (Phase 5b scripted behavior)
+    assert ledger_all_after > ledger_all_before, (
+        "Phase 5b harness should create real records now")
+    # But NONE of those rows count as actual
+    assert ledger_actual_after == ledger_actual_before, (
+        "simulated ledger rows leaked into actual totals!")
+    # And an audit trail row was appended
     assert audit_after == audit_before + 1
 
 
@@ -363,10 +375,116 @@ def test_exec_health_labels_and_liveness(h):
 # ═══════════════════════════════════════════════════════════════════════════
 #  SYSTEM STATE STILL DOES NOT PREMATURELY MARK PHASE 5 COMPLETE
 # ═══════════════════════════════════════════════════════════════════════════
-def test_system_state_does_not_mark_phase5_complete(h):
+def test_system_state_marks_phase5_complete_after_signoff(h):
     j = requests.get(f"{API}/admin/revenue/system/state",
                        headers=h, timeout=10).json()
     completed = j.get("completed_phases") or []
-    assert "phase_5" not in completed, (
-        "system_state prematurely reports phase_5 complete — the minimal "
-        "Phase 5 layer is still labeled IN PROGRESS")
+    assert "phase_5" in completed, (
+        "system_state should report phase_5 complete after operator sign-off")
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  PHASE 5b — COHORT ANALYTICS
+# ═══════════════════════════════════════════════════════════════════════════
+def test_cohort_analytics_returns_labeled_envelope(h):
+    r = requests.get(f"{API}/admin/revenue/executive/cohorts",
+                       headers=h, timeout=10)
+    assert r.status_code == 200, r.text
+    j = r.json()
+    assert j["is_stub"] is False
+    assert j["source_state"] == "actual"
+    assert isinstance(j.get("mrr_by_cohort"), list)
+    assert isinstance(j.get("retention_by_cohort"), list)
+    assert isinstance(j.get("mrr_deltas"), list)
+
+
+def test_cohort_analytics_excludes_simulated_ledger(h):
+    """Simulated ledger rows must never appear in the MRR cohort aggregate."""
+    mongo_url, test_db = get_test_mongo_config()
+
+    async def _plant():
+        c = AsyncIOMotorClient(mongo_url)
+        try:
+            # Plant one ACTUAL cleared payment in a distinct month
+            await c[test_db]["financial_ledger"].insert_one({
+                "id": str(uuid.uuid4()),
+                "idempotency_key": f"actual-cohort-{uuid.uuid4().hex}",
+                "entry_type": "payment_recorded",
+                "source_type": "test_fixture",
+                "gross_amount": Decimal128("77.00"),
+                "settlement_status": "cleared",
+                "simulated": False,                          # ← ACTUAL
+                "environment": "preview", "source": "test_fixture",
+                "allocated": True,
+                "created_at": datetime(2028, 6, 15, tzinfo=timezone.utc),
+                "effective_date": datetime(2028, 6, 15, tzinfo=timezone.utc),
+            })
+            # Plant a large SIMULATED cleared payment in the SAME month
+            await c[test_db]["financial_ledger"].insert_one({
+                "id": str(uuid.uuid4()),
+                "idempotency_key": f"sim-cohort-{uuid.uuid4().hex}",
+                "entry_type": "payment_recorded",
+                "source_type": "test_fixture",
+                "gross_amount": Decimal128("500000.00"),
+                "settlement_status": "cleared",
+                "simulated": True,                            # ← SIMULATED
+                "environment": "preview", "source": "test_fixture",
+                "allocated": True,
+                "created_at": datetime(2028, 6, 15, tzinfo=timezone.utc),
+                "effective_date": datetime(2028, 6, 15, tzinfo=timezone.utc),
+            })
+        finally: c.close()
+    asyncio.run(_plant())
+
+    r = requests.get(f"{API}/admin/revenue/executive/cohorts",
+                       headers=h, timeout=10).json()
+    matching = [c for c in r["mrr_by_cohort"] if c["cohort_month"] == "2028-06"]
+    assert matching, "expected the 2028-06 cohort to appear"
+    # The MRR must equal $77.00 — the $500,000 simulated row is excluded.
+    assert Decimal(matching[0]["mrr"]) == Decimal("77.00"), (
+        f"cohort MRR leaked simulated row: got {matching[0]['mrr']!r}")
+
+
+def test_cohort_analytics_retention_excludes_simulated_contacts(h):
+    """Retention counts must only include real contacts (simulated=False)."""
+    mongo_url, test_db = get_test_mongo_config()
+    signup_month_str = "2028-07"
+    plant_ts = datetime(2028, 7, 10, tzinfo=timezone.utc)
+
+    async def _plant():
+        c = AsyncIOMotorClient(mongo_url)
+        try:
+            # 1 real customer
+            real_email = f"real-{uuid.uuid4().hex[:6]}@example.test"
+            await c[test_db]["contacts"].insert_one({
+                "id": str(uuid.uuid4()),
+                "email": real_email,
+                "email_normalized": real_email.lower(),
+                "lifecycle_stage": "customer",
+                "simulated": False,
+                "environment": "preview", "source": "test_fixture",
+                "created_at": plant_ts, "updated_at": plant_ts,
+            })
+            # 3 simulated contacts (must be excluded)
+            for _ in range(3):
+                sim_email = f"sim-{uuid.uuid4().hex[:6]}@example.test"
+                await c[test_db]["contacts"].insert_one({
+                    "id": str(uuid.uuid4()),
+                    "email": sim_email,
+                    "email_normalized": sim_email.lower(),
+                    "lifecycle_stage": "customer",
+                    "simulated": True,
+                    "environment": "preview", "source": "test_fixture",
+                    "created_at": plant_ts, "updated_at": plant_ts,
+                })
+        finally: c.close()
+    asyncio.run(_plant())
+
+    r = requests.get(f"{API}/admin/revenue/executive/cohorts",
+                       headers=h, timeout=10).json()
+    matching = [c for c in r["retention_by_cohort"]
+                 if c["cohort_month"] == signup_month_str]
+    assert matching, f"expected {signup_month_str} cohort in retention"
+    # The signup count for this brand-new cohort month must be exactly 1
+    assert matching[0]["signups"] == 1, (
+        f"retention leaked simulated contacts: {matching[0]!r}")

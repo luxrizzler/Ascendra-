@@ -73,14 +73,13 @@ def h(jwt):
 # ═══════════════════════════════════════════════════════════════════════════
 #  PHASE 4 METADATA REGRESSION
 # ═══════════════════════════════════════════════════════════════════════════
-def test_system_state_reports_phase_4_after_approval(h):
+def test_system_state_reports_phase_5_after_signoff(h):
     j = requests.get(f"{API}/admin/revenue/system/state", headers=h, timeout=10).json()
-    # Phase 4 is approved and included in COMPLETED_PHASES; Phase 5 remains
-    # in progress (minimal build) so it must NOT yet be marked complete.
+    # Phase 4 + Phase 5 (minimal) are both approved and in COMPLETED_PHASES.
     assert "phase_4" in j["completed_phases"]
-    assert set(j["completed_phases"]) >= {"phase_1", "phase_2", "phase_3", "phase_4"}
-    assert "phase_5" not in j["completed_phases"], (
-        "phase_5 must remain uncompleted until minimal-build completion report ships")
+    assert "phase_5" in j["completed_phases"], (
+        f"phase_5 should be reported complete after sign-off; got {j['completed_phases']!r}")
+    assert set(j["completed_phases"]) >= {"phase_1", "phase_2", "phase_3", "phase_4", "phase_5"}
 
 
 # ═══════════════════════════════════════════════════════════════════════════

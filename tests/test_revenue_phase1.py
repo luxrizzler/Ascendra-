@@ -123,17 +123,13 @@ def test_system_state_defaults_safe(h):
 
 
 def test_system_state_reports_accurate_phase(h):
-    """Regression: after Phase 4 sign-off, the system-state endpoint reports
-    phase_4 as the most-recently-completed phase. Phase 5 must NOT be reported
-    as complete yet (minimal build in progress)."""
+    """Regression: after Phase 5 sign-off, the system-state endpoint reports
+    phase_5 as the most-recently-completed phase (minimal build accepted)."""
     j = requests.get(f"{API}/admin/revenue/system/state", headers=h, timeout=10).json()
     completed = j.get("completed_phases") or []
-    # Phase 4 is now approved; Phase 5 (minimal build) is IN PROGRESS.
-    assert set(completed) >= {"phase_1", "phase_2", "phase_3", "phase_4"}, (
+    # Phase 5 is now approved as the minimal-honest executive layer.
+    assert set(completed) >= {"phase_1", "phase_2", "phase_3", "phase_4", "phase_5"}, (
         f"completed_phases missing expected entries; got {completed!r}"
-    )
-    assert "phase_5" not in completed, (
-        "system_state reports Phase 5 complete before minimal-build completion report ships"
     )
     assert j.get("environment") == "preview"
 

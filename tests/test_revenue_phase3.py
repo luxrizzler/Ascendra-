@@ -546,14 +546,11 @@ def test_phase3_records_source_environment_correctly(h):
         assert e.get("source") in ("admin_created", "test_fixture", "external_provider")
 
 
-def test_current_phase_reports_phase_4_and_not_phase_5(h):
-    """Phase 4 is approved and included in completed_phases; Phase 5 must
-    remain uncompleted until minimal-build completion report ships."""
+def test_current_phase_reports_phase_5_signed_off(h):
+    """Phase 5 minimal build is now signed off and must appear in completed_phases."""
     j = requests.get(f"{API}/admin/revenue/system/state", headers=h, timeout=10).json()
     completed = j.get("completed_phases") or []
-    assert "phase_4" in completed, (
-        f"phase_4 should be reported complete after sign-off; got {completed!r}"
-    )
-    assert "phase_5" not in completed, (
-        "system_state prematurely reports phase_5 complete"
+    assert "phase_4" in completed
+    assert "phase_5" in completed, (
+        "system_state should report phase_5 complete after operator sign-off"
     )

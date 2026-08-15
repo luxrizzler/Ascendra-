@@ -1,18 +1,30 @@
 [
   {
-    "content": "21.1-21.5 Phase 21 hardening (approvals + allocation semantics + owner-draw corrections + Stripe SDK + tests)",
+    "content": "P24 Sign Off Phase 5 (COMPLETED_PHASES bumped)",
     "status": "completed"
   },
   {
-    "content": "22.1-22.5 Phase 22 minimal Phase 5 executive layer (backend + funnel + tests + UI)",
+    "content": "P25 Phase 5b scripted simulation harness (backend + tests)",
     "status": "completed"
   },
   {
-    "content": "Full pytest suite green (159/159 passing) + frontend build clean",
+    "content": "P26a Cohort Analytics backend endpoint + tests",
     "status": "completed"
   },
   {
-    "content": "23 Phase 5 completion report + plan.md updated for operator sign-off decision",
+    "content": "P26b Cohort Analytics UI panel in Executive tab",
+    "status": "completed"
+  },
+  {
+    "content": "P26c Update simulation card badge from STUB to SCRIPTED",
+    "status": "completed"
+  },
+  {
+    "content": "P27 Governance Runbook: /app/docs/governance_runbook.md + admin route + print + download",
+    "status": "completed"
+  },
+  {
+    "content": "Full pytest (162/162) + frontend build clean + screenshots verified",
     "status": "completed"
   }
 ]
