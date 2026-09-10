@@ -95,6 +95,7 @@ export default function PathDetail() {
             completedLessonIds={progress?.completed_lesson_ids || []}
             pathColor={path.color}
             onOpenLesson={(lessonId) => router.push(`/lesson/${lessonId}`)}
+            onOpenSideQuest={(moduleId) => router.push(`/quest/${moduleId}?pathId=${id}` as any)}
           />
 
           <View style={styles.detailHeader}>
