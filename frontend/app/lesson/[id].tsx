@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import {
-  View, Text, StyleSheet, Pressable, ScrollView, ActivityIndicator, useWindowDimensions,
+  View, Text, StyleSheet, Pressable, ScrollView, ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter, Stack } from "expo-router";
@@ -8,6 +8,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { C, RADIUS } from "@/src/theme";
 import { api } from "@/src/api";
+import { AscendraVoicePlayer } from "@/src/learning-v2/AscendraVoicePlayer";
+import { AdaptiveCoachPanel } from "@/src/learning-v2/AdaptiveCoachPanel";
 
 type Card = { kind: string; title: string; body: string };
 type Quiz = { question: string; options: string[]; answer_index: number; explanation: string };
@@ -15,7 +17,6 @@ type Quiz = { question: string; options: string[]; answer_index: number; explana
 export default function Lesson() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const { width } = useWindowDimensions();
 
   const [lesson, setLesson] = useState<any>(null);
   const [idx, setIdx] = useState(0);
@@ -125,6 +126,12 @@ export default function Lesson() {
           <>
             <Text style={styles.module}>{lesson.module_title}</Text>
             <Text style={[styles.lessonTitle, { color: color }]}>{lesson.title}</Text>
+
+            <View style={styles.v2ModeBar}>
+              <View style={[styles.v2Dot, { backgroundColor: color }]} />
+              <Text style={styles.v2ModeText}>VIREX'S ASCENDRA 2.0 · LISTEN · UNDERSTAND · TRY · ASK</Text>
+            </View>
+
             <View style={styles.cardWrap}>
               <LinearGradient
                 colors={[color + "22", "transparent"]}
@@ -133,7 +140,23 @@ export default function Lesson() {
               <Text style={styles.cardKicker}>CARD {idx + 1} OF {cards.length}</Text>
               <Text style={styles.cardTitle}>{cards[idx].title}</Text>
               <Text style={styles.cardBody}>{cards[idx].body}</Text>
+
+              <AscendraVoicePlayer
+                key={`voice-${id}-${idx}`}
+                sourceText={cards[idx].body}
+                lessonId={lesson.id}
+                segmentId={`${idx}`}
+                accentColor={color}
+              />
             </View>
+
+            <AdaptiveCoachPanel
+              key={`coach-${id}-${idx}`}
+              lessonId={lesson.id}
+              lessonTitle={lesson.title}
+              conceptText={`${cards[idx].title}\n\n${cards[idx].body}`}
+              accentColor={color}
+            />
           </>
         ) : (
           <>
@@ -173,6 +196,16 @@ export default function Lesson() {
                 </View>
               )}
             </View>
+
+            {revealed && (
+              <AdaptiveCoachPanel
+                key={`quiz-coach-${id}-${quizPick}`}
+                lessonId={lesson.id}
+                lessonTitle={`${lesson.title} · mastery check`}
+                conceptText={`Question: ${quiz.question}\nOptions: ${quiz.options.join(" | ")}\nCorrect-answer explanation: ${quiz.explanation}`}
+                accentColor={color}
+              />
+            )}
           </>
         )}
       </ScrollView>
@@ -211,7 +244,10 @@ const styles = StyleSheet.create({
   progressFill: { height: 4, borderRadius: 2 },
   scroll: { padding: 20, paddingBottom: 40 },
   module: { color: C.textMuted, fontSize: 11, fontWeight: "800", letterSpacing: 2.5, marginBottom: 6 },
-  lessonTitle: { fontSize: 26, fontWeight: "900", letterSpacing: -0.8, marginBottom: 24 },
+  lessonTitle: { fontSize: 26, fontWeight: "900", letterSpacing: -0.8, marginBottom: 16 },
+  v2ModeBar: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 14 },
+  v2Dot: { width: 7, height: 7, borderRadius: 4 },
+  v2ModeText: { color: C.textMuted, fontSize: 9, fontWeight: "900", letterSpacing: 1.2, flex: 1 },
   cardWrap: { backgroundColor: C.surface, padding: 24, borderRadius: RADIUS.xl, borderWidth: 1, borderColor: C.border, overflow: "hidden", minHeight: 320 },
   cardGlow: { position: "absolute", top: -60, left: -40, right: -40, height: 180 },
   cardKicker: { color: C.textMuted, fontSize: 11, fontWeight: "800", letterSpacing: 2.5, marginBottom: 10 },
