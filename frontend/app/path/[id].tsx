@@ -8,6 +8,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { C, RADIUS } from "@/src/theme";
 import { api } from "@/src/api";
+import { LearningJourneyMap } from "@/src/learning-v2/LearningJourneyMap";
 
 export default function PathDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -89,6 +90,21 @@ export default function PathDetail() {
             </Pressable>
           </View>
 
+          <LearningJourneyMap
+            modules={path.modules}
+            completedLessonIds={progress?.completed_lesson_ids || []}
+            pathColor={path.color}
+            onOpenLesson={(lessonId) => router.push(`/lesson/${lessonId}`)}
+          />
+
+          <View style={styles.detailHeader}>
+            <View>
+              <Text style={styles.detailKicker}>COURSE DETAILS</Text>
+              <Text style={styles.detailTitle}>All modules & lessons</Text>
+            </View>
+            <Ionicons name="list" size={20} color={C.textMuted} />
+          </View>
+
           {path.modules.map((m: any, mi: number) => (
             <View key={m.id} style={{ marginTop: 24 }}>
               <Text style={styles.moduleKicker}>MODULE {mi + 1}</Text>
@@ -155,6 +171,15 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.pill, alignSelf: "center",
   },
   resumeText: { color: "#000", fontWeight: "800", fontSize: 13 },
+  detailHeader: {
+    marginTop: 28,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 2,
+  },
+  detailKicker: { color: C.textMuted, fontSize: 10, fontWeight: "800", letterSpacing: 2 },
+  detailTitle: { color: C.text, fontSize: 19, fontWeight: "900", marginTop: 4 },
   moduleKicker: { color: C.textMuted, fontSize: 10, fontWeight: "800", letterSpacing: 2, marginBottom: 4 },
   moduleTitle: { color: C.text, fontWeight: "800", fontSize: 19, marginBottom: 10 },
   lessonRow: {
