@@ -34,7 +34,13 @@
           "backgroundColor": "#000"
         }
       ],
-      "expo-font"
+      "expo-font",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Allow Ascendra to hear your questions when you use Ascendra Live Guide."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true
